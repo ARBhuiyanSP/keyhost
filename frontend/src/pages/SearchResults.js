@@ -9,6 +9,7 @@ import LoadingSpinner from '../components/common/LoadingSpinner';
 import StickySearchHeader from '../components/layout/StickySearchHeader';
 import PropertyImageSlider from '../components/property/PropertyImageSlider';
 import PropertyMap from '../components/property/PropertyMap';
+import FlightSearchResults from '../components/search/FlightSearchResults';
 
 const SearchResults = () => {
   const navigate = useNavigate();
@@ -261,6 +262,14 @@ const SearchResults = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  if ((filters.property_type || '').toLowerCase() === 'flight') {
+    return (
+      <div className="min-h-screen bg-[#F4F6F9]">
+        <FlightSearchResults searchParams={filters} />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-white mobile-footer-spacing">
       {/* Sticky header appears after scroll (desktop only) */}
@@ -272,6 +281,7 @@ const SearchResults = () => {
             initialCheckInDate={filters.check_in_date}
             initialCheckOutDate={filters.check_out_date}
             initialGuests={filters.min_guests || 1}
+            initialPropertyType={filters.property_type}
           />
         </div>
       )}
