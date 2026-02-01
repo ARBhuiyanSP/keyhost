@@ -766,7 +766,7 @@ router.get('/properties', optionalAuth, validatePagination, async (req, res) => 
     }
 
     if (property_type) {
-      whereConditions.push('p.property_type = ?');
+      whereConditions.push('LOWER(p.property_type) = LOWER(?)');
       queryParams.push(property_type);
     }
 

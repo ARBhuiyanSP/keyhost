@@ -15,20 +15,7 @@ const Navbar = () => {
   const { settings, loadPublicSettings } = useSettingsStore();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [headerActiveType, setHeaderActiveType] = useState('');
-  const [headerDateOpen, setHeaderDateOpen] = useState(false);
-  const [showGuestsDropdown, setShowGuestsDropdown] = useState(false);
-  // Determine initial search active state: default false for property/contact pages
-  const isDetailOrContact = location.pathname.startsWith('/property/') || location.pathname.startsWith('/properties/') || location.pathname.includes('/contact-host');
-  const [isHeaderSearchActive, setIsHeaderSearchActive] = useState(false);
-  const [headerHoverSection, setHeaderHoverSection] = useState(null);
-  const [headerActivePillStyle, setHeaderActivePillStyle] = useState({ x: 0, w: 0, visible: false });
-  const [guestCounts, setGuestCounts] = useState({
-    adults: 1,
-    children: 0,
-    infants: 0,
-    pets: 0,
-  });
+
   // Load search state from localStorage on mount
   const loadSearchState = () => {
     try {
@@ -40,6 +27,8 @@ const Navbar = () => {
           checkIn: parsed.checkIn ? new Date(parsed.checkIn) : null,
           checkOut: parsed.checkOut ? new Date(parsed.checkOut) : null,
           guests: parsed.guests || 1,
+          propertyType: parsed.propertyType || '',
+          flightClass: parsed.flightClass || 'Economy' // Added for Flight Class
         };
       }
     } catch (error) {
@@ -47,23 +36,57 @@ const Navbar = () => {
     }
     return {
       location: '',
+      locationTo: '', // Added for 'To' field
       checkIn: null,
       checkOut: null,
       guests: 1,
+      propertyType: '',
+      flightClass: 'Economy' // Added for Flight Class
     };
   };
 
   const [searchData, setSearchData] = useState(loadSearchState);
+  const [headerActiveType, setHeaderActiveType] = useState(searchData?.propertyType || '');
+  const [headerDateOpen, setHeaderDateOpen] = useState(false);
+  const [showGuestsDropdown, setShowGuestsDropdown] = useState(false);
+  // Determine initial search active state: default false for property/contact pages
+  const isDetailOrContact = location.pathname.startsWith('/property/') || location.pathname.startsWith('/properties/') || location.pathname.includes('/contact-host');
+  const [isHeaderSearchActive, setIsHeaderSearchActive] = useState(false);
+  const [headerHoverSection, setHeaderHoverSection] = useState(null);
+  const [headerActivePillStyle, setHeaderActivePillStyle] = useState({ x: 0, w: 0, visible: false });
+
+  // Flight Search State
+  const [flightSearchData, setFlightSearchData] = useState({
+    from: 'Dhaka', fromCode: 'DAC', fromFull: 'DAC, Hazrat Shahjalal International Airport',
+    to: "Cox's Bazar", toCode: 'CXB', toFull: "CXB, Cox's Bazar Airport",
+    departDate: new Date('2026-02-12'),
+    returnDate: null,
+    travelers: 1,
+    flightClass: 'Economy',
+    tripType: 'oneWay'
+  });
+  const [flightActiveSection, setFlightActiveSection] = useState(null);
+  const [guestCounts, setGuestCounts] = useState({
+    adults: searchData.guests || 1, // Initialize from searchData.guests
+    children: 0,
+    infants: 0,
+    pets: 0,
+  });
+
   const dropdownRef = useRef(null);
   const headerSearchRef = useRef(null);
   const headerPillSegmentsRef = useRef(null);
   const headerWhereRef = useRef(null);
   const headerLocationInputRef = useRef(null);
+  const headerToRef = useRef(null); // New Ref for 'To' field container
+  const headerToInputRef = useRef(null); // New Ref for 'To' input
   const headerDateRef = useRef(null);
   const guestDropdownRef = useRef(null);
   const headerLocationSuggestionsRef = useRef(null);
+  const headerToSuggestionsRef = useRef(null); // New Ref for 'To' suggestions dropdown
   const searchFormRef = useRef(null);
   const [showHeaderLocationSuggestions, setShowHeaderLocationSuggestions] = useState(false);
+  const [showHeaderToSuggestions, setShowHeaderToSuggestions] = useState(false); // New State for 'To' suggestions visibility
 
   // Define pathname checks early
   const isHome = location.pathname === '/';
@@ -101,7 +124,14 @@ const Navbar = () => {
     'nav-property-types',
     () => api.get('/properties/property-types/list'),
     {
-      select: (response) => response.data?.data?.propertyTypes || [],
+      select: (response) => {
+        const types = response.data?.data?.propertyTypes || [];
+        // Manually inject Flight if not present
+        if (!types.find(t => t.name.toLowerCase() === 'flight')) {
+          types.push({ id: 9999, name: 'Flight', is_active: true });
+        }
+        return types;
+      },
     }
   );
 
@@ -146,6 +176,7 @@ const Navbar = () => {
       setIsHeaderSearchActive(true);
       if (section === 'location') {
         setShowHeaderLocationSuggestions(true);
+        setShowHeaderToSuggestions(false); // Close 'To' suggestions
         setHeaderDateOpen(false);
         setShowGuestsDropdown(false);
         if (headerLocationInputRef.current) {
@@ -154,10 +185,12 @@ const Navbar = () => {
       } else if (section === 'dates') {
         setHeaderDateOpen(true);
         setShowHeaderLocationSuggestions(false);
+        setShowHeaderToSuggestions(false); // Close 'To' suggestions
         setShowGuestsDropdown(false);
       } else if (section === 'guests') {
         setShowGuestsDropdown(true);
         setShowHeaderLocationSuggestions(false);
+        setShowHeaderToSuggestions(false); // Close 'To' suggestions
         setHeaderDateOpen(false);
       }
     };
@@ -168,14 +201,14 @@ const Navbar = () => {
   // Force-show header search when any popover is active (location suggestions, date, guests)
   useEffect(() => {
     const body = document.body;
-    const shouldShow = isHeaderSearchActive || showHeaderLocationSuggestions || headerDateOpen || showGuestsDropdown;
+    const shouldShow = isHeaderSearchActive || showHeaderLocationSuggestions || showHeaderToSuggestions || headerDateOpen || showGuestsDropdown;
     if (shouldShow) {
       body.classList.add('force-show-home-search');
     } else {
       body.classList.remove('force-show-home-search');
     }
     return () => body.classList.remove('force-show-home-search');
-  }, [isHeaderSearchActive, showHeaderLocationSuggestions, headerDateOpen, showGuestsDropdown]);
+  }, [isHeaderSearchActive, showHeaderLocationSuggestions, showHeaderToSuggestions, headerDateOpen, showGuestsDropdown]);
 
   const handleLogout = async () => {
     await logout();
@@ -194,9 +227,11 @@ const Navbar = () => {
       const totalGuests = next.adults + next.children;
       const searchState = {
         location: searchData.location,
+        locationTo: searchData.locationTo, // Added for 'To' field
         checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
         checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
-        guests: totalGuests < 1 ? 1 : totalGuests
+        guests: totalGuests < 1 ? 1 : totalGuests,
+        flightClass: searchData.flightClass // Added for Flight Class
       };
       localStorage.setItem('searchState', JSON.stringify(searchState));
       window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
@@ -239,17 +274,19 @@ const Navbar = () => {
   };
 
   const effectiveHeaderSection =
-    (showHeaderLocationSuggestions ? 'location' : headerDateOpen ? 'dates' : showGuestsDropdown ? 'guests' : null) ||
+    (showHeaderLocationSuggestions ? 'location' : showHeaderToSuggestions ? 'to' : headerDateOpen ? 'dates' : showGuestsDropdown ? 'guests' : null) ||
     headerHoverSection;
-  const hideHeaderSep1 = effectiveHeaderSection === 'location' || effectiveHeaderSection === 'dates';
+  const hideHeaderSep1 = effectiveHeaderSection === 'location' || effectiveHeaderSection === 'to' || effectiveHeaderSection === 'dates';
   const hideHeaderSep2 = effectiveHeaderSection === 'dates' || effectiveHeaderSection === 'guests';
 
   const isActivePill =
     (effectiveHeaderSection === 'location' && showHeaderLocationSuggestions) ||
+    (effectiveHeaderSection === 'to' && showHeaderToSuggestions) || // Added for 'To' field
     (effectiveHeaderSection === 'dates' && headerDateOpen) ||
     (effectiveHeaderSection === 'guests' && showGuestsDropdown);
 
   const hasLocation = (searchData.location || '').trim() !== '';
+  const hasLocationTo = (searchData.locationTo || '').trim() !== ''; // Added for 'To' field
   const hasDates = Boolean(searchData.checkIn || searchData.checkOut);
   const hasGuests = totalGuests > 1 || guestCounts.pets > 0;
 
@@ -260,11 +297,13 @@ const Navbar = () => {
       const target =
         section === 'location'
           ? headerWhereRef.current
-          : section === 'dates'
-            ? headerDateRef.current
-            : section === 'guests'
-              ? guestDropdownRef.current
-              : null;
+          : section === 'to' // Added for 'To' field
+            ? headerToRef.current // Added for 'To' field
+            : section === 'dates'
+              ? headerDateRef.current
+              : section === 'guests'
+                ? guestDropdownRef.current
+                : null;
 
       if (!section || !container || !target) {
         setHeaderActivePillStyle((prev) => ({ ...prev, visible: false }));
@@ -297,16 +336,22 @@ const Navbar = () => {
     e.preventDefault();
     const params = new URLSearchParams();
     if (searchData.location) params.append('city', searchData.location);
+    if (headerActiveType === 'flight' && searchData.locationTo) params.append('destination_city', searchData.locationTo); // Added for 'To' field
     if (searchData.checkIn) params.append('check_in_date', formatDateLocal(searchData.checkIn));
     if (searchData.checkOut) params.append('check_out_date', formatDateLocal(searchData.checkOut));
     if (searchData.guests) params.append('min_guests', searchData.guests);
+    if (headerActiveType) params.append('property_type', headerActiveType);
+    if (headerActiveType === 'flight' && searchData.flightClass) params.append('flight_class', searchData.flightClass); // Added for Flight Class
 
     // Save search state to localStorage for persistence
     const searchState = {
       location: searchData.location,
+      locationTo: searchData.locationTo, // Added for 'To' field
       checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
       checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
-      guests: searchData.guests
+      guests: searchData.guests,
+      propertyType: headerActiveType,
+      flightClass: searchData.flightClass // Added for Flight Class
     };
     localStorage.setItem('searchState', JSON.stringify(searchState));
     // Dispatch event to notify other components
@@ -314,6 +359,7 @@ const Navbar = () => {
 
     // Close all dropdowns
     setShowHeaderLocationSuggestions(false);
+    setShowHeaderToSuggestions(false); // Added for 'To' field
     setHeaderDateOpen(false);
     setShowGuestsDropdown(false);
 
@@ -333,13 +379,19 @@ const Navbar = () => {
 
       const clickedInsideHeader = headerSearchRef.current && headerSearchRef.current.contains(event.target);
 
-      // Close if clicking outside the search form (pill), even if inside the header
-      // Keep open if clicking on the form itself or its children
-      if (!clickedInsideSearchForm && !clickedInsideDatePopper) {
+      // Close if clicking outside the search form (pill) AND outside the header
+      // Keep open if clicking on the form itself, its children, or anywhere in the header
+      if (!clickedInsideSearchForm && !clickedInsideDatePopper && !clickedInsideHeader) {
         setIsHeaderSearchActive(false);
         setShowHeaderLocationSuggestions(false);
+        setShowHeaderToSuggestions(false); // Added for 'To' field
         setShowGuestsDropdown(false);
         setHeaderDateOpen(false);
+      } else if (clickedInsideHeader) {
+        // If clicked inside header but not inside form/popper, we might want to close sub-dropdowns but keep search active
+        // But the existing logic below handles specific popover closing.
+        // We ensure search stays active here.
+        setIsHeaderSearchActive(true);
       } else {
         // Inside search form (or date popper): keep form visible
         setIsHeaderSearchActive(true);
@@ -375,7 +427,7 @@ const Navbar = () => {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showHeaderLocationSuggestions, showGuestsDropdown, headerDateOpen]);
+  }, [showHeaderLocationSuggestions, showGuestsDropdown, headerDateOpen, showHeaderToSuggestions]); // Added showHeaderToSuggestions
 
   const isActive = (path) => {
     return location.pathname === path;
@@ -383,11 +435,17 @@ const Navbar = () => {
 
   const handleTypeClick = (typeName = '') => {
     const normalized = (typeName || '').toLowerCase();
+
     setHeaderActiveType(normalized);
+    if (normalized === 'flight') {
+      setFlightActiveSection('from');
+    }
     window.dispatchEvent(new CustomEvent('setActivePropertyType', { detail: normalized }));
 
     // If on search page, update the URL with property_type filter
-    if (isSearchPage) {
+    // If on search page, update the URL with property_type filter
+    // EXCEPT for 'flight', which has its own form
+    if (isSearchPage && normalized !== 'flight') {
       const params = new URLSearchParams(window.location.search);
       params.set('property_type', normalized);
       navigate(`/search?${params.toString()}`, { replace: true });
@@ -403,8 +461,11 @@ const Navbar = () => {
 
     if (normalized.includes('apartment') || normalized.includes('villa') || normalized.includes('house') || normalized.includes('home')) {
       imgSrc = '/images/nav-icon-apartment.png';
-    } else if (normalized.includes('hotel')) {
       imgSrc = '/images/nav-icon-hotel.png';
+    } else if (normalized.includes('flight')) {
+      return (
+        <span className="text-2xl">✈️</span>
+      );
     }
 
     return (
@@ -749,11 +810,43 @@ const Navbar = () => {
 
         {/* Home page, Search page, and Property Detail page desktop search bar inside header */}
         {(isHome || isSearchPage || isPropertyDetail || isContactHost) && (
-          <div className="hidden md:block py-3 home-nav-search static z-[90000] overflow-visible">
+          <div className={`hidden md:block home-nav-search static z-[90000] overflow-visible ${isHeaderSearchActive || (!isDetailOrContact && !isSearchPage) ? 'py-3' : 'py-0'}`}>
+            {/* Flight Trip Type Toggles */}
+            {headerActiveType === 'flight' && (
+              <div className={`flex items-center gap-6 mb-4 pl-6 ${headerActiveType === 'flight' ? 'max-w-6xl' : 'max-w-4xl'} mx-auto transition-all duration-300 ${!isHeaderSearchActive && (isDetailOrContact || isSearchPage) ? 'opacity-0 h-0 overflow-hidden -mt-4' : 'opacity-100'}`}>
+                <label
+                  className="flex items-center gap-2 cursor-pointer group"
+                  onClick={() => {
+                    setFlightSearchData(prev => ({ ...prev, tripType: 'oneWay' }));
+                    setSearchData(prev => ({ ...prev, checkOut: null }));
+                  }}
+                >
+                  <div className={`w-5 h-5 rounded-full border-[5px] transition-all bg-white ${flightSearchData.tripType === 'oneWay' ? 'border-[#1e2049]' : 'border-gray-300'}`}></div>
+                  <span className={`text-sm font-bold transition-colors ${flightSearchData.tripType === 'oneWay' ? 'text-[#1e2049]' : 'text-gray-400 group-hover:text-gray-600'}`}>One Way</span>
+                </label>
+                <label
+                  className="flex items-center gap-2 cursor-pointer group"
+                  onClick={() => setFlightSearchData(prev => ({ ...prev, tripType: 'roundTrip' }))}
+                >
+                  <div className={`w-5 h-5 rounded-full border-[5px] transition-all bg-white ${flightSearchData.tripType === 'roundTrip' || !flightSearchData.tripType ? 'border-[#1e2049]' : 'border-gray-300'}`}></div>
+                  <span className={`text-sm font-bold transition-colors ${flightSearchData.tripType === 'roundTrip' || !flightSearchData.tripType ? 'text-[#1e2049]' : 'text-gray-400 group-hover:text-gray-600'}`}>Round Way</span>
+                </label>
+                <label
+                  className="flex items-center gap-2 cursor-pointer group"
+                  onClick={() => {
+                    setFlightSearchData(prev => ({ ...prev, tripType: 'multiCity' }));
+                    setSearchData(prev => ({ ...prev, checkOut: null }));
+                  }}
+                >
+                  <div className={`w-5 h-5 rounded-full border-[5px] transition-all bg-white ${flightSearchData.tripType === 'multiCity' ? 'border-[#1e2049]' : 'border-gray-300'}`}></div>
+                  <span className={`text-sm font-semibold transition-colors ${flightSearchData.tripType === 'multiCity' ? 'text-[#1e2049] font-bold' : 'text-gray-400 group-hover:text-gray-600'}`}>Multi City</span>
+                </label>
+              </div>
+            )}
             <form
               ref={searchFormRef}
               onSubmit={handleSearch}
-              className={`pr-2 static rounded-full border transition-all duration-300 ease-out flex items-center max-w-4xl mx-auto z-[90] overflow-visible relative 
+              className={`pr-2 static rounded-full border transition-all duration-300 ease-out flex items-center ${headerActiveType === 'flight' ? 'max-w-6xl' : 'max-w-4xl'} mx-auto z-[90] overflow-visible relative 
                 ${isHeaderSearchActive ? 'bg-[#EBEBEB] border-transparent scale-100 opacity-100' : 'bg-white shadow-md border-gray-200'} 
                 ${!isHeaderSearchActive && (isDetailOrContact || isSearchPage) ? 'scale-0 opacity-0 pointer-events-none h-0 p-0 overflow-hidden absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2' : ''}
               `}
@@ -776,7 +869,9 @@ const Navbar = () => {
                   onMouseLeave={() => setHeaderHoverSection(null)}
                 >
                   <div className="w-full">
-                    <div className="text-xs font-semibold text-gray-900">Where</div>
+                    <div className="text-xs font-semibold text-gray-900">
+                      {headerActiveType === 'flight' ? 'From' : 'Where'}
+                    </div>
                     <input
                       type="text"
                       value={searchData.location}
@@ -821,19 +916,30 @@ const Navbar = () => {
                                     // Save to localStorage for persistence
                                     const searchState = {
                                       location: newLocation,
+                                      locationTo: searchData.locationTo, // Added for 'To' field
                                       checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
                                       checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
-                                      guests: searchData.guests
+                                      guests: searchData.guests,
+                                      flightClass: searchData.flightClass // Added for Flight Class
                                     };
                                     localStorage.setItem('searchState', JSON.stringify(searchState));
                                     window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
 
                                     setShowHeaderLocationSuggestions(false);
-                                    // Auto-open calendar after location selection
-                                    setTimeout(() => {
-                                      setHeaderDateOpen(true);
-                                      setShowGuestsDropdown(false);
-                                    }, 100);
+
+                                    if (headerActiveType === 'flight') {
+                                      // Flight mode: Auto-open 'Where to' suggestions
+                                      setShowHeaderToSuggestions(true);
+                                      setTimeout(() => {
+                                        headerToInputRef.current?.focus();
+                                      }, 100);
+                                    } else {
+                                      // Standard mode: Auto-open calendar
+                                      setTimeout(() => {
+                                        setHeaderDateOpen(true);
+                                        setShowGuestsDropdown(false);
+                                      }, 100);
+                                    }
                                   }}
                                   className="w-full text-left px-4 py-3 hover:bg-pink-50 active:bg-pink-50 transition-colors flex items-start gap-3"
                                 >
@@ -862,9 +968,11 @@ const Navbar = () => {
                         setSearchData((prev) => ({ ...prev, location: '' }));
                         persistSearchState({
                           location: '',
+                          locationTo: searchData.locationTo, // Added for 'To' field
                           checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
                           checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
                           guests: searchData.guests || 1,
+                          flightClass: searchData.flightClass // Added for Flight Class
                         });
                         setShowHeaderLocationSuggestions(true);
                         setHeaderDateOpen(false);
@@ -879,9 +987,98 @@ const Navbar = () => {
                       <FiX className="w-4 h-4" />
                     </button>
                   )}
+
                 </div>
 
-                <div className={`h-8 w-px bg-gray-200 transition-opacity duration-300 ease-out ${hideHeaderSep1 ? 'opacity-0' : 'opacity-100'}`} />
+                {/* TO Field (Flight Only) */}
+                {headerActiveType === 'flight' && (
+                  <>
+                    <div className={`h-8 w-px bg-gray-200 transition-opacity duration-300 ease-out`} />
+                    <div
+                      ref={headerToRef}
+                      className="flex items-center flex-1 min-w-0 h-full px-7 py-3 transition-colors duration-300 ease-out relative rounded-full cursor-pointer z-10"
+                      onClick={() => {
+                        setIsHeaderSearchActive(true);
+                        setShowHeaderToSuggestions(true);
+                        setShowHeaderLocationSuggestions(false);
+                        setHeaderDateOpen(false);
+                        setShowGuestsDropdown(false);
+                      }}
+                      onMouseEnter={() => setHeaderHoverSection('to')}
+                      onMouseLeave={() => setHeaderHoverSection(null)}
+                    >
+                      <div className="w-full">
+                        <div className="text-xs font-semibold text-gray-900">To</div>
+                        <input
+                          type="text"
+                          value={searchData.locationTo || ''}
+                          onChange={(e) => setSearchData(prev => ({ ...prev, locationTo: e.target.value }))}
+                          placeholder="Search destinations"
+                          ref={headerToInputRef}
+                          onFocus={() => {
+                            setIsHeaderSearchActive(true);
+                            setShowHeaderToSuggestions(true);
+                            setShowHeaderLocationSuggestions(false);
+                            setHeaderDateOpen(false);
+                            setShowGuestsDropdown(false);
+                          }}
+                          className={`w-full bg-transparent text-sm text-gray-900 placeholder-gray-400 focus:outline-none cursor-pointer`}
+                        />
+                        {showHeaderToSuggestions && (
+                          <div
+                            ref={headerToSuggestionsRef}
+                            className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-xl border border-gray-100 max-h-96 overflow-y-auto z-[9999]"
+                          >
+                            <div className="px-4 pt-4 pb-2">
+                              <h3 className="text-sm font-semibold text-gray-900">Suggested</h3>
+                            </div>
+                            {locationSuggestionsData?.filter(loc => {
+                              const query = (searchData.locationTo || '').toLowerCase();
+                              const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ').toLowerCase();
+                              return !query || label.includes(query);
+                            }).slice(0, 8).map((loc, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const newLocation = loc.city || [loc.city, loc.state, loc.country].filter(Boolean).join(', ');
+                                  setSearchData(prev => ({ ...prev, locationTo: newLocation }));
+                                  setShowHeaderToSuggestions(false);
+                                  setTimeout(() => setHeaderDateOpen(true), 100);
+                                }}
+                                className="w-full text-left px-4 py-3 hover:bg-pink-50 active:bg-pink-50 transition-colors flex items-start gap-3"
+                              >
+                                <FiMapPin className="w-5 h-5 text-[#E41D57] mt-0.5" />
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-semibold text-gray-900">{loc.city}</span>
+                                  <span className="text-xs text-gray-500">{[loc.state, loc.country].filter(Boolean).join(', ')}</span>
+                                </div>
+                              </button>
+                            )) || <div className="px-4 py-3 text-sm text-gray-500">No locations found</div>}
+                          </div>
+                        )}
+                      </div>
+                      {/* Clear Button */}
+                      {searchData.locationTo && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSearchData(prev => ({ ...prev, locationTo: '' }));
+                            headerToInputRef.current?.focus();
+                          }}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 flex items-center justify-center"
+                        >
+                          <FiX className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                <div className={`h-8 w-px bg-gray-200 transition-opacity duration-300 ease-out`} />
 
                 <div
                   ref={headerDateRef}
@@ -896,42 +1093,78 @@ const Navbar = () => {
                   onMouseLeave={() => setHeaderHoverSection(null)}
                 >
                   <div className="w-full relative">
-                    <div className="text-xs font-semibold text-gray-900">When</div>
+                    <div className="text-xs font-semibold text-gray-900">
+                      {headerActiveType === 'flight'
+                        ? (['oneWay', 'multiCity'].includes(flightSearchData.tripType) ? 'Departure Date' : 'Departure & Return Date')
+                        : 'When'}
+                    </div>
                     <div className={`header-date-display text-sm text-gray-900 pointer-events-none ${effectiveHeaderSection === 'dates' && hasDates ? 'pr-8' : ''}`}>
                       {getDateRangeDisplay() || <span className="text-gray-400">Add dates</span>}
                     </div>
                     <DatePicker
                       selected={searchData.checkIn}
-                      onChange={(dates) => {
-                        const [start, end] = dates;
-                        setSearchData(prev => ({ ...prev, checkIn: start, checkOut: end }));
-                        // Save to localStorage for persistence
-                        const searchState = {
-                          location: searchData.location,
-                          checkIn: start ? formatDateLocal(start) : null,
-                          checkOut: end ? formatDateLocal(end) : null,
-                          guests: searchData.guests
-                        };
-                        localStorage.setItem('searchState', JSON.stringify(searchState));
-                        window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
+                      onChange={(update) => {
+                        const isOneWay = headerActiveType === 'flight' && ['oneWay', 'multiCity'].includes(flightSearchData.tripType);
 
-                        if (end) {
-                          // Both dates selected - close calendar and open guests
-                          setTimeout(() => {
-                            setHeaderDateOpen(false);
-                            setShowGuestsDropdown(true);
+                        if (isOneWay) {
+                          // Single date selection
+                          const date = update;
+                          setSearchData(prev => ({ ...prev, checkIn: date, checkOut: null }));
+
+                          // Persist
+                          const searchState = {
+                            location: searchData.location,
+                            locationTo: searchData.locationTo,
+                            checkIn: date ? formatDateLocal(date) : null,
+                            checkOut: null,
+                            guests: searchData.guests,
+                            flightClass: searchData.flightClass
+                          };
+                          localStorage.setItem('searchState', JSON.stringify(searchState));
+                          window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
+
+                          // Auto advance
+                          if (date) {
+                            setTimeout(() => {
+                              setHeaderDateOpen(false);
+                              setShowGuestsDropdown(true);
+                              setShowHeaderLocationSuggestions(false);
+                            }, 100);
+                          }
+                        } else {
+                          // Range selection
+                          const [start, end] = update;
+                          setSearchData(prev => ({ ...prev, checkIn: start, checkOut: end }));
+                          // Save to localStorage for persistence
+                          const searchState = {
+                            location: searchData.location,
+                            locationTo: searchData.locationTo, // Added for 'To' field
+                            checkIn: start ? formatDateLocal(start) : null,
+                            checkOut: end ? formatDateLocal(end) : null,
+                            guests: searchData.guests,
+                            flightClass: searchData.flightClass // Added for Flight Class
+                          };
+                          localStorage.setItem('searchState', JSON.stringify(searchState));
+                          window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
+
+                          if (end) {
+                            // Both dates selected - close calendar and open guests
+                            setTimeout(() => {
+                              setHeaderDateOpen(false);
+                              setShowGuestsDropdown(true);
+                              setShowHeaderLocationSuggestions(false);
+                            }, 100);
+                          } else if (start) {
+                            // Only check-in selected - keep calendar open
+                            setHeaderDateOpen(true);
                             setShowHeaderLocationSuggestions(false);
-                          }, 100);
-                        } else if (start) {
-                          // Only check-in selected - keep calendar open
-                          setHeaderDateOpen(true);
-                          setShowHeaderLocationSuggestions(false);
-                          setShowGuestsDropdown(false);
+                            setShowGuestsDropdown(false);
+                          }
                         }
                       }}
                       startDate={searchData.checkIn}
-                      endDate={searchData.checkOut}
-                      selectsRange
+                      endDate={headerActiveType === 'flight' && ['oneWay', 'multiCity'].includes(flightSearchData.tripType) ? null : searchData.checkOut}
+                      selectsRange={!(headerActiveType === 'flight' && ['oneWay', 'multiCity'].includes(flightSearchData.tripType))}
                       monthsShown={2}
                       minDate={new Date()}
                       placeholderText="Add dates"
@@ -978,9 +1211,11 @@ const Navbar = () => {
                         setSearchData((prev) => ({ ...prev, checkIn: null, checkOut: null }));
                         persistSearchState({
                           location: searchData.location,
+                          locationTo: searchData.locationTo, // Added for 'To' field
                           checkIn: null,
                           checkOut: null,
                           guests: searchData.guests || 1,
+                          flightClass: searchData.flightClass // Added for Flight Class
                         });
                         setHeaderDateOpen(true);
                         setShowHeaderLocationSuggestions(false);
@@ -1007,13 +1242,19 @@ const Navbar = () => {
                       setIsHeaderSearchActive(true);
                       setShowGuestsDropdown(true);
                       setShowHeaderLocationSuggestions(false);
+                      setShowHeaderToSuggestions(false); // Close 'To' suggestions
                       setHeaderDateOpen(false);
                     }}
                     className="text-left flex-1 min-w-0 px-3"
                   >
-                    <div className="text-xs font-semibold text-gray-900">Who</div>
-                    <div className={`text-sm text-gray-900 ${effectiveHeaderSection === 'guests' && hasGuests ? 'pr-8' : ''}`}>
-                      {totalGuests > 1 ? `${totalGuests} guests` : 'Add guests'}{guestCounts.pets ? `, ${guestCounts.pets} pet${guestCounts.pets > 1 ? 's' : ''}` : ''}
+                    <div className="text-xs font-semibold text-gray-900">
+                      {headerActiveType === 'flight' ? 'Traveller & Class' : 'Who'}
+                    </div>
+                    <div className={`text-[10px] text-gray-900 ${effectiveHeaderSection === 'guests' && hasGuests ? 'pr-8' : ''}`}>
+                      {headerActiveType === 'flight'
+                        ? `${searchData.guests} Traveler, ${searchData.flightClass}`
+                        : (totalGuests > 1 ? `${totalGuests} guests` : 'Add guests') + (guestCounts.pets ? `, ${guestCounts.pets} pet${guestCounts.pets > 1 ? 's' : ''}` : '')
+                      }
                     </div>
                   </div>
 
@@ -1025,12 +1266,14 @@ const Navbar = () => {
                         e.stopPropagation();
                         setIsHeaderSearchActive(true);
                         setGuestCounts({ adults: 1, children: 0, infants: 0, pets: 0 });
-                        setSearchData((prev) => ({ ...prev, guests: 1 }));
+                        setSearchData((prev) => ({ ...prev, guests: 1, flightClass: 'Economy' }));
                         persistSearchState({
                           location: searchData.location,
+                          locationTo: searchData.locationTo, // Added for 'To' field
                           checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
                           checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
                           guests: 1,
+                          flightClass: 'Economy' // Added for Flight Class
                         });
                         setShowGuestsDropdown(true);
                         setShowHeaderLocationSuggestions(false);
@@ -1058,43 +1301,91 @@ const Navbar = () => {
                   </button>
 
                   {showGuestsDropdown && (
-                    <div className="absolute right-m62 top-full mt-2 w-[420px] bg-white rounded-2xl shadow-xl border border-gray-100 z-[200] p-6 space-y-6">
-                      {[
-                        { key: 'adults', label: 'Adults', subtitle: 'Ages 13 or above' },
-                        { key: 'children', label: 'Children', subtitle: 'Ages 2 – 12' },
-                        { key: 'infants', label: 'Infants', subtitle: 'Under 2' },
-                        { key: 'pets', label: 'Pets', subtitle: 'Bringing a service animal?' },
-                      ].map((item) => (
-                        <div key={item.key} className="flex items-center justify-between">
-                          <div>
-                            <div className="text-base font-semibold text-gray-900">{item.label}</div>
-                            <div className="text-sm text-gray-500">{item.subtitle}</div>
+                    <div className="absolute right-0 top-full mt-2 w-[400px] bg-white rounded-2xl shadow-xl border border-gray-100 z-[200] p-6 space-y-6 text-left">
+                      {headerActiveType === 'flight' ? (
+                        <>
+                          {/* Flight specific travelers */}
+                          {[
+                            { key: 'adults', label: 'Adults', subtitle: 'Age 12+' },
+                            { key: 'children', label: 'Children', subtitle: 'Age 2-11' },
+                            { key: 'infants', label: 'Infants', subtitle: 'Under 2' }
+                          ].map((item) => (
+                            <div key={item.key} className="flex items-center justify-between">
+                              <div>
+                                <div className="text-base font-semibold text-gray-900">{item.label}</div>
+                                <div className="text-sm text-gray-500">{item.subtitle}</div>
+                              </div>
+                              <div className="flex items-center gap-4">
+                                <button
+                                  type="button"
+                                  onClick={() => updateGuests(item.key, -1)}
+                                  className={`w-9 h-9 rounded-full border flex items-center justify-center transition-colors ${guestCounts[item.key] > (item.key === 'adults' ? 1 : 0) ? 'text-gray-700 border-gray-300 bg-white hover:bg-gray-100' : 'text-gray-300 border-gray-200 bg-gray-50 cursor-not-allowed'}`}
+                                  disabled={guestCounts[item.key] <= (item.key === 'adults' ? 1 : 0)}
+                                >
+                                  <FiMinus className="w-4 h-4" />
+                                </button>
+                                <span className="min-w-[24px] text-center text-base font-medium text-gray-900">{guestCounts[item.key]}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => updateGuests(item.key, 1)}
+                                  className="w-9 h-9 rounded-full border border-gray-300 bg-white flex items-center justify-center text-gray-700 hover:bg-gray-100 transition-colors"
+                                >
+                                  <FiPlus className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+
+                          <div className="border-t border-gray-200 my-4 pt-4">
+                            <div className="text-base font-semibold text-gray-900 mb-3">Cabin Class</div>
+                            <div className="grid grid-cols-2 gap-3">
+                              {['Economy', 'Business', 'First Class'].map(cls => (
+                                <button
+                                  key={cls}
+                                  type="button"
+                                  onClick={() => setSearchData(prev => ({ ...prev, flightClass: cls }))}
+                                  className={`px-3 py-2 rounded-lg text-sm font-medium border transition-all ${searchData.flightClass === cls ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-700 hover:border-gray-900'}`}
+                                >
+                                  {cls}
+                                </button>
+                              ))}
+                            </div>
                           </div>
-                          <div className="flex items-center gap-4">
-                            <button
-                              type="button"
-                              onClick={() => updateGuests(item.key, -1)}
-                              className={`w-9 h-9 rounded-full border flex items-center justify-center transition-colors ${guestCounts[item.key] > (item.key === 'adults' ? 1 : 0)
-                                ? 'text-gray-700 border-gray-300 bg-white hover:bg-gray-100'
-                                : 'text-gray-300 border-gray-200 bg-gray-50 cursor-not-allowed'
-                                }`}
-                              disabled={guestCounts[item.key] <= (item.key === 'adults' ? 1 : 0)}
-                            >
-                              <FiMinus className="w-4 h-4" />
-                            </button>
-                            <span className="min-w-[24px] text-center text-base font-medium text-gray-900">
-                              {guestCounts[item.key]}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => updateGuests(item.key, 1)}
-                              className="w-9 h-9 rounded-full border border-gray-300 bg-white flex items-center justify-center text-gray-700 hover:bg-gray-100 transition-colors"
-                            >
-                              <FiPlus className="w-4 h-4" />
-                            </button>
+                        </>
+                      ) : (
+                        /* Standard Guests */
+                        [
+                          { key: 'adults', label: 'Adults', subtitle: 'Ages 13 or above' },
+                          { key: 'children', label: 'Children', subtitle: 'Ages 2 – 12' },
+                          { key: 'infants', label: 'Infants', subtitle: 'Under 2' },
+                          { key: 'pets', label: 'Pets', subtitle: 'Bringing a service animal?' },
+                        ].map((item) => (
+                          <div key={item.key} className="flex items-center justify-between">
+                            <div>
+                              <div className="text-base font-semibold text-gray-900">{item.label}</div>
+                              <div className="text-sm text-gray-500">{item.subtitle}</div>
+                            </div>
+                            <div className="flex items-center gap-4">
+                              <button
+                                type="button"
+                                onClick={() => updateGuests(item.key, -1)}
+                                className={`w-9 h-9 rounded-full border flex items-center justify-center transition-colors ${guestCounts[item.key] > (item.key === 'adults' ? 1 : 0) ? 'text-gray-700 border-gray-300 bg-white hover:bg-gray-100' : 'text-gray-300 border-gray-200 bg-gray-50 cursor-not-allowed'}`}
+                                disabled={guestCounts[item.key] <= (item.key === 'adults' ? 1 : 0)}
+                              >
+                                <FiMinus className="w-4 h-4" />
+                              </button>
+                              <span className="min-w-[24px] text-center text-base font-medium text-gray-900">{guestCounts[item.key]}</span>
+                              <button
+                                type="button"
+                                onClick={() => updateGuests(item.key, 1)}
+                                className="w-9 h-9 rounded-full border border-gray-300 bg-white flex items-center justify-center text-gray-700 hover:bg-gray-100 transition-colors"
+                              >
+                                <FiPlus className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))
+                      )}
                     </div>
                   )}
                 </div>
@@ -1105,88 +1396,90 @@ const Navbar = () => {
         )}
 
         {/* Mobile Navigation */}
-        {isMenuOpen && (
-          <div className="md:hidden">
-            <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 bg-white border-t">
-              {/* Public Navigation */}
-              {navLinks.map((link) => (
-                <Link
-                  key={link.name}
-                  to={link.path}
-                  className={`block px-3 py-2 text-base font-medium transition-colors duration-200 ${isActive(link.path)
-                    ? 'text-primary-600 bg-primary-50'
-                    : 'text-gray-700 hover:text-primary-600 hover:bg-gray-50'
-                    }`}
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  {link.name}
-                </Link>
-              ))}
+        {
+          isMenuOpen && (
+            <div className="md:hidden">
+              <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 bg-white border-t">
+                {/* Public Navigation */}
+                {navLinks.map((link) => (
+                  <Link
+                    key={link.name}
+                    to={link.path}
+                    className={`block px-3 py-2 text-base font-medium transition-colors duration-200 ${isActive(link.path)
+                      ? 'text-primary-600 bg-primary-50'
+                      : 'text-gray-700 hover:text-primary-600 hover:bg-gray-50'
+                      }`}
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    {link.name}
+                  </Link>
+                ))}
 
-              {/* User Role-based menu for mobile */}
-              {isAuthenticated && (
-                <>
-                  <div className="border-t border-gray-200 my-2"></div>
-                  <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    {isAdmin() ? 'Admin Panel' : isPropertyOwner() ? 'Property Owner' : 'My Account'}
-                  </div>
-                  {getRoleBasedMenu().map((item) => (
-                    <Link
-                      key={item.name}
-                      to={item.path}
-                      className={`block px-3 py-2 text-base font-medium transition-colors duration-200 ${isActive(item.path)
-                        ? 'text-primary-600 bg-primary-50'
-                        : 'text-gray-700 hover:text-primary-600 hover:bg-gray-50'
-                        }`}
-                      onClick={() => setIsMenuOpen(false)}
-                    >
-                      {item.name}
-                    </Link>
-                  ))}
-                </>
-              )}
-
-              {/* Mobile Auth Section */}
-              <div className="pt-4 border-t border-gray-200">
-                {isAuthenticated ? (
-                  <div className="space-y-2">
-                    <div className="px-3 py-2 text-sm text-gray-500">
-                      {user?.email}
+                {/* User Role-based menu for mobile */}
+                {isAuthenticated && (
+                  <>
+                    <div className="border-t border-gray-200 my-2"></div>
+                    <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      {isAdmin() ? 'Admin Panel' : isPropertyOwner() ? 'Property Owner' : 'My Account'}
                     </div>
-                    <button
-                      onClick={handleLogout}
-                      className="flex items-center w-full px-3 py-2 text-base font-medium text-gray-700 hover:text-primary-600 hover:bg-gray-50"
-                    >
-                      <FiLogOut className="w-4 h-4 mr-2" />
-                      Logout
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <Link
-                      to="/login"
-                      className="block px-3 py-2 text-base font-medium text-gray-700 hover:text-primary-600 hover:bg-gray-50"
-                      onClick={() => setIsMenuOpen(false)}
-                    >
-                      Login
-                    </Link>
-                    {settings?.registration_enabled !== false && (
+                    {getRoleBasedMenu().map((item) => (
                       <Link
-                        to="/register"
-                        className="block px-3 py-2 text-base font-medium bg-primary-600 text-white rounded-md hover:bg-primary-700"
+                        key={item.name}
+                        to={item.path}
+                        className={`block px-3 py-2 text-base font-medium transition-colors duration-200 ${isActive(item.path)
+                          ? 'text-primary-600 bg-primary-50'
+                          : 'text-gray-700 hover:text-primary-600 hover:bg-gray-50'
+                          }`}
                         onClick={() => setIsMenuOpen(false)}
                       >
-                        Sign Up
+                        {item.name}
                       </Link>
-                    )}
-                  </div>
+                    ))}
+                  </>
                 )}
+
+                {/* Mobile Auth Section */}
+                <div className="pt-4 border-t border-gray-200">
+                  {isAuthenticated ? (
+                    <div className="space-y-2">
+                      <div className="px-3 py-2 text-sm text-gray-500">
+                        {user?.email}
+                      </div>
+                      <button
+                        onClick={handleLogout}
+                        className="flex items-center w-full px-3 py-2 text-base font-medium text-gray-700 hover:text-primary-600 hover:bg-gray-50"
+                      >
+                        <FiLogOut className="w-4 h-4 mr-2" />
+                        Logout
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Link
+                        to="/login"
+                        className="block px-3 py-2 text-base font-medium text-gray-700 hover:text-primary-600 hover:bg-gray-50"
+                        onClick={() => setIsMenuOpen(false)}
+                      >
+                        Login
+                      </Link>
+                      {settings?.registration_enabled !== false && (
+                        <Link
+                          to="/register"
+                          className="block px-3 py-2 text-base font-medium bg-primary-600 text-white rounded-md hover:bg-primary-700"
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          Sign Up
+                        </Link>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        )}
-      </div>
-    </nav>
+          )
+        }
+      </div >
+    </nav >
   );
 };
 

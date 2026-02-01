@@ -14,8 +14,10 @@ const StickySearchHeader = ({
   initialCheckInDate = null,
   initialCheckOutDate = null,
   initialGuests = 1,
+
   isVisible = true,
-  showBackButton = false
+  showBackButton = false,
+  initialPropertyType = ''
 }) => {
   const navigate = useNavigate();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -25,13 +27,13 @@ const StickySearchHeader = ({
   const [desktopHoverSection, setDesktopHoverSection] = useState(null);
   const [desktopActivePillStyle, setDesktopActivePillStyle] = useState({ x: 0, w: 0, visible: false });
   const [mobileSearchStep, setMobileSearchStep] = useState('location'); // 'location', 'dates', 'guests'
-  const [activePropertyType, setActivePropertyType] = useState('');
   const [isMobileDatesPickerOpen, setIsMobileDatesPickerOpen] = useState(false);
   const dropdownRef = useRef(null);
   const locationDropdownRef = useRef(null);
   const mobileSearchRef = useRef(null);
   const searchPillRef = useRef(null);
   const desktopSearchRef = useRef(null);
+  const headerOuterRef = useRef(null);
   const desktopPillSegmentsRef = useRef(null);
   const whereBtnRef = useRef(null);
   const whenBtnRef = useRef(null);
@@ -51,7 +53,8 @@ const StickySearchHeader = ({
           location: parsed.location || '',
           checkIn: parsed.checkIn ? new Date(parsed.checkIn) : null,
           checkOut: parsed.checkOut ? new Date(parsed.checkOut) : null,
-          guests: parsed.guests || 1
+          guests: parsed.guests || 1,
+          propertyType: parsed.propertyType || ''
         };
       }
     } catch (error) {
@@ -61,12 +64,26 @@ const StickySearchHeader = ({
       location: '',
       checkIn: null,
       checkOut: null,
-      guests: 1
+      guests: 1,
+      propertyType: ''
     };
   };
 
   const [searchData, setSearchData] = useState(loadSearchState);
+  const [activePropertyType, setActivePropertyType] = useState(initialPropertyType || searchData.propertyType || '');
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
+
+  // Flight Search State
+  const [flightSearchData, setFlightSearchData] = useState({
+    from: 'Dhaka', fromCode: 'DAC', fromFull: 'DAC, Hazrat Shahjalal International Airport',
+    to: "Cox's Bazar", toCode: 'CXB', toFull: "CXB, Cox's Bazar Airport",
+    departDate: new Date('2026-02-12'),
+    returnDate: null,
+    travelers: 1,
+    flightClass: 'Economy',
+    tripType: 'oneWay'
+  });
+  const [flightActiveSection, setFlightActiveSection] = useState(null); // 'from', 'to', 'depart', 'return', 'travelers'
 
   // Fetch distinct property locations for suggestions (cached globally)
   const { data: locationSuggestionsData } = useQuery(
@@ -82,7 +99,14 @@ const StickySearchHeader = ({
     'home-property-types',
     () => api.get('/properties/property-types/list'),
     {
-      select: (response) => (response.data?.data?.propertyTypes || []).filter(pt => pt.is_active !== false),
+      select: (response) => {
+        const types = (response.data?.data?.propertyTypes || []).filter(pt => pt.is_active !== false);
+        // Manually inject Flight if not present
+        if (!types.find(t => t.name.toLowerCase() === 'flight')) {
+          types.push({ id: 9999, name: 'Flight', is_active: true });
+        }
+        return types;
+      },
     }
   );
 
@@ -94,7 +118,12 @@ const StickySearchHeader = ({
     if (normalized.includes('apartment') || normalized.includes('villa') || normalized.includes('house') || normalized.includes('home')) {
       imgSrc = '/images/nav-icon-apartment.png';
     } else if (normalized.includes('hotel')) {
+    } else if (normalized.includes('hotel')) {
       imgSrc = '/images/nav-icon-hotel.png';
+    } else if (normalized.includes('flight')) {
+      return (
+        <span className="text-2xl">✈️</span>
+      );
     }
 
     return (
@@ -142,11 +171,12 @@ const StickySearchHeader = ({
         searchPillRef.current &&
         !searchPillRef.current.contains(event.target) &&
         !event.target.closest('.react-datepicker-popper') &&
-        !event.target.closest('.react-datepicker')
+        !event.target.closest('.react-datepicker') &&
+        !(headerOuterRef.current && headerOuterRef.current.contains(event.target))
       ) {
-        setShowDesktopExpanded(false);
         setDesktopActiveSection(null);
         setDesktopHoverSection(null);
+        setFlightActiveSection(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -241,6 +271,7 @@ const StickySearchHeader = ({
     if (searchData.checkIn) params.append('check_in_date', formatDateLocal(searchData.checkIn));
     if (searchData.checkOut) params.append('check_out_date', formatDateLocal(searchData.checkOut));
     if (searchData.guests) params.append('min_guests', searchData.guests);
+
     if (activePropertyType) params.append('property_type', activePropertyType);
 
     // Save search state to localStorage for persistence
@@ -248,7 +279,8 @@ const StickySearchHeader = ({
       location: searchData.location,
       checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
       checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
-      guests: searchData.guests
+      guests: searchData.guests,
+      propertyType: activePropertyType
     };
     localStorage.setItem('searchState', JSON.stringify(searchState));
 
@@ -284,7 +316,11 @@ const StickySearchHeader = ({
       checkOut: parsedCheckOut,
       guests: initialGuests ? parseInt(initialGuests) : (parsedSaved?.guests || 1)
     });
-  }, [initialLocation, initialCheckInDate, initialCheckOutDate, initialGuests]);
+
+    if (initialPropertyType !== undefined) {
+      setActivePropertyType(initialPropertyType);
+    }
+  }, [initialLocation, initialCheckInDate, initialCheckOutDate, initialGuests, initialPropertyType]);
 
   // Listen for search state changes from other components (Navbar, Home)
   useEffect(() => {
@@ -434,9 +470,41 @@ const StickySearchHeader = ({
     return totalGuests > 1 ? `${totalGuests} guests` : 'Add guests';
   };
 
+  const handlePropertyTypeClick = (typeName) => {
+    const normalized = (typeName || '').toLowerCase();
+    const newVal = activePropertyType === normalized ? '' : normalized;
+    setActivePropertyType(newVal);
+
+    if (newVal === 'flight') {
+      setFlightActiveSection('from');
+      return;
+    }
+
+    // Immediate search when clicking tab (for other types like stays)
+    const params = new URLSearchParams();
+    if (searchData.location) params.append('city', searchData.location);
+    if (searchData.checkIn) params.append('check_in_date', formatDateLocal(searchData.checkIn));
+    if (searchData.checkOut) params.append('check_out_date', formatDateLocal(searchData.checkOut));
+    if (searchData.guests) params.append('min_guests', searchData.guests);
+    if (newVal) params.append('property_type', newVal);
+
+    // Save to localStorage
+    const searchState = {
+      location: searchData.location,
+      checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
+      checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
+      guests: searchData.guests,
+      propertyType: newVal
+    };
+    localStorage.setItem('searchState', JSON.stringify(searchState));
+
+    navigate(`/search?${params.toString()}`);
+  };
+
   return (
     <>
       <div
+        ref={headerOuterRef}
         className={`fixed top-0 left-0 right-0 z-[100] bg-[#F9FAFB] border-b border-gray-200 transition-all duration-500 ease-in-out ${isVisible ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'
           }`}
       >
@@ -725,6 +793,296 @@ const StickySearchHeader = ({
             {/* Desktop compact pill + expandable form */}
             <div className="hidden md:flex flex-1 justify-center mx-4 min-w-0">
               {(() => {
+                // *** FLIGHT SEARCH FORM ***
+                if (activePropertyType === 'flight') {
+                  return (
+                    <div ref={searchPillRef} className="flex flex-col w-full max-w-[1240px] animate-fadeIn mx-auto relative z-[90]">
+                      {/* Trip Type Selection */}
+                      <div className="flex items-center gap-6 mb-4 pl-6">
+                        <label
+                          className="flex items-center gap-2 cursor-pointer group"
+                          onClick={() => setFlightSearchData(prev => ({ ...prev, tripType: 'oneWay', returnDate: null }))}
+                        >
+                          <div className={`w-5 h-5 rounded-full border-[5px] transition-all bg-white ${flightSearchData.tripType === 'oneWay' ? 'border-[#1e2049]' : 'border-gray-300'}`}></div>
+                          <span className={`text-sm font-bold transition-colors ${flightSearchData.tripType === 'oneWay' ? 'text-[#1e2049]' : 'text-gray-400 group-hover:text-gray-600'}`}>One Way</span>
+                        </label>
+                        <label
+                          className="flex items-center gap-2 cursor-pointer group"
+                          onClick={() => setFlightSearchData(prev => ({ ...prev, tripType: 'roundTrip' }))}
+                        >
+                          <div className={`w-5 h-5 rounded-full border-[5px] transition-all bg-white ${flightSearchData.tripType === 'roundTrip' ? 'border-[#1e2049]' : 'border-gray-300'}`}></div>
+                          <span className={`text-sm font-bold transition-colors ${flightSearchData.tripType === 'roundTrip' ? 'text-[#1e2049]' : 'text-gray-400 group-hover:text-gray-600'}`}>Round Way</span>
+                        </label>
+                        <label
+                          className="flex items-center gap-2 cursor-pointer group"
+                          onClick={() => setFlightSearchData(prev => ({ ...prev, tripType: 'multiCity', returnDate: null }))}
+                        >
+                          <div className={`w-5 h-5 rounded-full border-[5px] transition-all bg-white ${flightSearchData.tripType === 'multiCity' ? 'border-[#1e2049]' : 'border-gray-300'}`}></div>
+                          <span className={`text-sm font-semibold transition-colors ${flightSearchData.tripType === 'multiCity' ? 'text-[#1e2049] font-bold' : 'text-gray-400 group-hover:text-gray-600'}`}>Multi City</span>
+                        </label>
+                      </div>
+
+                      <div className={`flex items-center shadow-md border border-gray-200 rounded-full w-full max-w-6xl mx-auto transition-all duration-300 ease-out relative z-[90] ${flightActiveSection ? 'bg-[#EBEBEB]' : 'bg-white'}`}>
+
+                        {/* FROM Segment */}
+                        <div
+                          className={`flex-1 relative h-[66px] flex flex-col justify-center px-6 cursor-pointer rounded-full transition-all ${flightActiveSection === 'from' ? 'bg-white shadow-lg z-30' : 'hover:bg-gray-100'}`}
+                          onClick={(e) => { e.stopPropagation(); setFlightActiveSection('from'); }}
+                        >
+                          <div className="text-xs font-bold text-gray-900">From</div>
+                          {flightActiveSection === 'from' ? (
+                            <input
+                              autoFocus
+                              className="w-full text-sm font-semibold text-gray-900 bg-transparent outline-none truncate placeholder-gray-400"
+                              value={flightSearchData.from}
+                              onChange={(e) => setFlightSearchData(prev => ({ ...prev, from: e.target.value }))}
+                              placeholder="City or Airport"
+                            />
+                          ) : (
+                            <div className="text-sm font-semibold text-gray-900 truncate">{flightSearchData.from || 'Select City'}</div>
+                          )}
+                          <div className="text-[10px] text-gray-500 truncate">{flightSearchData.fromCode}</div>
+
+                          {/* Swap Icon (Absolute between From/To) */}
+                          <div
+                            className="absolute -right-3 top-1/2 -translate-y-1/2 z-40 w-6 h-6 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center cursor-pointer hover:scale-110 hover:bg-gray-50 text-gray-600"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFlightSearchData(prev => ({
+                                ...prev,
+                                from: prev.to, fromCode: prev.toCode, fromFull: prev.toFull,
+                                to: prev.from, toCode: prev.fromCode, toFull: prev.fromFull
+                              }));
+                            }}
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                          </div>
+
+                          {/* Suggestions Dropdown */}
+                          {flightActiveSection === 'from' && (
+                            <div className="absolute top-[calc(100%+12px)] left-0 w-[350px] bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-50">
+                              <div className="px-4 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Suggested Airports</div>
+                              {locationSuggestionsData?.filter(l => !flightSearchData.from || (l.city || '').toLowerCase().includes(flightSearchData.from.toLowerCase())).slice(0, 5).map((loc, idx) => (
+                                <div
+                                  key={idx}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setFlightSearchData(prev => ({
+                                      ...prev,
+                                      from: loc.city,
+                                      fromCode: (loc.city || '').substring(0, 3).toUpperCase(),
+                                      fromFull: `${loc.city}, ${loc.country}`
+                                    }));
+                                    setFlightActiveSection('to');
+                                  }}
+                                  className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 cursor-pointer"
+                                >
+                                  <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500"><FiMapPin className="w-4 h-4" /></div>
+                                  <div>
+                                    <div className="font-bold text-sm text-gray-900">{loc.city}</div>
+                                    <div className="text-[10px] text-gray-500">{loc.country}</div>
+                                  </div>
+                                  <div className="ml-auto text-xs font-bold text-gray-400">{(loc.city || '').substring(0, 3).toUpperCase()}</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Divider */}
+                        <div className="h-8 w-px bg-gray-200" />
+
+                        {/* TO Segment */}
+                        <div
+                          className={`flex-1 relative h-[66px] flex flex-col justify-center px-6 cursor-pointer rounded-full transition-all ${flightActiveSection === 'to' ? 'bg-white shadow-lg z-30' : 'hover:bg-gray-100'}`}
+                          onClick={(e) => { e.stopPropagation(); setFlightActiveSection('to'); }}
+                        >
+                          <div className="text-xs font-bold text-gray-900">To</div>
+                          {flightActiveSection === 'to' ? (
+                            <input
+                              autoFocus
+                              className="w-full text-sm font-semibold text-gray-900 bg-transparent outline-none truncate placeholder-gray-400"
+                              value={flightSearchData.to}
+                              onChange={(e) => setFlightSearchData(prev => ({ ...prev, to: e.target.value }))}
+                              placeholder="City or Airport"
+                            />
+                          ) : (
+                            <div className="text-sm font-semibold text-gray-900 truncate">{flightSearchData.to || 'Select City'}</div>
+                          )}
+                          <div className="text-[10px] text-gray-500 truncate">{flightSearchData.toCode}</div>
+
+                          {/* Suggestions Dropdown TO */}
+                          {flightActiveSection === 'to' && (
+                            <div className="absolute top-[calc(100%+12px)] left-0 w-[350px] bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-50">
+                              <div className="px-4 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Suggested Airports</div>
+                              {locationSuggestionsData?.filter(l => !flightSearchData.to || (l.city || '').toLowerCase().includes(flightSearchData.to.toLowerCase())).slice(0, 5).map((loc, idx) => (
+                                <div
+                                  key={idx}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setFlightSearchData(prev => ({
+                                      ...prev,
+                                      to: loc.city,
+                                      toCode: (loc.city || '').substring(0, 3).toUpperCase(),
+                                      toFull: `${loc.city}, ${loc.country}`
+                                    }));
+                                    setFlightActiveSection('depart');
+                                  }}
+                                  className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 cursor-pointer"
+                                >
+                                  <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500"><FiMapPin className="w-4 h-4" /></div>
+                                  <div>
+                                    <div className="font-bold text-sm text-gray-900">{loc.city}</div>
+                                    <div className="text-[10px] text-gray-500">{loc.country}</div>
+                                  </div>
+                                  <div className="ml-auto text-xs font-bold text-gray-400">{(loc.city || '').substring(0, 3).toUpperCase()}</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Divider */}
+                        <div className="h-8 w-px bg-gray-200" />
+
+                        {/* Dates Segment */}
+                        <div
+                          className={`flex-[1.2] relative h-[66px] flex flex-col justify-center px-6 cursor-pointer rounded-full transition-all ${['depart', 'return'].includes(flightActiveSection) ? 'bg-white shadow-lg z-30' : 'hover:bg-gray-100'}`}
+                          onClick={(e) => { e.stopPropagation(); setFlightActiveSection('depart'); }}
+                        >
+                          <div className="text-xs font-bold text-gray-900">
+                            {['oneWay', 'multiCity'].includes(flightSearchData.tripType) ? 'Departure Date' : 'Departure & Return Date'}
+                          </div>
+                          <div className="text-sm font-semibold text-gray-900 truncate">
+                            {flightSearchData.departDate ? flightSearchData.departDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Add'}
+                            {flightSearchData.tripType !== 'oneWay' && (
+                              <>
+                                {' - '}
+                                {flightSearchData.returnDate ? flightSearchData.returnDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Add'}
+                              </>
+                            )}
+                          </div>
+
+                          {/* DatePopups */}
+                          {['depart', 'return'].includes(flightActiveSection) && (
+                            <div className="absolute top-[calc(100%+12px)] left-1/2 -translate-x-1/2 bg-white rounded-2xl shadow-xl p-4 border border-gray-100 z-[60] flex gap-4" onClick={(e) => e.stopPropagation()}>
+                              <div>
+                                <div className="text-xs font-bold text-gray-500 mb-2 text-center">Departure</div>
+                                <DatePicker
+                                  selected={flightSearchData.departDate}
+                                  onChange={(date) => {
+                                    setFlightSearchData(prev => ({ ...prev, departDate: date }));
+                                    if (['oneWay', 'multiCity'].includes(flightSearchData.tripType)) {
+                                      setFlightActiveSection('travelers');
+                                    } else {
+                                      setFlightActiveSection('return');
+                                    }
+                                  }}
+                                  minDate={new Date()}
+                                  monthsShown={1}
+                                  inline
+                                />
+                              </div>
+                              {!['oneWay', 'multiCity'].includes(flightSearchData.tripType) && (
+                                <div className="border-l border-gray-100 pl-4">
+                                  <div className="text-xs font-bold text-gray-500 mb-2 text-center">Return</div>
+                                  <DatePicker
+                                    selected={flightSearchData.returnDate}
+                                    onChange={(date) => {
+                                      setFlightSearchData(prev => ({ ...prev, returnDate: date }));
+                                      setFlightActiveSection('travelers');
+                                    }}
+                                    minDate={flightSearchData.departDate || new Date()}
+                                    monthsShown={1}
+                                    inline
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Divider */}
+                        <div className="h-8 w-px bg-gray-200" />
+
+                        {/* Travelers Segment */}
+                        <div
+                          className={`flex-1 relative h-[66px] flex flex-col justify-center px-6 cursor-pointer rounded-full transition-all ${flightActiveSection === 'travelers' ? 'bg-white shadow-lg z-30' : 'hover:bg-gray-100'}`}
+                          onClick={(e) => { e.stopPropagation(); setFlightActiveSection('travelers'); }}
+                        >
+                          <div className="text-xs font-bold text-gray-900">Traveller & Class</div>
+                          <div className="text-[10px] text-gray-900 truncate">
+                            {flightSearchData.travelers} Traveler, {flightSearchData.flightClass}
+                          </div>
+
+                          {/* Travelers Dropdown */}
+                          {flightActiveSection === 'travelers' && (
+                            <div className="absolute top-[calc(100%+12px)] right-0 w-[350px] bg-white rounded-2xl shadow-xl border border-gray-100 p-6 z-[60] cursor-default" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-between mb-6">
+                                <div>
+                                  <div className="font-bold text-gray-900">Adults</div>
+                                  <div className="text-xs text-gray-500">Age 12+</div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <button
+                                    className={`w-8 h-8 rounded-full border flex items-center justify-center ${flightSearchData.travelers <= 1 ? 'border-gray-200 text-gray-300' : 'border-gray-400 text-gray-600 hover:border-black hover:text-black'}`}
+                                    onClick={() => setFlightSearchData(prev => ({ ...prev, travelers: Math.max(1, prev.travelers - 1) }))}
+                                    disabled={flightSearchData.travelers <= 1}
+                                  >
+                                    <FiMinus className="w-4 h-4" />
+                                  </button>
+                                  <span className="font-bold text-base min-w-[20px] text-center">{flightSearchData.travelers}</span>
+                                  <button
+                                    className="w-8 h-8 rounded-full border border-gray-400 text-gray-600 hover:border-black hover:text-black flex items-center justify-center"
+                                    onClick={() => setFlightSearchData(prev => ({ ...prev, travelers: Math.min(9, prev.travelers + 1) }))}
+                                  >
+                                    <FiPlus className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="h-px bg-gray-200 my-4" />
+                              <div>
+                                <div className="font-bold text-gray-900 mb-3">Cabin Class</div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {['Economy', 'Business', 'First Class'].map(cls => (
+                                    <button
+                                      key={cls}
+                                      className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${flightSearchData.flightClass === cls ? 'border-black bg-gray-900 text-white' : 'border-gray-200 hover:border-gray-400 text-gray-700'}`}
+                                      onClick={() => setFlightSearchData(prev => ({ ...prev, flightClass: cls }))}
+                                    >
+                                      {cls}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Search Button */}
+                        <button
+                          className="w-12 h-12 rounded-full bg-[#E41D57] hover:bg-[#c01b4b] text-white shadow-md flex items-center justify-center transition-all hover:scale-105 active:scale-95 m-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const params = new URLSearchParams();
+                            params.set('property_type', 'flight');
+                            params.set('from', flightSearchData.fromCode || 'DAC');
+                            params.set('to', flightSearchData.toCode || 'CXB');
+                            params.set('depart', flightSearchData.departDate ? flightSearchData.departDate.toISOString() : new Date().toISOString());
+                            if (flightSearchData.returnDate) params.set('return', flightSearchData.returnDate.toISOString());
+                            params.set('travelers', flightSearchData.travelers);
+                            params.set('class', flightSearchData.flightClass);
+                            navigate(`/search?${params.toString()}`);
+                          }}
+                        >
+                          <FiSearch className="w-5 h-5 font-bold" />
+                        </button>
+                      </div>
+                      );                    </div>
+                  );
+                }
+
+                // *** DEFAULT STAYS SEARCH FORM (Existing) ***
                 const effectiveSection = desktopHoverSection || desktopActiveSection;
                 const hideSep1 = effectiveSection === 'location' || effectiveSection === 'dates';
                 const hideSep2 = effectiveSection === 'dates' || effectiveSection === 'guests';
@@ -986,6 +1344,32 @@ const StickySearchHeader = ({
               </div>
             </div>
           </div>
+          {/* Desktop Property Types Strip - Visible ONLY when search header is ACTIVE (expanded) */}
+          {desktopActiveSection && (
+            <div className="hidden md:block border-t border-gray-100 bg-white animate-fadeIn">
+              <div className="max-w-7xl mx-auto px-4 lg:px-8">
+                <div className="flex items-center gap-8 py-3 overflow-x-auto scrollbar-hide">
+                  {propertyTypes && propertyTypes.map((type) => {
+                    const isActive = activePropertyType === (type.name || '').toLowerCase();
+                    return (
+                      <button
+                        key={type.id}
+                        onClick={() => handlePropertyTypeClick(type.name)}
+                        className={`flex flex-col items-center gap-2 min-w-max group cursor-pointer transition-all duration-200 ${isActive ? 'opacity-100' : 'opacity-60 hover:opacity-80'}`}
+                      >
+                        <div className={`w-6 h-6 object-contain transition-all duration-300 ${isActive ? 'grayscale-0' : 'grayscale'}`}>
+                          {getTypeIcon(type.name, isActive)}
+                        </div>
+                        <span className={`text-xs font-semibold whitespace-nowrap pb-1 border-b-2 transition-all duration-200 ${isActive ? 'text-black border-black' : 'text-gray-500 border-transparent hover:text-gray-800'}`}>
+                          {type.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </>
