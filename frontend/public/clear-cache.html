@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clear Cache - Logo Fix</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 32px;
+            text-align: center;
+        }
+        
+        .status {
+            background: #f0f4ff;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        
+        .status.success {
+            background: #f0fdf4;
+            border-left-color: #10b981;
+        }
+        
+        .status.error {
+            background: #fef2f2;
+            border-left-color: #ef4444;
+        }
+        
+        button {
+            width: 100%;
+            padding: 15px;
+            margin: 10px 0;
+            font-size: 16px;
+            font-weight: 600;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        .btn-secondary {
+            background: #f3f4f6;
+            color: #374151;
+        }
+        
+        .btn-secondary:hover {
+            background: #e5e7eb;
+        }
+        
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #059669;
+        }
+        
+        .steps {
+            margin: 20px 0;
+        }
+        
+        .step {
+            padding: 12px;
+            margin: 8px 0;
+            background: #f9fafb;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+        }
+        
+        .step-number {
+            width: 30px;
+            height: 30px;
+            background: #667eea;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 12px;
+        }
+        
+        .step.completed {
+            background: #f0fdf4;
+        }
+        
+        .step.completed .step-number {
+            background: #10b981;
+        }
+        
+        #log {
+            background: #1f2937;
+            color: #10b981;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin: 20px 0;
+            display: none;
+        }
+        
+        #log.show {
+            display: block;
+        }
+        
+        .log-line {
+            margin: 5px 0;
+        }
+        
+        .log-success {
+            color: #10b981;
+        }
+        
+        .log-error {
+            color: #ef4444;
+        }
+        
+        .log-info {
+            color: #3b82f6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Logo Fix Tool</h1>
+        
+        <div class="status" id="status">
+            <strong>Ready to fix!</strong>
+            <p>Click the button below to clear cache and reload settings.</p>
+        </div>
+        
+        <div class="steps">
+            <div class="step" id="step1">
+                <div class="step-number">1</div>
+                <div>Clear Local Storage</div>
+            </div>
+            <div class="step" id="step2">
+                <div class="step-number">2</div>
+                <div>Clear Session Storage</div>
+            </div>
+            <div class="step" id="step3">
+                <div class="step-number">3</div>
+                <div>Reload Settings from API</div>
+            </div>
+            <div class="step" id="step4">
+                <div class="step-number">4</div>
+                <div>Reload Page</div>
+            </div>
+        </div>
+        
+        <div id="log"></div>
+        
+        <button class="btn-primary" onclick="clearAndFix()" id="fixBtn">
+            🚀 Fix Logo Now
+        </button>
+        
+        <button class="btn-secondary" onclick="checkStatus()" id="checkBtn">
+            🔍 Check Settings Status
+        </button>
+        
+        <button class="btn-success" onclick="goHome()" id="homeBtn" style="display: none;">
+            ✅ Go to Homepage
+        </button>
+    </div>
+    
+    <script>
+        const log = document.getElementById('log');
+        const status = document.getElementById('status');
+        const fixBtn = document.getElementById('fixBtn');
+        const checkBtn = document.getElementById('checkBtn');
+        const homeBtn = document.getElementById('homeBtn');
+        
+        function addLog(message, type = 'info') {
+            log.classList.add('show');
+            const line = document.createElement('div');
+            line.className = `log-line log-${type}`;
+            line.textContent = `> ${message}`;
+            log.appendChild(line);
+            log.scrollTop = log.scrollHeight;
+        }
+        
+        function completeStep(stepNum) {
+            document.getElementById(`step${stepNum}`).classList.add('completed');
+        }
+        
+        async function clearAndFix() {
+            fixBtn.disabled = true;
+            fixBtn.textContent = '⏳ Fixing...';
+            log.innerHTML = '';
+            log.classList.add('show');
+            
+            try {
+                // Step 1: Clear Local Storage
+                addLog('Clearing Local Storage...', 'info');
+                localStorage.clear();
+                completeStep(1);
+                addLog('✓ Local Storage cleared', 'success');
+                await sleep(500);
+                
+                // Step 2: Clear Session Storage
+                addLog('Clearing Session Storage...', 'info');
+                sessionStorage.clear();
+                completeStep(2);
+                addLog('✓ Session Storage cleared', 'success');
+                await sleep(500);
+                
+                // Step 3: Reload settings
+                addLog('Loading settings from API...', 'info');
+                const response = await fetch('/api/settings/public');
+                const data = await response.json();
+                completeStep(3);
+                
+                if (data.success && data.data.site_logo) {
+                    addLog('✓ Settings loaded successfully', 'success');
+                    addLog(`✓ Logo found: ${data.data.site_logo.substring(0, 50)}...`, 'success');
+                    addLog(`✓ Site name: ${data.data.site_name}`, 'success');
+                    
+                    // Save to localStorage
+                    localStorage.setItem('settings-storage', JSON.stringify({
+                        state: {
+                            settings: data.data,
+                            globalSettings: data.data
+                        },
+                        version: 0
+                    }));
+                    
+                    status.className = 'status success';
+                    status.innerHTML = '<strong>✅ Success!</strong><p>Logo fixed successfully! Page will reload in 3 seconds...</p>';
+                    
+                    // Show home button
+                    fixBtn.style.display = 'none';
+                    checkBtn.style.display = 'none';
+                    homeBtn.style.display = 'block';
+                    
+                    // Step 4: Reload page
+                    await sleep(1000);
+                    addLog('Reloading page...', 'info');
+                    completeStep(4);
+                    
+                    await sleep(2000);
+                    window.location.href = '/';
+                    
+                } else {
+                    throw new Error('Logo not found in API response');
+                }
+                
+            } catch (error) {
+                addLog('✗ Error: ' + error.message, 'error');
+                status.className = 'status error';
+                status.innerHTML = '<strong>⚠️ Error!</strong><p>Please make sure backend server is running.</p>';
+                fixBtn.disabled = false;
+                fixBtn.textContent = '🚀 Try Again';
+            }
+        }
+        
+        async function checkStatus() {
+            checkBtn.disabled = true;
+            checkBtn.textContent = '⏳ Checking...';
+            log.innerHTML = '';
+            log.classList.add('show');
+            
+            try {
+                addLog('Checking API status...', 'info');
+                const response = await fetch('/api/settings/public');
+                const data = await response.json();
+                
+                addLog('✓ API Response received', 'success');
+                addLog(`Success: ${data.success}`, data.success ? 'success' : 'error');
+                
+                if (data.data) {
+                    addLog(`site_logo: ${data.data.site_logo ? '✓ Present' : '✗ Missing'}`, 
+                        data.data.site_logo ? 'success' : 'error');
+                    addLog(`site_favicon: ${data.data.site_favicon ? '✓ Present' : '✗ Missing'}`, 
+                        data.data.site_favicon ? 'success' : 'error');
+                    addLog(`site_name: ${data.data.site_name || '✗ Missing'}`, 
+                        data.data.site_name ? 'success' : 'error');
+                    
+                    if (data.data.site_logo) {
+                        status.className = 'status success';
+                        status.innerHTML = '<strong>✅ Logo is available!</strong><p>Click "Fix Logo Now" to apply it.</p>';
+                    } else {
+                        status.className = 'status error';
+                        status.innerHTML = '<strong>⚠️ Logo missing!</strong><p>Please upload logo from Admin Panel.</p>';
+                    }
+                } else {
+                    throw new Error('No data in response');
+                }
+                
+            } catch (error) {
+                addLog('✗ Error: ' + error.message, 'error');
+                status.className = 'status error';
+                status.innerHTML = '<strong>⚠️ Error!</strong><p>Backend server might not be running.</p>';
+            } finally {
+                checkBtn.disabled = false;
+                checkBtn.textContent = '🔍 Check Settings Status';
+            }
+        }
+        
+        function goHome() {
+            window.location.href = '/';
+        }
+        
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+        
+        // Auto-check status on load
+        window.onload = () => {
+            setTimeout(checkStatus, 1000);
+        };
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Property Owner Bookings</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .debug-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        button { padding: 10px 20px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Debug Property Owner Bookings</h1>
+    
+    <div class="debug-section info">
+        <h3>Step 1: Check Authentication</h3>
+        <button onclick="checkAuth()">Check Current User</button>
+        <div id="authResult"></div>
+    </div>
+    
+    <div class="debug-section info">
+        <h3>Step 2: Test API Endpoint</h3>
+        <button onclick="testBookingsAPI()">Test Bookings API</button>
+        <div id="apiResult"></div>
+    </div>
+    
+    <div class="debug-section info">
+        <h3>Step 3: Test Button Actions</h3>
+        <button onclick="testButtonActions()">Test Button Actions</button>
+        <div id="buttonResult"></div>
+    </div>
+    
+    <div class="debug-section info">
+        <h3>Step 4: Manual API Test</h3>
+        <button onclick="manualAPITest()">Manual API Test</button>
+        <div id="manualResult"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5000/api';
+        
+        async function checkAuth() {
+            const resultDiv = document.getElementById('authResult');
+            resultDiv.innerHTML = '<p>Checking authentication...</p>';
+            
+            try {
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    resultDiv.innerHTML = '<div class="error"><p>❌ No token found. User not logged in.</p></div>';
+                    return;
+                }
+                
+                const response = await fetch(`${API_BASE}/auth/me`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <p>✅ User authenticated</p>
+                            <pre>${JSON.stringify(data.data, null, 2)}</pre>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <p>❌ Authentication failed</p>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <p>❌ Error checking auth: ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+        
+        async function testBookingsAPI() {
+            const resultDiv = document.getElementById('apiResult');
+            resultDiv.innerHTML = '<p>Testing bookings API...</p>';
+            
+            try {
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    resultDiv.innerHTML = '<div class="error"><p>❌ No token found. Please login first.</p></div>';
+                    return;
+                }
+                
+                const response = await fetch(`${API_BASE}/property-owner/bookings`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <p>✅ Bookings API working</p>
+                            <p>Found ${data.data.bookings.length} bookings</p>
+                            <pre>${JSON.stringify(data.data, null, 2)}</pre>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <p>❌ Bookings API failed</p>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <p>❌ Error testing API: ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+        
+        async function testButtonActions() {
+            const resultDiv = document.getElementById('buttonResult');
+            resultDiv.innerHTML = '<p>Testing button actions...</p>';
+            
+            try {
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    resultDiv.innerHTML = '<div class="error"><p>❌ No token found. Please login first.</p></div>';
+                    return;
+                }
+                
+                // First get bookings to find a booking ID
+                const bookingsResponse = await fetch(`${API_BASE}/property-owner/bookings`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const bookingsData = await bookingsResponse.json();
+                
+                if (!bookingsData.success || bookingsData.data.bookings.length === 0) {
+                    resultDiv.innerHTML = '<div class="error"><p>❌ No bookings found to test actions</p></div>';
+                    return;
+                }
+                
+                const booking = bookingsData.data.bookings[0];
+                resultDiv.innerHTML = `
+                    <div class="info">
+                        <p>✅ Found booking ID: ${booking.id}</p>
+                        <p>Status: ${booking.status}</p>
+                        <p>Testing actions for this booking...</p>
+                    </div>
+                `;
+                
+                // Test check-in action
+                if (booking.status === 'confirmed') {
+                    try {
+                        const checkinResponse = await fetch(`${API_BASE}/property-owner/bookings/${booking.id}/checkin`, {
+                            method: 'PATCH',
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        
+                        const checkinData = await checkinResponse.json();
+                        
+                        if (checkinData.success) {
+                            resultDiv.innerHTML += `
+                                <div class="success">
+                                    <p>✅ Check-in action works!</p>
+                                    <pre>${JSON.stringify(checkinData, null, 2)}</pre>
+                                </div>
+                            `;
+                        } else {
+                            resultDiv.innerHTML += `
+                                <div class="error">
+                                    <p>❌ Check-in action failed</p>
+                                    <pre>${JSON.stringify(checkinData, null, 2)}</pre>
+                                </div>
+                            `;
+                        }
+                    } catch (error) {
+                        resultDiv.innerHTML += `
+                            <div class="error">
+                                <p>❌ Check-in error: ${error.message}</p>
+                            </div>
+                        `;
+                    }
+                }
+                
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <p>❌ Error testing actions: ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+        
+        async function manualAPITest() {
+            const resultDiv = document.getElementById('manualResult');
+            resultDiv.innerHTML = '<p>Manual API test...</p>';
+            
+            try {
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    resultDiv.innerHTML = '<div class="error"><p>❌ No token found. Please login first.</p></div>';
+                    return;
+                }
+                
+                // Test with curl-like request
+                const response = await fetch(`${API_BASE}/property-owner/bookings`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                const responseText = await response.text();
+                let data;
+                
+                try {
+                    data = JSON.parse(responseText);
+                } catch (e) {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <p>❌ Invalid JSON response</p>
+                            <pre>${responseText}</pre>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                resultDiv.innerHTML = `
+                    <div class="info">
+                        <p>Response Status: ${response.status}</p>
+                        <p>Response Headers:</p>
+                        <pre>${JSON.stringify([...response.headers.entries()], null, 2)}</pre>
+                        <p>Response Body:</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </div>
+                `;
+                
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <p>❌ Manual API test error: ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>
+
+

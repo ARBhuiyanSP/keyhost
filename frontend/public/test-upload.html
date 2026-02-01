@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logo Upload Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 40px auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .section h3 {
+            margin-bottom: 15px;
+            color: #667eea;
+        }
+        button {
+            padding: 12px 24px;
+            margin: 10px 5px;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn-primary { background: #667eea; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-primary:hover { background: #5568d3; }
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-weight: bold;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .warning { background: #fff3cd; color: #856404; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        .preview {
+            margin: 15px 0;
+            padding: 20px;
+            background: white;
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .preview img {
+            max-width: 100%;
+            max-height: 100px;
+        }
+        pre {
+            background: #1e1e1e;
+            color: #0f0;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 12px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Logo & Favicon Upload Test</h1>
+
+        <!-- Step 1: Check API -->
+        <div class="section">
+            <h3>Step 1: Check API Status</h3>
+            <button class="btn-primary" onclick="checkAPI()">🔍 Check API</button>
+            <div id="apiStatus"></div>
+            <div id="apiData"></div>
+        </div>
+
+        <!-- Step 2: Clear Cache -->
+        <div class="section">
+            <h3>Step 2: Clear Browser Cache</h3>
+            <button class="btn-danger" onclick="clearCache()">🗑️ Clear Cache</button>
+            <div id="cacheStatus"></div>
+        </div>
+
+        <!-- Step 3: Reload Settings -->
+        <div class="section">
+            <h3>Step 3: Reload Settings</h3>
+            <button class="btn-success" onclick="reloadSettings()">🔄 Reload Settings</button>
+            <div id="reloadStatus"></div>
+        </div>
+
+        <!-- Step 4: View Current Settings -->
+        <div class="section">
+            <h3>Step 4: View Current Settings</h3>
+            <button class="btn-primary" onclick="viewSettings()">👁️ View Settings</button>
+            <div id="settingsView"></div>
+        </div>
+
+        <!-- Final: Go to Homepage -->
+        <div class="section">
+            <h3>Final: Test on Homepage</h3>
+            <button class="btn-success" onclick="window.location.href='/'">🏠 Go to Homepage</button>
+            <button class="btn-primary" onclick="window.location.href='/#/admin/settings'">⚙️ Admin Settings</button>
+        </div>
+    </div>
+
+    <script>
+        async function checkAPI() {
+            const statusDiv = document.getElementById('apiStatus');
+            const dataDiv = document.getElementById('apiData');
+            
+            statusDiv.innerHTML = '<div class="status info">Checking API...</div>';
+            
+            try {
+                const response = await fetch('/api/settings/public');
+                const data = await response.json();
+
+                if (data.success) {
+                    statusDiv.innerHTML = '<div class="status success">✅ API Working!</div>';
+                    
+                    let html = '<div class="preview">';
+                    html += `<p><strong>Response Status:</strong> ${data.success ? '✅ Success' : '❌ Failed'}</p>`;
+                    html += `<p><strong>Total Settings:</strong> ${Object.keys(data.data || {}).length}</p>`;
+                    
+                    if (data.data.site_logo) {
+                        html += `<p style="color: green"><strong>site_logo:</strong> ✅ Present (${data.data.site_logo.length} chars)</p>`;
+                        html += `<p>Preview:</p>`;
+                        html += `<img src="${data.data.site_logo}" alt="Logo" style="max-height: 60px;">`;
+                    } else {
+                        html += `<p style="color: red"><strong>site_logo:</strong> ❌ Not Found</p>`;
+                    }
+                    
+                    if (data.data.site_favicon) {
+                        html += `<p style="color: green"><strong>site_favicon:</strong> ✅ Present (${data.data.site_favicon.length} chars)</p>`;
+                        html += `<p>Preview:</p>`;
+                        html += `<img src="${data.data.site_favicon}" alt="Favicon" style="max-height: 32px;">`;
+                    } else {
+                        html += `<p style="color: red"><strong>site_favicon:</strong> ❌ Not Found</p>`;
+                    }
+                    
+                    html += '</div>';
+                    dataDiv.innerHTML = html;
+                } else {
+                    throw new Error('API returned success: false');
+                }
+            } catch (error) {
+                statusDiv.innerHTML = '<div class="status error">❌ API Error: ' + error.message + '</div>';
+                dataDiv.innerHTML = '<p style="color: red">Make sure backend is running!</p>';
+            }
+        }
+
+        function clearCache() {
+            const statusDiv = document.getElementById('cacheStatus');
+            
+            try {
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                statusDiv.innerHTML = '<div class="status success">✅ Cache Cleared!</div>';
+                
+                setTimeout(() => {
+                    statusDiv.innerHTML += '<p>Now click "Reload Settings" button</p>';
+                }, 500);
+            } catch (error) {
+                statusDiv.innerHTML = '<div class="status error">❌ Error: ' + error.message + '</div>';
+            }
+        }
+
+        async function reloadSettings() {
+            const statusDiv = document.getElementById('reloadStatus');
+            
+            statusDiv.innerHTML = '<div class="status info">Loading settings from API...</div>';
+            
+            try {
+                const response = await fetch('/api/settings/public');
+                const data = await response.json();
+
+                if (data.success && data.data) {
+                    // Save to localStorage in the format React app expects
+                    const settingsStorage = {
+                        state: {
+                            settings: data.data,
+                            globalSettings: data.data
+                        },
+                        version: 0
+                    };
+                    
+                    localStorage.setItem('settings-storage', JSON.stringify(settingsStorage));
+                    
+                    let html = '<div class="status success">✅ Settings Loaded & Saved!</div>';
+                    html += '<div class="preview">';
+                    html += `<p><strong>Loaded:</strong></p>`;
+                    html += `<p>site_name: ${data.data.site_name || 'Not set'}</p>`;
+                    html += `<p>site_logo: ${data.data.site_logo ? '✅ Yes (' + data.data.site_logo.length + ' chars)' : '❌ No'}</p>`;
+                    html += `<p>site_favicon: ${data.data.site_favicon ? '✅ Yes (' + data.data.site_favicon.length + ' chars)' : '❌ No'}</p>`;
+                    html += '</div>';
+                    html += '<p style="margin-top: 15px; color: green; font-weight: bold;">✅ Now go to Homepage to see the logo!</p>';
+                    
+                    statusDiv.innerHTML = html;
+                } else {
+                    throw new Error('No data in response');
+                }
+            } catch (error) {
+                statusDiv.innerHTML = '<div class="status error">❌ Error: ' + error.message + '</div>';
+            }
+        }
+
+        function viewSettings() {
+            const viewDiv = document.getElementById('settingsView');
+            
+            try {
+                const stored = localStorage.getItem('settings-storage');
+                
+                if (stored) {
+                    const parsed = JSON.parse(stored);
+                    const settings = parsed.state?.settings || {};
+                    
+                    let html = '<div class="preview">';
+                    html += '<p><strong>Settings in LocalStorage:</strong></p>';
+                    html += '<pre style="text-align: left;">' + JSON.stringify(settings, null, 2).substring(0, 1000) + '</pre>';
+                    
+                    if (settings.site_logo) {
+                        html += '<p style="color: green">✅ site_logo: Present</p>';
+                        html += `<img src="${settings.site_logo}" alt="Logo" style="max-height: 60px; margin: 10px;">`;
+                    } else {
+                        html += '<p style="color: red">❌ site_logo: Not found</p>';
+                    }
+                    
+                    if (settings.site_favicon) {
+                        html += '<p style="color: green">✅ site_favicon: Present</p>';
+                        html += `<img src="${settings.site_favicon}" alt="Favicon" style="max-height: 32px; margin: 10px;">`;
+                    } else {
+                        html += '<p style="color: red">❌ site_favicon: Not found</p>';
+                    }
+                    
+                    html += '</div>';
+                    viewDiv.innerHTML = html;
+                } else {
+                    viewDiv.innerHTML = '<div class="status warning">⚠️ No settings in localStorage. Click "Reload Settings" first.</div>';
+                }
+            } catch (error) {
+                viewDiv.innerHTML = '<div class="status error">❌ Error: ' + error.message + '</div>';
+            }
+        }
+
+        // Auto-check on load
+        window.onload = () => {
+            setTimeout(checkAPI, 500);
+        };
+    </script>
+</body>
+</html>
+
+
+

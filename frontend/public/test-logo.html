@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logo Test - Direct</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        .status {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .warning { background: #fff3cd; color: #856404; }
+        button {
+            padding: 12px 24px;
+            margin: 10px 5px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-warning { background: #ffc107; color: black; }
+        .logo-display {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border: 2px solid #dee2e6;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .logo-display img {
+            max-width: 300px;
+            max-height: 100px;
+            display: block;
+            margin: 10px auto;
+        }
+        #log {
+            background: #000;
+            color: #0f0;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+        .log-line { margin: 5px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Logo Test & Fix</h1>
+        
+        <div id="status" class="status warning">
+            Checking...
+        </div>
+
+        <div class="logo-display" id="logoDisplay">
+            <h3>Logo Preview:</h3>
+            <div id="logoContainer"></div>
+        </div>
+
+        <div>
+            <button class="btn-primary" onclick="testLogo()">🔍 Test Logo</button>
+            <button class="btn-success" onclick="fixLogo()">✅ Fix & Reload</button>
+            <button class="btn-danger" onclick="clearAll()">🗑️ Clear Cache</button>
+            <button class="btn-warning" onclick="goToAdmin()">⚙️ Upload Logo</button>
+        </div>
+
+        <div id="log"></div>
+    </div>
+
+    <script>
+        const log = document.getElementById('log');
+        const status = document.getElementById('status');
+        const logoContainer = document.getElementById('logoContainer');
+
+        function addLog(message, color = '#0f0') {
+            const line = document.createElement('div');
+            line.className = 'log-line';
+            line.style.color = color;
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            log.appendChild(line);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        async function testLogo() {
+            addLog('🔍 Testing logo...', '#00f');
+            
+            try {
+                // Fetch settings from API
+                addLog('Fetching from: /api/settings/public', '#0ff');
+                const response = await fetch('/api/settings/public');
+                const data = await response.json();
+
+                addLog('API Response:', '#0ff');
+                addLog(`Success: ${data.success}`, data.success ? '#0f0' : '#f00');
+
+                if (data.success && data.data) {
+                    const settings = data.data;
+                    
+                    // Check logo
+                    if (settings.site_logo) {
+                        addLog('✅ Logo found in API!', '#0f0');
+                        addLog(`Logo length: ${settings.site_logo.length} chars`, '#0f0');
+                        
+                        // Display logo
+                        logoContainer.innerHTML = `
+                            <img src="${settings.site_logo}" alt="Logo" 
+                                 onload="console.log('Logo loaded')"
+                                 onerror="console.error('Logo failed')">
+                            <p style="font-size: 12px; color: #666;">
+                                Type: ${settings.site_logo.substring(0, 20)}...<br>
+                                Length: ${settings.site_logo.length} characters
+                            </p>
+                        `;
+                        
+                        status.className = 'status success';
+                        status.textContent = '✅ Logo found! Working correctly.';
+                    } else {
+                        addLog('❌ Logo NOT found in API response', '#f00');
+                        logoContainer.innerHTML = '<p style="color: red;">Logo not available</p>';
+                        
+                        status.className = 'status error';
+                        status.textContent = '❌ Logo missing in database. Please upload.';
+                    }
+
+                    // Check favicon
+                    if (settings.site_favicon) {
+                        addLog('✅ Favicon found too', '#0f0');
+                    }
+
+                    // Check site name
+                    addLog(`Site name: ${settings.site_name || 'Not set'}`, '#ff0');
+                } else {
+                    throw new Error('Invalid API response');
+                }
+            } catch (error) {
+                addLog('❌ Error: ' + error.message, '#f00');
+                status.className = 'status error';
+                status.textContent = '❌ Backend not running or error!';
+            }
+        }
+
+        async function fixLogo() {
+            addLog('🔧 Fixing logo...', '#00f');
+            
+            // Clear cache
+            addLog('Clearing localStorage...', '#0ff');
+            localStorage.clear();
+            
+            addLog('Clearing sessionStorage...', '#0ff');
+            sessionStorage.clear();
+
+            // Fetch fresh settings
+            try {
+                const response = await fetch('/api/settings/public');
+                const data = await response.json();
+
+                if (data.success && data.data.site_logo) {
+                    addLog('✅ Logo fetched successfully', '#0f0');
+                    
+                    // Save to localStorage (for React app)
+                    const settingsStorage = {
+                        state: {
+                            settings: data.data,
+                            globalSettings: data.data
+                        },
+                        version: 0
+                    };
+                    localStorage.setItem('settings-storage', JSON.stringify(settingsStorage));
+                    
+                    addLog('✅ Saved to localStorage', '#0f0');
+                    
+                    status.className = 'status success';
+                    status.textContent = '✅ Fixed! Reloading in 2 seconds...';
+                    
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 2000);
+                } else {
+                    throw new Error('Logo not found in API');
+                }
+            } catch (error) {
+                addLog('❌ Error: ' + error.message, '#f00');
+                status.className = 'status error';
+                status.textContent = '❌ Fix failed. Please upload logo first.';
+            }
+        }
+
+        function clearAll() {
+            addLog('🗑️ Clearing all cache...', '#f00');
+            localStorage.clear();
+            sessionStorage.clear();
+            addLog('✅ Cache cleared', '#0f0');
+            addLog('Reloading page...', '#0ff');
+            setTimeout(() => location.reload(), 1000);
+        }
+
+        function goToAdmin() {
+            window.location.href = '/#/admin/settings';
+        }
+
+        // Auto-test on load
+        window.onload = () => {
+            addLog('=== Logo Test Started ===', '#fff');
+            setTimeout(testLogo, 500);
+        };
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fix Logo Now</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            text-align: center;
+            max-width: 500px;
+        }
+        h1 { color: #333; margin-bottom: 20px; }
+        .status {
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .loading { background: #fff3cd; color: #856404; }
+        button {
+            padding: 15px 30px;
+            font-size: 18px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            background: #28a745;
+            color: white;
+            margin: 10px;
+        }
+        button:hover { background: #218838; }
+        .logo-preview {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        .logo-preview img {
+            max-width: 200px;
+            max-height: 80px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Logo Fix Tool</h1>
+        <div id="status" class="status loading">Checking...</div>
+        <div id="logoPreview" class="logo-preview" style="display:none;"></div>
+        <button onclick="fixNow()" id="fixBtn">✅ Fix Logo Now</button>
+        <button onclick="window.location.href='/'" id="homeBtn" style="display:none; background:#007bff;">🏠 Go Home</button>
+    </div>
+
+    <script>
+        const status = document.getElementById('status');
+        const logoPreview = document.getElementById('logoPreview');
+        const fixBtn = document.getElementById('fixBtn');
+        const homeBtn = document.getElementById('homeBtn');
+
+        async function checkLogo() {
+            try {
+                const response = await fetch('/api/settings/public');
+                const data = await response.json();
+
+                if (data.success && data.data.site_logo) {
+                    status.className = 'status success';
+                    status.textContent = `✅ Logo Found! (${data.data.site_logo.length} chars)`;
+                    
+                    logoPreview.innerHTML = `
+                        <h3>Logo Preview:</h3>
+                        <img src="${data.data.site_logo}" alt="Logo" 
+                             onerror="this.parentElement.innerHTML='<p style=color:red>Logo data invalid</p>'"
+                             onload="console.log('Logo preview loaded')">
+                    `;
+                    logoPreview.style.display = 'block';
+                    
+                    return true;
+                } else {
+                    status.className = 'status error';
+                    status.textContent = '❌ Logo not found in API!';
+                    return false;
+                }
+            } catch (error) {
+                status.className = 'status error';
+                status.textContent = '❌ Backend not running!';
+                return false;
+            }
+        }
+
+        async function fixNow() {
+            fixBtn.disabled = true;
+            fixBtn.textContent = '⏳ Fixing...';
+            
+            try {
+                // Step 1: Clear everything
+                console.log('Step 1: Clearing cache...');
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                // Step 2: Fetch fresh settings
+                console.log('Step 2: Fetching settings...');
+                const response = await fetch('/api/settings/public');
+                const data = await response.json();
+
+                if (data.success && data.data.site_logo) {
+                    console.log('Step 3: Saving settings...');
+                    console.log('Logo length:', data.data.site_logo.length);
+                    
+                    // Step 3: Save to localStorage in exact format React expects
+                    const settingsStorage = {
+                        state: {
+                            settings: data.data,
+                            globalSettings: data.data
+                        },
+                        version: 0
+                    };
+                    localStorage.setItem('settings-storage', JSON.stringify(settingsStorage));
+                    
+                    console.log('✅ Settings saved to localStorage');
+                    
+                    status.className = 'status success';
+                    status.textContent = '✅ Fixed! Redirecting to homepage...';
+                    
+                    fixBtn.style.display = 'none';
+                    homeBtn.style.display = 'inline-block';
+                    
+                    // Redirect after 2 seconds
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 2000);
+                } else {
+                    throw new Error('Logo not found in API response');
+                }
+            } catch (error) {
+                status.className = 'status error';
+                status.textContent = '❌ Fix failed: ' + error.message;
+                fixBtn.disabled = false;
+                fixBtn.textContent = '🔄 Try Again';
+            }
+        }
+
+        // Auto-check on load
+        window.onload = () => {
+            console.log('=== Logo Fix Tool Started ===');
+            checkLogo();
+        };
+    </script>
+</body>
+</html>
+
+
+
