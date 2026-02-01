@@ -107,7 +107,7 @@ router.get('/bookings', verifyToken, requireGuest, validatePagination, async (re
     const total = countResult[0].total;
 
     // Get bookings
-    const [bookings] = await pool.execute(`
+    const [bookings] = await pool.query(`
       SELECT 
         b.*,
         p.title as property_title,
@@ -122,7 +122,7 @@ router.get('/bookings', verifyToken, requireGuest, validatePagination, async (re
       ${whereClause}
       ORDER BY b.created_at DESC
       LIMIT ? OFFSET ?
-    `, [...queryParams, parseInt(limit), offset]);
+    `, [...queryParams, parseInt(limit), parseInt(offset)]);
 
     const pagination = generatePagination(parseInt(page), parseInt(limit), total);
 
@@ -845,7 +845,7 @@ router.get('/properties', optionalAuth, validatePagination, async (req, res) => 
     const total = countResult[0].total;
 
     // Get properties with owner info
-    const [properties] = await pool.execute(`
+    const [properties] = await pool.query(`
       SELECT 
         p.*,
         u.first_name as owner_first_name,
@@ -860,7 +860,7 @@ router.get('/properties', optionalAuth, validatePagination, async (req, res) => 
       ${whereClause}
       ORDER BY p.${sort_by} ${sort_order}
       LIMIT ? OFFSET ?
-    `, [...queryParams, parseInt(limit), offset]);
+    `, [...queryParams, parseInt(limit), parseInt(offset)]);
 
     // Get amenities for each property
     for (let property of properties) {
@@ -958,7 +958,7 @@ router.get('/display-categories/:id/properties', async (req, res) => {
     }
 
     // Get properties for this category using junction table
-    const [properties] = await pool.execute(`
+    const [properties] = await pool.query(`
       SELECT p.*, 
         (SELECT image_url FROM property_images WHERE property_id = p.id AND image_type = 'main' LIMIT 1) as main_image_url,
         (SELECT AVG(rating) FROM reviews WHERE property_id = p.id AND status = 'approved') as average_rating
@@ -968,7 +968,7 @@ router.get('/display-categories/:id/properties', async (req, res) => {
         AND p.status = 'active'
       ORDER BY dcp.created_at DESC
       LIMIT ?
-    `, [id, limit]);
+    `, [parseInt(id), parseInt(limit)]);
 
     // Get amenities and images for each property
     for (let property of properties) {
@@ -1044,7 +1044,7 @@ router.get('/properties/recommended', optionalAuth, async (req, res) => {
 
     // Get properties with high ratings and recent bookings
     const limitNum = parseInt(limit) || 6;
-    const [properties] = await pool.execute(`
+    const [properties] = await pool.query(`
       SELECT 
         p.*,
         pi.image_url as main_image

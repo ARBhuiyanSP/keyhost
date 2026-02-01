@@ -55,7 +55,7 @@ router.get('/', verifyToken, requireAdmin, validatePagination, async (req, res) 
     `, queryParams);
         const total = countResult[0].total;
 
-        const [reports] = await pool.execute(`
+        const [reports] = await pool.query(`
       SELECT r.*, p.title as property_title, u.first_name, u.last_name, u.email
       FROM property_reports r
       JOIN properties p ON r.property_id = p.id
@@ -63,7 +63,7 @@ router.get('/', verifyToken, requireAdmin, validatePagination, async (req, res) 
       ${whereClause}
       ORDER BY r.created_at DESC
       LIMIT ? OFFSET ?
-    `, [...queryParams, parseInt(limit), offset]);
+    `, [...queryParams, parseInt(limit), parseInt(offset)]);
 
         const pagination = generatePagination(parseInt(page), parseInt(limit), total);
 

@@ -1,14 +1,14 @@
 const express = require('express');
 const { pool } = require('../config/database');
-const { 
-  formatResponse, 
-  generatePagination 
+const {
+  formatResponse,
+  generatePagination
 } = require('../utils/helpers');
-const { 
-  validateReview, 
-  validateId, 
+const {
+  validateReview,
+  validateId,
   validatePropertyId,
-  validatePagination 
+  validatePagination
 } = require('../middleware/validation');
 const { verifyToken, optionalAuth } = require('../middleware/auth');
 
@@ -116,7 +116,7 @@ router.get('/property/:propertyId', optionalAuth, validatePropertyId, validatePa
     const total = countResult[0].total;
 
     // Get reviews
-    const [reviews] = await pool.execute(`
+    const [reviews] = await pool.query(`
       SELECT 
         r.id, r.rating, r.title, r.comment, r.created_at,
         r.cleanliness_rating, r.communication_rating, r.check_in_rating,
@@ -128,7 +128,7 @@ router.get('/property/:propertyId', optionalAuth, validatePropertyId, validatePa
       WHERE r.property_id = ? AND r.status = 'approved' AND r.is_public = 1
       ORDER BY r.created_at DESC
       LIMIT ? OFFSET ?
-    `, [propertyId, parseInt(limit), offset]);
+    `, [propertyId, parseInt(limit), parseInt(offset)]);
 
     const pagination = generatePagination(parseInt(page), parseInt(limit), total);
 
@@ -162,7 +162,7 @@ router.get('/my-reviews', verifyToken, validatePagination, async (req, res) => {
     const total = countResult[0].total;
 
     // Get reviews
-    const [reviews] = await pool.execute(`
+    const [reviews] = await pool.query(`
       SELECT 
         r.*,
         b.booking_reference,
@@ -176,7 +176,7 @@ router.get('/my-reviews', verifyToken, validatePagination, async (req, res) => {
       WHERE r.guest_id = ?
       ORDER BY r.created_at DESC
       LIMIT ? OFFSET ?
-    `, [req.user.id, parseInt(limit), offset]);
+    `, [req.user.id, parseInt(limit), parseInt(offset)]);
 
     const pagination = generatePagination(parseInt(page), parseInt(limit), total);
 

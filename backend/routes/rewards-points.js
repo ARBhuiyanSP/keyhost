@@ -108,7 +108,7 @@ router.get('/my-transactions', verifyToken, requireGuest, validatePagination, as
     const total = countResult[0].total;
 
     // Get transactions
-    const [transactions] = await pool.execute(`
+    const [transactions] = await pool.query(`
       SELECT 
         rpt.*,
         b.booking_reference,
@@ -120,7 +120,7 @@ router.get('/my-transactions', verifyToken, requireGuest, validatePagination, as
       WHERE rpt.user_id = ?
       ORDER BY rpt.created_at DESC
       LIMIT ? OFFSET ?
-    `, [userId, parseInt(limit), offset]);
+    `, [userId, parseInt(limit), parseInt(offset)]);
 
     const pagination = generatePagination(parseInt(page), parseInt(limit), total);
 
@@ -462,7 +462,7 @@ router.get('/admin/users-points', verifyToken, requireAdmin, validatePagination,
     const total = countResult[0].total;
 
     // Get users' points
-    const [usersPoints] = await pool.execute(`
+    const [usersPoints] = await pool.query(`
       SELECT 
         urp.*,
         u.first_name,
@@ -478,7 +478,7 @@ router.get('/admin/users-points', verifyToken, requireAdmin, validatePagination,
       ${whereClause}
       ORDER BY urp.total_points_earned DESC
       LIMIT ? OFFSET ?
-    `, [...queryParams, parseInt(limit), offset]);
+    `, [...queryParams, parseInt(limit), parseInt(offset)]);
 
     const pagination = generatePagination(parseInt(page), parseInt(limit), total);
 
