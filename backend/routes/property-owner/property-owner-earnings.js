@@ -1,12 +1,12 @@
 const express = require('express');
 const { pool } = require('../../config/database');
-const { 
-  formatResponse, 
-  generatePagination 
+const {
+  formatResponse,
+  generatePagination
 } = require('../../utils/helpers');
-const { 
-  validateId, 
-  validatePagination 
+const {
+  validateId,
+  validatePagination
 } = require('../../middleware/validation');
 
 const router = express.Router();
@@ -234,7 +234,7 @@ router.get('/dashboard', async (req, res) => {
       throw error;
     }
 
-    const commissionRate = commissionSettings.length > 0 ? 
+    const commissionRate = commissionSettings.length > 0 ?
       parseFloat(commissionSettings[0].setting_value) : 10.00;
 
     // Fetch payout stats to adjust withdrawable and available amounts
@@ -363,7 +363,7 @@ router.get('/earnings', validatePagination, async (req, res) => {
     const total = countResult[0].total;
 
     // Get earnings
-    const [earnings] = await pool.execute(`
+    const [earnings] = await pool.query(`
       SELECT
         b.id,
         b.booking_reference,
@@ -381,7 +381,7 @@ router.get('/earnings', validatePagination, async (req, res) => {
       AND b.status != 'cancelled'
       ORDER BY b.created_at DESC
       LIMIT ? OFFSET ?
-    `, [...queryParams, parseInt(limit), offset]);
+    `, [...queryParams, parseInt(limit), parseInt(offset)]);
 
     const pagination = generatePagination(parseInt(page), parseInt(limit), total);
 
@@ -570,13 +570,13 @@ router.post('/payout-request', async (req, res) => {
 
     // Create owner payout record (pending) for admin to process
     const payoutReference = `OWNER-PAYOUT-REQ-${Date.now()}-${propertyOwnerId}`;
-    
+
     console.log('=== CREATE PAYOUT REQUEST ===');
     console.log('Property Owner ID:', propertyOwnerId);
     console.log('Amount:', amount);
     console.log('Payment Method:', payment_method);
     console.log('Payout Reference:', payoutReference);
-    
+
     const [result] = await pool.execute(`
       INSERT INTO owner_payouts (
         property_owner_id, payout_reference, start_date, end_date,
@@ -661,7 +661,7 @@ router.get('/payouts', validatePagination, async (req, res) => {
     const total = countResult[0].total;
 
     // Get payouts
-    const [payouts] = await pool.execute(`
+    const [payouts] = await pool.query(`
       SELECT
         op.id,
         op.payout_reference,

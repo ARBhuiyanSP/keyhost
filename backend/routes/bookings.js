@@ -1,7 +1,7 @@
 const express = require('express');
 const { pool } = require('../config/database');
-const { 
-  formatResponse, 
+const {
+  formatResponse,
   generatePagination,
   generateBookingReference,
   calculateBookingTotal,
@@ -9,10 +9,10 @@ const {
   isValidDateRange,
   formatDate
 } = require('../utils/helpers');
-const { 
-  validateBooking, 
-  validateId, 
-  validatePagination 
+const {
+  validateBooking,
+  validateId,
+  validatePagination
 } = require('../middleware/validation');
 const { verifyToken, requireGuest } = require('../middleware/auth');
 
@@ -121,7 +121,7 @@ router.post('/', verifyToken, requireGuest, validateBooking, async (req, res) =>
     const taxAmount = (basePrice * nights) * 0.15; // 15% tax
 
     const pricing = calculateBookingTotal(
-      basePrice, nights, cleaningFee, securityDeposit, 
+      basePrice, nights, cleaningFee, securityDeposit,
       extraGuestFee, serviceFee, taxAmount
     );
 
@@ -230,12 +230,12 @@ router.post('/', verifyToken, requireGuest, validateBooking, async (req, res) =>
 // Get bookings for property owners
 router.get('/', verifyToken, validatePagination, async (req, res) => {
   try {
-    const { 
-      page = 1, 
-      limit = 10, 
-      status, 
+    const {
+      page = 1,
+      limit = 10,
+      status,
       search,
-      owner = false 
+      owner = false
     } = req.query;
     const offset = (page - 1) * limit;
 
@@ -277,7 +277,7 @@ router.get('/', verifyToken, validatePagination, async (req, res) => {
     const total = countResult[0].total;
 
     // Get bookings
-    const [bookings] = await pool.execute(`
+    const [bookings] = await pool.query(`
       SELECT 
         b.*,
         p.title as property_title,
@@ -293,7 +293,7 @@ router.get('/', verifyToken, validatePagination, async (req, res) => {
       ${whereClause}
       ORDER BY b.created_at DESC
       LIMIT ? OFFSET ?
-    `, [...queryParams, parseInt(limit), offset]);
+    `, [...queryParams, parseInt(limit), parseInt(offset)]);
 
     const totalPages = Math.ceil(total / limit);
 
@@ -338,7 +338,7 @@ router.get('/my-bookings', verifyToken, validatePagination, async (req, res) => 
     const total = countResult[0].total;
 
     // Get bookings
-    const [bookings] = await pool.execute(`
+    const [bookings] = await pool.query(`
       SELECT 
         b.*,
         p.title as property_title,
@@ -352,7 +352,7 @@ router.get('/my-bookings', verifyToken, validatePagination, async (req, res) => 
       ${whereClause}
       ORDER BY b.created_at DESC
       LIMIT ? OFFSET ?
-    `, [...queryParams, parseInt(limit), offset]);
+    `, [...queryParams, parseInt(limit), parseInt(offset)]);
 
     const pagination = generatePagination(parseInt(page), parseInt(limit), total);
 
@@ -484,7 +484,7 @@ router.patch('/:id/cancel', verifyToken, validateId, async (req, res) => {
     // Check if check-in date has passed
     const today = new Date();
     const checkInDate = new Date(booking.check_in_date);
-    
+
     if (checkInDate <= today) {
       return res.status(400).json(
         formatResponse(false, 'Cannot cancel booking after check-in date')
@@ -532,7 +532,7 @@ router.post('/:id/guests', verifyToken, validateId, async (req, res) => {
 
     // Add guests
     const guestValues = guests.map(guest => [
-      id, guest.first_name, guest.last_name, guest.email, 
+      id, guest.first_name, guest.last_name, guest.email,
       guest.phone, guest.date_of_birth, guest.gender, guest.is_primary_guest || false
     ]);
 

@@ -1,15 +1,15 @@
 const express = require('express');
 const { pool } = require('../../config/database');
-const { 
-  formatResponse, 
+const {
+  formatResponse,
   generatePagination,
   isPastDate,
-  isValidDateRange 
+  isValidDateRange
 } = require('../../utils/helpers');
 const { sendSMS } = require('../../utils/sms');
-const { 
-  validateProperty, 
-  validateId, 
+const {
+  validateProperty,
+  validateId,
   validatePagination
 } = require('../../middleware/validation');
 const { verifyToken, requirePropertyOwner } = require('../../middleware/auth');
@@ -45,14 +45,14 @@ router.get('/dashboard', async (req, res) => {
       'SELECT COUNT(*) as total FROM properties WHERE owner_id = ?',
       [ownerId]
     );
-    
+
     const [bookingCount] = await pool.execute(`
       SELECT COUNT(*) as total 
       FROM bookings b
       JOIN properties p ON b.property_id = p.id
       WHERE p.owner_id = ? AND b.status != 'cancelled'
     `, [ownerId]);
-    
+
     const [revenueResult] = await pool.execute(`
       SELECT SUM(b.total_amount) as total 
       FROM bookings b
@@ -154,7 +154,7 @@ router.get('/properties', validatePagination, async (req, res) => {
     const total = countResult[0].total;
 
     // Get properties
-    const [properties] = await pool.execute(`
+    const [properties] = await pool.query(`
       SELECT 
         p.*,
         (SELECT COUNT(*) FROM bookings WHERE property_id = p.id) as total_bookings,
@@ -163,7 +163,7 @@ router.get('/properties', validatePagination, async (req, res) => {
       ${whereClause}
       ORDER BY p.created_at DESC
       LIMIT ? OFFSET ?
-    `, [...queryParams, parseInt(limit), offset]);
+    `, [...queryParams, parseInt(limit), parseInt(offset)]);
 
     // Get amenities and main image for each property
     for (let property of properties) {
@@ -337,30 +337,30 @@ router.post('/properties', async (req, res) => {
         is_instant_book, status, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_approval', NOW())
     `, [
-      ownerId, 
-      title, 
-      description, 
-      property_type, 
+      ownerId,
+      title,
+      description,
+      property_type,
       property_category,
-      address, 
-      city, 
-      state, 
-      country, 
-      postal_code || null, 
-      latitude || null, 
+      address,
+      city,
+      state,
+      country,
+      postal_code || null,
+      latitude || null,
       longitude || null,
-      bedrooms || 1, 
-      bathrooms || 1, 
-      max_guests || 2, 
-      size_sqft || null, 
+      bedrooms || 1,
+      bathrooms || 1,
+      max_guests || 2,
+      size_sqft || null,
       floor_number || null,
-      base_price, 
-      cleaning_fee || 0, 
-      security_deposit || 0, 
+      base_price,
+      cleaning_fee || 0,
+      security_deposit || 0,
       extra_guest_fee || 0,
-      check_in_time || '15:00:00', 
-      check_out_time || '11:00:00', 
-      minimum_stay || 1, 
+      check_in_time || '15:00:00',
+      check_out_time || '11:00:00',
+      minimum_stay || 1,
       maximum_stay || null,
       is_instant_book || false
     ]);
@@ -381,7 +381,7 @@ router.post('/properties', async (req, res) => {
     // Add images if provided
     if (req.body.images && Array.isArray(req.body.images) && req.body.images.length > 0) {
       console.log('Saving images:', req.body.images.length, 'images');
-      
+
       // Add images one by one to avoid SQL syntax issues
       for (let index = 0; index < req.body.images.length; index++) {
         const imageUrl = req.body.images[index];
@@ -397,7 +397,7 @@ router.post('/properties', async (req, res) => {
           1
         ]);
       }
-      
+
       console.log('Images saved successfully');
     }
 
@@ -479,8 +479,8 @@ router.put('/properties/:id', validateId, async (req, res) => {
       if (allowedFields.includes(key) && updateData[key] !== undefined) {
         // For string fields, skip empty strings only for optional fields
         // property_type is required, so always include it
-        if (typeof updateData[key] === 'string' && updateData[key].trim() === '' && 
-            ['postal_code', 'description', 'latitude', 'longitude', 'size_sqft', 'floor_number', 'maximum_stay'].includes(key)) {
+        if (typeof updateData[key] === 'string' && updateData[key].trim() === '' &&
+          ['postal_code', 'description', 'latitude', 'longitude', 'size_sqft', 'floor_number', 'maximum_stay'].includes(key)) {
           return; // Skip empty strings for optional fields
         }
         // Always include property_type if provided (even if empty string - frontend validation should prevent this)
@@ -530,7 +530,7 @@ router.put('/properties/:id', validateId, async (req, res) => {
     // Update images if provided
     if (updateData.images && Array.isArray(updateData.images) && updateData.images.length > 0) {
       console.log('Updating images:', updateData.images.length, 'images');
-      
+
       // Remove existing images
       await pool.execute(
         'DELETE FROM property_images WHERE property_id = ?',
@@ -552,7 +552,7 @@ router.put('/properties/:id', validateId, async (req, res) => {
           1
         ]);
       }
-      
+
       console.log('Images saved successfully');
     }
 
@@ -649,11 +649,11 @@ router.delete('/properties/:id', validateId, async (req, res) => {
 // Get property owner's bookings
 router.get('/bookings', validatePagination, async (req, res) => {
   try {
-    const { 
-      page = 1, 
-      limit = 10, 
-      status, 
-      search 
+    const {
+      page = 1,
+      limit = 10,
+      status,
+      search
     } = req.query;
     const offset = (page - 1) * limit;
 
@@ -696,7 +696,7 @@ router.get('/bookings', validatePagination, async (req, res) => {
     const total = countResult[0].total;
 
     // Get bookings
-    const [bookings] = await pool.execute(`
+    const [bookings] = await pool.query(`
       SELECT 
         b.id, b.booking_reference, b.guest_id, b.property_id,
         b.check_in_date, b.check_out_date, b.check_in_time, b.check_out_time,
@@ -741,7 +741,7 @@ router.get('/bookings', validatePagination, async (req, res) => {
       ${whereClause}
       ORDER BY b.created_at DESC
       LIMIT ? OFFSET ?
-    `, [...queryParams, parseInt(limit), offset]);
+    `, [...queryParams, parseInt(limit), parseInt(offset)]);
 
     const pagination = generatePagination(parseInt(page), parseInt(limit), total);
 
@@ -913,14 +913,14 @@ router.get('/earnings', async (req, res) => {
     // Calculate growth rates
     const currentEarnings = periodEarnings[0].period_earnings || 0;
     const previousEarnings = prevPeriodEarnings[0].prev_earnings || 0;
-    const earningsGrowth = previousEarnings > 0 
-      ? ((currentEarnings - previousEarnings) / previousEarnings) * 100 
+    const earningsGrowth = previousEarnings > 0
+      ? ((currentEarnings - previousEarnings) / previousEarnings) * 100
       : 0;
 
     const currentBookings = periodEarnings[0].period_bookings || 0;
     const previousBookings = prevPeriodEarnings[0].prev_bookings || 0;
-    const bookingsGrowth = previousBookings > 0 
-      ? ((currentBookings - previousBookings) / previousBookings) * 100 
+    const bookingsGrowth = previousBookings > 0
+      ? ((currentBookings - previousBookings) / previousBookings) * 100
       : 0;
 
     const earningsSummary = {
@@ -1131,7 +1131,7 @@ router.patch('/bookings/:id/confirm', validateId, async (req, res) => {
   console.log('Booking ID:', req.params.id);
   console.log('User ID:', req.user.id);
   console.log('==================================================');
-  
+
   try {
     const { id } = req.params;
 
@@ -1207,7 +1207,7 @@ router.patch('/bookings/:id/confirm', validateId, async (req, res) => {
       booking.total_amount,
       `Owner accepted booking request - Receivable amount: ৳${booking.total_amount}`
     ]);
-    
+
     console.log(`Owner accepted booking request ${id}. DR entry created: ৳${booking.total_amount}`);
 
     // Get updated booking
@@ -1247,12 +1247,12 @@ router.patch('/bookings/:id/confirm', validateId, async (req, res) => {
         const propertyTitle = confirmedBooking.property_title || 'your booking';
         // Format deadline time
         const deadlineDate = confirmedBooking.payment_deadline ? new Date(confirmedBooking.payment_deadline) : null;
-        const deadlineStr = deadlineDate ? deadlineDate.toLocaleString('en-US', { 
-          month: 'short', 
-          day: 'numeric', 
-          hour: 'numeric', 
+        const deadlineStr = deadlineDate ? deadlineDate.toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
           minute: '2-digit',
-          hour12: true 
+          hour12: true
         }) : `${paymentTimeLimitMinutes} minutes`;
         const message = `Hi ${guestName || 'Guest'}, your booking request (${confirmedBooking.booking_reference}) for ${propertyTitle} has been accepted. Please complete payment within ${paymentTimeLimitMinutes} minutes (by ${deadlineStr}) to confirm your stay. Otherwise, the booking will be automatically cancelled.`;
 
@@ -1532,7 +1532,7 @@ router.get('/bookings/:id/payments', validateId, async (req, res) => {
       WHERE booking_id = ?
       ORDER BY created_at ASC
     `, [id]);
-    
+
     // Calculate running balance for each transaction
     let runningBalance = 0;
     const paymentsWithBalance = payments.map(payment => {
@@ -1619,7 +1619,7 @@ router.patch('/bookings/:id/payment', validateId, async (req, res) => {
     // Handle partial payment
     if (partial_amount && parseFloat(partial_amount) > 0) {
       const partialAmt = parseFloat(partial_amount);
-      
+
       // Create a CR (credit) payment record for partial payment
       // CR entries should have status 'completed' as they represent received payments
       const paymentReference = `CR-${Date.now()}-${id}`;
@@ -1641,11 +1641,11 @@ router.patch('/bookings/:id/payment', validateId, async (req, res) => {
       FROM payments
       WHERE booking_id = ?
     `, [id]);
-    
+
     const totalDR = parseFloat(paymentsCheck[0]?.total_dr || 0);
     const totalCR = parseFloat(paymentsCheck[0]?.total_cr || 0);
     const remainingAmount = totalDR - totalCR;
-    
+
     // Automatically set status to 'paid' if fully paid
     let finalPaymentStatus = payment_status;
     if (remainingAmount <= 0.01 && totalDR > 0) {  // Allow small rounding differences
