@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { FiSearch, FiUser, FiLogOut, FiSettings, FiHeart, FiBookOpen, FiChevronDown, FiDollarSign, FiChevronLeft, FiMinus, FiPlus, FiMapPin, FiX } from 'react-icons/fi';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -42,6 +42,7 @@ const StickySearchHeader = ({
   const mobileDatesContainerRef = useRef(null);
   const { settings } = useSettingsStore();
   const { user, isAuthenticated, isAdmin, isPropertyOwner, logout } = useAuthStore();
+  const location = useLocation();
 
   // Load search state from localStorage on mount
   const loadSearchState = () => {
@@ -74,14 +75,22 @@ const StickySearchHeader = ({
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
 
   // Flight Search State
-  const [flightSearchData, setFlightSearchData] = useState({
-    from: 'Dhaka', fromCode: 'DAC', fromFull: 'DAC, Hazrat Shahjalal International Airport',
-    to: "Cox's Bazar", toCode: 'CXB', toFull: "CXB, Cox's Bazar Airport",
-    departDate: new Date('2026-02-12'),
-    returnDate: null,
-    travelers: 1,
-    flightClass: 'Economy',
-    tripType: 'oneWay'
+  const [flightSearchData, setFlightSearchData] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    const urlTripType = params.get('tripType');
+    return {
+      from: 'Dhaka', fromCode: 'DAC', fromFull: 'DAC, Hazrat Shahjalal International Airport',
+      to: "Cox's Bazar", toCode: 'CXB', toFull: "CXB, Cox's Bazar Airport",
+      departDate: new Date('2026-02-12'),
+      returnDate: null,
+      travelers: 1,
+      flightClass: 'Economy',
+      tripType: urlTripType || 'oneWay',
+      legs: [
+        { id: 1, from: 'Dhaka', fromCode: 'DAC', fromFull: 'DAC, Hazrat Shahjalal International Airport', to: "Cox's Bazar", toCode: 'CXB', toFull: "CXB, Cox's Bazar Airport", date: null },
+        { id: 2, from: "Cox's Bazar", fromCode: 'CXB', fromFull: "CXB, Cox's Bazar Airport", to: 'Dhaka', toCode: 'DAC', toFull: 'DAC, Hazrat Shahjalal International Airport', date: null }
+      ]
+    };
   });
   const [flightActiveSection, setFlightActiveSection] = useState(null); // 'from', 'to', 'depart', 'return', 'travelers'
 
@@ -176,7 +185,18 @@ const StickySearchHeader = ({
       ) {
         setDesktopActiveSection(null);
         setDesktopHoverSection(null);
-        setFlightActiveSection(null);
+        // Only clear flight active section if not handled by precise check below
+        if (!flightActiveSection) {
+          setFlightActiveSection(null);
+        }
+      }
+
+      // Precise click-outside check for active flight section
+      if (flightActiveSection) {
+        const activeEl = document.querySelector(`[data-section-id="${flightActiveSection}"]`);
+        if (activeEl && !activeEl.contains(event.target) && !event.target.closest('.react-datepicker-popper') && !event.target.closest('.react-datepicker')) {
+          setFlightActiveSection(null);
+        }
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -803,282 +823,599 @@ const StickySearchHeader = ({
                           className="flex items-center gap-2 cursor-pointer group"
                           onClick={() => setFlightSearchData(prev => ({ ...prev, tripType: 'oneWay', returnDate: null }))}
                         >
-                          <div className={`w-5 h-5 rounded-full border-[5px] transition-all bg-white ${flightSearchData.tripType === 'oneWay' ? 'border-[#1e2049]' : 'border-gray-300'}`}></div>
-                          <span className={`text-sm font-bold transition-colors ${flightSearchData.tripType === 'oneWay' ? 'text-[#1e2049]' : 'text-gray-400 group-hover:text-gray-600'}`}>One Way</span>
+                          <div className={`w-5 h-5 rounded-full border-[5px] transition-all bg-white ${flightSearchData.tripType === 'oneWay' ? 'border-[#E41D57]' : 'border-gray-300'}`}></div>
+                          <span className={`text-sm font-bold transition-colors ${flightSearchData.tripType === 'oneWay' ? 'text-[#E41D57]' : 'text-gray-400 group-hover:text-gray-600'}`}>One Way</span>
                         </label>
                         <label
                           className="flex items-center gap-2 cursor-pointer group"
                           onClick={() => setFlightSearchData(prev => ({ ...prev, tripType: 'roundTrip' }))}
                         >
-                          <div className={`w-5 h-5 rounded-full border-[5px] transition-all bg-white ${flightSearchData.tripType === 'roundTrip' ? 'border-[#1e2049]' : 'border-gray-300'}`}></div>
-                          <span className={`text-sm font-bold transition-colors ${flightSearchData.tripType === 'roundTrip' ? 'text-[#1e2049]' : 'text-gray-400 group-hover:text-gray-600'}`}>Round Way</span>
+                          <div className={`w-5 h-5 rounded-full border-[5px] transition-all bg-white ${flightSearchData.tripType === 'roundTrip' ? 'border-[#E41D57]' : 'border-gray-300'}`}></div>
+                          <span className={`text-sm font-bold transition-colors ${flightSearchData.tripType === 'roundTrip' ? 'text-[#E41D57]' : 'text-gray-400 group-hover:text-gray-600'}`}>Round Way</span>
                         </label>
                         <label
                           className="flex items-center gap-2 cursor-pointer group"
                           onClick={() => setFlightSearchData(prev => ({ ...prev, tripType: 'multiCity', returnDate: null }))}
                         >
-                          <div className={`w-5 h-5 rounded-full border-[5px] transition-all bg-white ${flightSearchData.tripType === 'multiCity' ? 'border-[#1e2049]' : 'border-gray-300'}`}></div>
-                          <span className={`text-sm font-semibold transition-colors ${flightSearchData.tripType === 'multiCity' ? 'text-[#1e2049] font-bold' : 'text-gray-400 group-hover:text-gray-600'}`}>Multi City</span>
+                          <div className={`w-5 h-5 rounded-full border-[5px] transition-all bg-white ${flightSearchData.tripType === 'multiCity' ? 'border-[#E41D57]' : 'border-gray-300'}`}></div>
+                          <span className={`text-sm font-semibold transition-colors ${flightSearchData.tripType === 'multiCity' ? 'text-[#E41D57] font-bold' : 'text-gray-400 group-hover:text-gray-600'}`}>Multi City</span>
                         </label>
                       </div>
 
-                      <div className={`flex items-center shadow-md border border-gray-200 rounded-full w-full max-w-6xl mx-auto transition-all duration-300 ease-out relative z-[90] ${flightActiveSection ? 'bg-[#EBEBEB]' : 'bg-white'}`}>
+                      {/* Standard OneWay/RoundTrip View */}
+                      {flightSearchData.tripType !== 'multiCity' && (
+                        <div className={`flex items-center shadow-md border border-gray-200 rounded-full w-full max-w-6xl mx-auto transition-all duration-300 ease-out relative z-[90] ${flightActiveSection ? 'bg-[#EBEBEB]' : 'bg-white'}`}>
 
-                        {/* FROM Segment */}
-                        <div
-                          className={`flex-1 relative h-[66px] flex flex-col justify-center px-6 cursor-pointer rounded-full transition-all ${flightActiveSection === 'from' ? 'bg-white shadow-lg z-30' : 'hover:bg-gray-100'}`}
-                          onClick={(e) => { e.stopPropagation(); setFlightActiveSection('from'); }}
-                        >
-                          <div className="text-xs font-bold text-gray-900">From</div>
-                          {flightActiveSection === 'from' ? (
-                            <input
-                              autoFocus
-                              className="w-full text-sm font-semibold text-gray-900 bg-transparent outline-none truncate placeholder-gray-400"
-                              value={flightSearchData.from}
-                              onChange={(e) => setFlightSearchData(prev => ({ ...prev, from: e.target.value }))}
-                              placeholder="City or Airport"
-                            />
-                          ) : (
-                            <div className="text-sm font-semibold text-gray-900 truncate">{flightSearchData.from || 'Select City'}</div>
-                          )}
-                          <div className="text-[10px] text-gray-500 truncate">{flightSearchData.fromCode}</div>
-
-                          {/* Swap Icon (Absolute between From/To) */}
+                          {/* FROM Segment */}
                           <div
-                            className="absolute -right-3 top-1/2 -translate-y-1/2 z-40 w-6 h-6 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center cursor-pointer hover:scale-110 hover:bg-gray-50 text-gray-600"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setFlightSearchData(prev => ({
-                                ...prev,
-                                from: prev.to, fromCode: prev.toCode, fromFull: prev.toFull,
-                                to: prev.from, toCode: prev.fromCode, toFull: prev.fromFull
-                              }));
-                            }}
+                            className={`flex-1 relative h-[66px] flex flex-col justify-center px-6 cursor-pointer rounded-full transition-all ${flightActiveSection === 'from' ? 'bg-white shadow-lg z-30' : 'hover:bg-gray-100'}`}
+                            onClick={(e) => { e.stopPropagation(); setFlightActiveSection('from'); }}
                           >
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
-                          </div>
+                            <div className="text-xs font-bold text-gray-900">From</div>
+                            {flightActiveSection === 'from' ? (
+                              <input
+                                autoFocus
+                                className="w-full text-sm font-semibold text-gray-900 bg-transparent outline-none truncate placeholder-gray-400"
+                                value={flightSearchData.from}
+                                onChange={(e) => setFlightSearchData(prev => ({ ...prev, from: e.target.value }))}
+                                placeholder="City or Airport"
+                              />
+                            ) : (
+                              <div className="text-sm font-semibold text-gray-900 truncate">{flightSearchData.from || 'Select City'}</div>
+                            )}
+                            <div className="text-[10px] text-gray-500 truncate">{flightSearchData.fromCode}</div>
 
-                          {/* Suggestions Dropdown */}
-                          {flightActiveSection === 'from' && (
-                            <div className="absolute top-[calc(100%+12px)] left-0 w-[350px] bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-50">
-                              <div className="px-4 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Suggested Airports</div>
-                              {locationSuggestionsData?.filter(l => !flightSearchData.from || (l.city || '').toLowerCase().includes(flightSearchData.from.toLowerCase())).slice(0, 5).map((loc, idx) => (
-                                <div
-                                  key={idx}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setFlightSearchData(prev => ({
-                                      ...prev,
-                                      from: loc.city,
-                                      fromCode: (loc.city || '').substring(0, 3).toUpperCase(),
-                                      fromFull: `${loc.city}, ${loc.country}`
-                                    }));
-                                    setFlightActiveSection('to');
-                                  }}
-                                  className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 cursor-pointer"
-                                >
-                                  <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500"><FiMapPin className="w-4 h-4" /></div>
-                                  <div>
-                                    <div className="font-bold text-sm text-gray-900">{loc.city}</div>
-                                    <div className="text-[10px] text-gray-500">{loc.country}</div>
-                                  </div>
-                                  <div className="ml-auto text-xs font-bold text-gray-400">{(loc.city || '').substring(0, 3).toUpperCase()}</div>
-                                </div>
-                              ))}
+                            {/* Swap Icon (Absolute between From/To) */}
+                            <div
+                              className="absolute -right-3 top-1/2 -translate-y-1/2 z-40 w-6 h-6 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center cursor-pointer hover:scale-110 hover:bg-gray-50 text-gray-600"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setFlightSearchData(prev => ({
+                                  ...prev,
+                                  from: prev.to, fromCode: prev.toCode, fromFull: prev.toFull,
+                                  to: prev.from, toCode: prev.fromCode, toFull: prev.fromFull
+                                }));
+                              }}
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
                             </div>
-                          )}
-                        </div>
 
-                        {/* Divider */}
-                        <div className="h-8 w-px bg-gray-200" />
-
-                        {/* TO Segment */}
-                        <div
-                          className={`flex-1 relative h-[66px] flex flex-col justify-center px-6 cursor-pointer rounded-full transition-all ${flightActiveSection === 'to' ? 'bg-white shadow-lg z-30' : 'hover:bg-gray-100'}`}
-                          onClick={(e) => { e.stopPropagation(); setFlightActiveSection('to'); }}
-                        >
-                          <div className="text-xs font-bold text-gray-900">To</div>
-                          {flightActiveSection === 'to' ? (
-                            <input
-                              autoFocus
-                              className="w-full text-sm font-semibold text-gray-900 bg-transparent outline-none truncate placeholder-gray-400"
-                              value={flightSearchData.to}
-                              onChange={(e) => setFlightSearchData(prev => ({ ...prev, to: e.target.value }))}
-                              placeholder="City or Airport"
-                            />
-                          ) : (
-                            <div className="text-sm font-semibold text-gray-900 truncate">{flightSearchData.to || 'Select City'}</div>
-                          )}
-                          <div className="text-[10px] text-gray-500 truncate">{flightSearchData.toCode}</div>
-
-                          {/* Suggestions Dropdown TO */}
-                          {flightActiveSection === 'to' && (
-                            <div className="absolute top-[calc(100%+12px)] left-0 w-[350px] bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-50">
-                              <div className="px-4 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Suggested Airports</div>
-                              {locationSuggestionsData?.filter(l => !flightSearchData.to || (l.city || '').toLowerCase().includes(flightSearchData.to.toLowerCase())).slice(0, 5).map((loc, idx) => (
-                                <div
-                                  key={idx}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setFlightSearchData(prev => ({
-                                      ...prev,
-                                      to: loc.city,
-                                      toCode: (loc.city || '').substring(0, 3).toUpperCase(),
-                                      toFull: `${loc.city}, ${loc.country}`
-                                    }));
-                                    setFlightActiveSection('depart');
-                                  }}
-                                  className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 cursor-pointer"
-                                >
-                                  <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500"><FiMapPin className="w-4 h-4" /></div>
-                                  <div>
-                                    <div className="font-bold text-sm text-gray-900">{loc.city}</div>
-                                    <div className="text-[10px] text-gray-500">{loc.country}</div>
+                            {/* Suggestions Dropdown */}
+                            {flightActiveSection === 'from' && (
+                              <div className="absolute top-[calc(100%+12px)] left-0 w-[350px] bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-50">
+                                <div className="px-4 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Suggested Airports</div>
+                                {locationSuggestionsData?.filter(l => !flightSearchData.from || (l.city || '').toLowerCase().includes(flightSearchData.from.toLowerCase())).slice(0, 5).map((loc, idx) => (
+                                  <div
+                                    key={idx}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setFlightSearchData(prev => ({
+                                        ...prev,
+                                        from: loc.city,
+                                        fromCode: (loc.city || '').substring(0, 3).toUpperCase(),
+                                        fromFull: `${loc.city}, ${loc.country}`
+                                      }));
+                                      setFlightActiveSection('to');
+                                    }}
+                                    className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 cursor-pointer"
+                                  >
+                                    <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500"><FiMapPin className="w-4 h-4" /></div>
+                                    <div>
+                                      <div className="font-bold text-sm text-gray-900">{loc.city}</div>
+                                      <div className="text-[10px] text-gray-500">{loc.country}</div>
+                                    </div>
+                                    <div className="ml-auto text-xs font-bold text-gray-400">{(loc.city || '').substring(0, 3).toUpperCase()}</div>
                                   </div>
-                                  <div className="ml-auto text-xs font-bold text-gray-400">{(loc.city || '').substring(0, 3).toUpperCase()}</div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Divider */}
-                        <div className="h-8 w-px bg-gray-200" />
-
-                        {/* Dates Segment */}
-                        <div
-                          className={`flex-[1.2] relative h-[66px] flex flex-col justify-center px-6 cursor-pointer rounded-full transition-all ${['depart', 'return'].includes(flightActiveSection) ? 'bg-white shadow-lg z-30' : 'hover:bg-gray-100'}`}
-                          onClick={(e) => { e.stopPropagation(); setFlightActiveSection('depart'); }}
-                        >
-                          <div className="text-xs font-bold text-gray-900">
-                            {['oneWay', 'multiCity'].includes(flightSearchData.tripType) ? 'Departure Date' : 'Departure & Return Date'}
-                          </div>
-                          <div className="text-sm font-semibold text-gray-900 truncate">
-                            {flightSearchData.departDate ? flightSearchData.departDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Add'}
-                            {flightSearchData.tripType !== 'oneWay' && (
-                              <>
-                                {' - '}
-                                {flightSearchData.returnDate ? flightSearchData.returnDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Add'}
-                              </>
+                                ))}
+                              </div>
                             )}
                           </div>
 
-                          {/* DatePopups */}
-                          {['depart', 'return'].includes(flightActiveSection) && (
-                            <div className="absolute top-[calc(100%+12px)] left-1/2 -translate-x-1/2 bg-white rounded-2xl shadow-xl p-4 border border-gray-100 z-[60] flex gap-4" onClick={(e) => e.stopPropagation()}>
-                              <div>
-                                <div className="text-xs font-bold text-gray-500 mb-2 text-center">Departure</div>
-                                <DatePicker
-                                  selected={flightSearchData.departDate}
-                                  onChange={(date) => {
-                                    setFlightSearchData(prev => ({ ...prev, departDate: date }));
-                                    if (['oneWay', 'multiCity'].includes(flightSearchData.tripType)) {
-                                      setFlightActiveSection('travelers');
-                                    } else {
-                                      setFlightActiveSection('return');
-                                    }
-                                  }}
-                                  minDate={new Date()}
-                                  monthsShown={1}
-                                  inline
-                                />
-                              </div>
-                              {!['oneWay', 'multiCity'].includes(flightSearchData.tripType) && (
-                                <div className="border-l border-gray-100 pl-4">
-                                  <div className="text-xs font-bold text-gray-500 mb-2 text-center">Return</div>
-                                  <DatePicker
-                                    selected={flightSearchData.returnDate}
-                                    onChange={(date) => {
-                                      setFlightSearchData(prev => ({ ...prev, returnDate: date }));
-                                      setFlightActiveSection('travelers');
+                          {/* Divider */}
+                          <div className="h-8 w-px bg-gray-200" />
+
+                          {/* TO Segment */}
+                          <div
+                            className={`flex-1 relative h-[66px] flex flex-col justify-center px-6 cursor-pointer rounded-full transition-all ${flightActiveSection === 'to' ? 'bg-white shadow-lg z-30' : 'hover:bg-gray-100'}`}
+                            onClick={(e) => { e.stopPropagation(); setFlightActiveSection('to'); }}
+                          >
+                            <div className="text-xs font-bold text-gray-900">To</div>
+                            {flightActiveSection === 'to' ? (
+                              <input
+                                autoFocus
+                                className="w-full text-sm font-semibold text-gray-900 bg-transparent outline-none truncate placeholder-gray-400"
+                                value={flightSearchData.to}
+                                onChange={(e) => setFlightSearchData(prev => ({ ...prev, to: e.target.value }))}
+                                placeholder="City or Airport"
+                              />
+                            ) : (
+                              <div className="text-sm font-semibold text-gray-900 truncate">{flightSearchData.to || 'Select City'}</div>
+                            )}
+                            <div className="text-[10px] text-gray-500 truncate">{flightSearchData.toCode}</div>
+
+                            {/* Suggestions Dropdown TO */}
+                            {flightActiveSection === 'to' && (
+                              <div className="absolute top-[calc(100%+12px)] left-0 w-[350px] bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-50">
+                                <div className="px-4 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Suggested Airports</div>
+                                {locationSuggestionsData?.filter(l => !flightSearchData.to || (l.city || '').toLowerCase().includes(flightSearchData.to.toLowerCase())).slice(0, 5).map((loc, idx) => (
+                                  <div
+                                    key={idx}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setFlightSearchData(prev => ({
+                                        ...prev,
+                                        to: loc.city,
+                                        toCode: (loc.city || '').substring(0, 3).toUpperCase(),
+                                        toFull: `${loc.city}, ${loc.country}`
+                                      }));
+                                      setFlightActiveSection('depart');
                                     }}
-                                    minDate={flightSearchData.departDate || new Date()}
+                                    className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 cursor-pointer"
+                                  >
+                                    <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500"><FiMapPin className="w-4 h-4" /></div>
+                                    <div>
+                                      <div className="font-bold text-sm text-gray-900">{loc.city}</div>
+                                      <div className="text-[10px] text-gray-500">{loc.country}</div>
+                                    </div>
+                                    <div className="ml-auto text-xs font-bold text-gray-400">{(loc.city || '').substring(0, 3).toUpperCase()}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Divider */}
+                          <div className="h-8 w-px bg-gray-200" />
+
+                          {/* Dates Segment */}
+                          <div
+                            className={`flex-[1.2] relative h-[66px] flex flex-col justify-center px-6 cursor-pointer rounded-full transition-all ${['depart', 'return'].includes(flightActiveSection) ? 'bg-white shadow-lg z-30' : 'hover:bg-gray-100'}`}
+                            onClick={(e) => { e.stopPropagation(); setFlightActiveSection('depart'); }}
+                          >
+                            <div className="text-xs font-bold text-gray-900">
+                              {['oneWay', 'multiCity'].includes(flightSearchData.tripType) ? 'Departure Date' : 'Departure & Return Date'}
+                            </div>
+                            <div className="text-sm font-semibold text-gray-900 truncate">
+                              {flightSearchData.departDate ? flightSearchData.departDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Add'}
+                              {flightSearchData.tripType !== 'oneWay' && (
+                                <>
+                                  {' - '}
+                                  {flightSearchData.returnDate ? flightSearchData.returnDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Add'}
+                                </>
+                              )}
+                            </div>
+
+                            {/* DatePopups */}
+                            {['depart', 'return'].includes(flightActiveSection) && (
+                              <div className="absolute top-[calc(100%+12px)] left-1/2 -translate-x-1/2 bg-white rounded-2xl shadow-xl p-4 border border-gray-100 z-[60] flex gap-4" onClick={(e) => e.stopPropagation()}>
+                                <div>
+                                  <div className="text-xs font-bold text-gray-500 mb-2 text-center">Departure</div>
+                                  <DatePicker
+                                    selected={flightSearchData.departDate}
+                                    onChange={(date) => {
+                                      setFlightSearchData(prev => ({ ...prev, departDate: date }));
+                                      if (['oneWay', 'multiCity'].includes(flightSearchData.tripType)) {
+                                        setFlightActiveSection('travelers');
+                                      } else {
+                                        setFlightActiveSection('return');
+                                      }
+                                    }}
+                                    minDate={new Date()}
                                     monthsShown={1}
                                     inline
                                   />
                                 </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Divider */}
-                        <div className="h-8 w-px bg-gray-200" />
-
-                        {/* Travelers Segment */}
-                        <div
-                          className={`flex-1 relative h-[66px] flex flex-col justify-center px-6 cursor-pointer rounded-full transition-all ${flightActiveSection === 'travelers' ? 'bg-white shadow-lg z-30' : 'hover:bg-gray-100'}`}
-                          onClick={(e) => { e.stopPropagation(); setFlightActiveSection('travelers'); }}
-                        >
-                          <div className="text-xs font-bold text-gray-900">Traveller & Class</div>
-                          <div className="text-[10px] text-gray-900 truncate">
-                            {flightSearchData.travelers} Traveler, {flightSearchData.flightClass}
+                                {!['oneWay', 'multiCity'].includes(flightSearchData.tripType) && (
+                                  <div className="border-l border-gray-100 pl-4">
+                                    <div className="text-xs font-bold text-gray-500 mb-2 text-center">Return</div>
+                                    <DatePicker
+                                      selected={flightSearchData.returnDate}
+                                      onChange={(date) => {
+                                        setFlightSearchData(prev => ({ ...prev, returnDate: date }));
+                                        setFlightActiveSection('travelers');
+                                      }}
+                                      minDate={flightSearchData.departDate || new Date()}
+                                      monthsShown={1}
+                                      inline
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
 
-                          {/* Travelers Dropdown */}
-                          {flightActiveSection === 'travelers' && (
-                            <div className="absolute top-[calc(100%+12px)] right-0 w-[350px] bg-white rounded-2xl shadow-xl border border-gray-100 p-6 z-[60] cursor-default" onClick={(e) => e.stopPropagation()}>
-                              <div className="flex items-center justify-between mb-6">
-                                <div>
-                                  <div className="font-bold text-gray-900">Adults</div>
-                                  <div className="text-xs text-gray-500">Age 12+</div>
+                          {/* Divider */}
+                          <div className="h-8 w-px bg-gray-200" />
+
+                          {/* Travelers Segment */}
+                          <div
+                            className={`flex-1 relative h-[66px] flex flex-col justify-center px-6 cursor-pointer rounded-full transition-all ${flightActiveSection === 'travelers' ? 'bg-white shadow-lg z-30' : 'hover:bg-gray-100'}`}
+                            onClick={(e) => { e.stopPropagation(); setFlightActiveSection('travelers'); }}
+                          >
+                            <div className="text-xs font-bold text-gray-900">Traveller & Class</div>
+                            <div className="text-[10px] text-gray-900 truncate">
+                              {flightSearchData.travelers} Traveler, {flightSearchData.flightClass}
+                            </div>
+
+                            {/* Travelers Dropdown */}
+                            {flightActiveSection === 'travelers' && (
+                              <div className="absolute top-[calc(100%+12px)] right-0 w-[350px] bg-white rounded-2xl shadow-xl border border-gray-100 p-6 z-[60] cursor-default" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center justify-between mb-6">
+                                  <div>
+                                    <div className="font-bold text-gray-900">Adults</div>
+                                    <div className="text-xs text-gray-500">Age 12+</div>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    <button
+                                      className={`w-8 h-8 rounded-full border flex items-center justify-center ${flightSearchData.travelers <= 1 ? 'border-gray-200 text-gray-300' : 'border-gray-400 text-gray-600 hover:border-black hover:text-black'}`}
+                                      onClick={() => setFlightSearchData(prev => ({ ...prev, travelers: Math.max(1, prev.travelers - 1) }))}
+                                      disabled={flightSearchData.travelers <= 1}
+                                    >
+                                      <FiMinus className="w-4 h-4" />
+                                    </button>
+                                    <span className="font-bold text-base min-w-[20px] text-center">{flightSearchData.travelers}</span>
+                                    <button
+                                      className="w-8 h-8 rounded-full border border-gray-400 text-gray-600 hover:border-black hover:text-black flex items-center justify-center"
+                                      onClick={() => setFlightSearchData(prev => ({ ...prev, travelers: Math.min(9, prev.travelers + 1) }))}
+                                    >
+                                      <FiPlus className="w-4 h-4" />
+                                    </button>
+                                  </div>
                                 </div>
-                                <div className="flex items-center gap-3">
-                                  <button
-                                    className={`w-8 h-8 rounded-full border flex items-center justify-center ${flightSearchData.travelers <= 1 ? 'border-gray-200 text-gray-300' : 'border-gray-400 text-gray-600 hover:border-black hover:text-black'}`}
-                                    onClick={() => setFlightSearchData(prev => ({ ...prev, travelers: Math.max(1, prev.travelers - 1) }))}
-                                    disabled={flightSearchData.travelers <= 1}
-                                  >
-                                    <FiMinus className="w-4 h-4" />
-                                  </button>
-                                  <span className="font-bold text-base min-w-[20px] text-center">{flightSearchData.travelers}</span>
-                                  <button
-                                    className="w-8 h-8 rounded-full border border-gray-400 text-gray-600 hover:border-black hover:text-black flex items-center justify-center"
-                                    onClick={() => setFlightSearchData(prev => ({ ...prev, travelers: Math.min(9, prev.travelers + 1) }))}
-                                  >
-                                    <FiPlus className="w-4 h-4" />
-                                  </button>
+                                <div className="h-px bg-gray-200 my-4" />
+                                <div>
+                                  <div className="font-bold text-gray-900 mb-3">Cabin Class</div>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    {['Economy', 'Business', 'First Class'].map(cls => (
+                                      <button
+                                        key={cls}
+                                        className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${flightSearchData.flightClass === cls ? 'border-black bg-gray-900 text-white' : 'border-gray-200 hover:border-gray-400 text-gray-700'}`}
+                                        onClick={() => setFlightSearchData(prev => ({ ...prev, flightClass: cls }))}
+                                      >
+                                        {cls}
+                                      </button>
+                                    ))}
+                                  </div>
                                 </div>
                               </div>
-                              <div className="h-px bg-gray-200 my-4" />
-                              <div>
-                                <div className="font-bold text-gray-900 mb-3">Cabin Class</div>
-                                <div className="grid grid-cols-2 gap-2">
-                                  {['Economy', 'Business', 'First Class'].map(cls => (
-                                    <button
-                                      key={cls}
-                                      className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${flightSearchData.flightClass === cls ? 'border-black bg-gray-900 text-white' : 'border-gray-200 hover:border-gray-400 text-gray-700'}`}
-                                      onClick={() => setFlightSearchData(prev => ({ ...prev, flightClass: cls }))}
-                                    >
-                                      {cls}
-                                    </button>
-                                  ))}
+                            )}
+                          </div>
+
+                          {/* Search Button */}
+                          <button
+                            className="w-12 h-12 rounded-full bg-[#E41D57] hover:bg-[#c01b4b] text-white shadow-md flex items-center justify-center transition-all hover:scale-105 active:scale-95 m-2"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const params = new URLSearchParams();
+                              params.set('property_type', 'flight');
+                              params.set('from', flightSearchData.fromCode || 'DAC');
+                              params.set('to', flightSearchData.toCode || 'CXB');
+                              params.set('depart', flightSearchData.departDate ? flightSearchData.departDate.toISOString() : new Date().toISOString());
+                              if (flightSearchData.returnDate) params.set('return', flightSearchData.returnDate.toISOString());
+                              params.set('travelers', flightSearchData.travelers);
+                              params.set('class', flightSearchData.flightClass);
+                              navigate(`/search?${params.toString()}`);
+                            }}
+                          >
+                            <FiSearch className="w-5 h-5 font-bold" />
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Multi City View */}
+                      {flightSearchData.tripType === 'multiCity' && (
+                        <div className="w-full max-w-6xl mx-auto space-y-3">
+                          <style>{`
+                            .flight-datepicker .react-datepicker {
+                              font-family: 'Inter', sans-serif;
+                              border: none !important;
+                              box-shadow: none !important;
+                              width: 100%;
+                            }
+                            .flight-datepicker .react-datepicker__header {
+                              background-color: white !important;
+                              border-bottom: none !important;
+                              padding-top: 15px;
+                              padding-bottom: 10px;
+                            }
+                            .flight-datepicker .react-datepicker__current-month {
+                              font-size: 16px;
+                              font-weight: 700;
+                              color: #000;
+                              margin-bottom: 20px;
+                            }
+                            .flight-datepicker .react-datepicker__day-names {
+                              margin-bottom: 5px;
+                            }
+                            .flight-datepicker .react-datepicker__day-name {
+                              color: #1f2937;
+                              font-weight: 500;
+                              width: 2.5rem;
+                              margin: 0.1rem;
+                            }
+                            .flight-datepicker .react-datepicker__month {
+                              margin: 0;
+                            }
+                            .flight-datepicker .react-datepicker__day {
+                              width: 2.5rem;
+                              line-height: 2.5rem;
+                              margin: 0.1rem;
+                              border-radius: 50% !important;
+                              font-weight: 500;
+                              color: #1f2937;
+                            }
+                            .flight-datepicker .react-datepicker__day--selected,
+                            .flight-datepicker .react-datepicker__day--keyboard-selected {
+                              background-color: #1e2049 !important;
+                              color: white !important;
+                            }
+                            .flight-datepicker .react-datepicker__day--outside-month {
+                              color: #d1d5db !important;
+                            }
+                            .flight-datepicker .react-datepicker__day:hover:not(.react-datepicker__day--selected) {
+                              background-color: #f3f4f6 !important;
+                            }
+                            .flight-datepicker .react-datepicker__navigation {
+                              top: 18px;
+                            }
+                            .flight-datepicker .react-datepicker__navigation-icon::before {
+                              border-color: #374151;
+                              border-width: 2px 2px 0 0;
+                            }
+                          `}</style>
+                          {flightSearchData.legs.map((leg, index) => (
+                            <div key={leg.id} className={`flex items-center shadow-md border border-gray-200 rounded-full w-full max-w-6xl mx-auto transition-all duration-300 ease-out relative z-[90] mb-2 ${flightActiveSection && flightActiveSection.startsWith(`leg-${index}`) ? 'bg-[#EBEBEB]' : 'bg-white'}`}>
+                              {/* FROM Segment */}
+                              <div
+                                data-section-id={`leg-${index}-from`}
+                                className={`flex-1 relative h-[66px] flex flex-col justify-center px-6 rounded-full transition-all ${flightActiveSection === `leg-${index}-from` ? 'bg-white shadow-lg z-30' : 'hover:bg-gray-100'}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setFlightActiveSection(`leg-${index}-from`);
+                                }}
+                              >
+                                <div className="text-xs font-bold text-gray-900">From</div>
+                                {flightActiveSection === `leg-${index}-from` ? (
+                                  <input
+                                    autoFocus
+                                    className="w-full text-sm font-semibold text-gray-900 bg-transparent outline-none truncate placeholder-gray-400"
+                                    value={leg.from}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      const newLegs = [...flightSearchData.legs];
+                                      newLegs[index] = { ...newLegs[index], from: val };
+                                      setFlightSearchData(prev => ({ ...prev, legs: newLegs }));
+                                    }}
+                                    placeholder="City or Airport"
+                                  />
+                                ) : (
+                                  <div className="text-sm font-semibold text-gray-900 truncate">{leg.from || 'Select City'}</div>
+                                )}
+                                <div className="text-[10px] text-gray-500 truncate">{leg.fromCode}</div>
+
+                                {flightActiveSection === `leg-${index}-from` && (
+                                  <div className="absolute top-[calc(100%+12px)] left-0 w-[350px] bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-50">
+                                    <div className="px-4 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Suggested Airports</div>
+                                    {locationSuggestionsData?.map((loc, idx) => (
+                                      <div
+                                        key={idx}
+                                        className="px-3 py-2 hover:bg-gray-50 cursor-pointer flex items-center gap-3"
+                                        onMouseDown={(e) => {
+                                          e.stopPropagation();
+                                          const newLegs = [...flightSearchData.legs];
+                                          newLegs[index] = { ...newLegs[index], from: loc.city, fromCode: loc.code || (loc.city || '').substring(0, 3).toUpperCase() };
+                                          setFlightSearchData(prev => ({ ...prev, legs: newLegs }));
+                                          setFlightActiveSection(`leg-${index}-to`);
+                                        }}
+                                      >
+                                        <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500"><FiMapPin className="w-4 h-4" /></div>
+                                        <div>
+                                          <div className="font-semibold text-sm text-gray-900">{loc.city}</div>
+                                          <div className="text-[10px] text-gray-500">{loc.country}</div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Divider */}
+                              <div className="h-8 w-px bg-gray-200" />
+
+                              {/* TO Segment */}
+                              <div
+                                data-section-id={`leg-${index}-to`}
+                                className={`flex-1 relative h-[66px] flex flex-col justify-center px-6 rounded-full transition-all ${flightActiveSection === `leg-${index}-to` ? 'bg-white shadow-lg z-30' : 'hover:bg-gray-100'}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setFlightActiveSection(`leg-${index}-to`);
+                                }}
+                              >
+                                <div className="text-xs font-bold text-gray-900">To</div>
+                                {flightActiveSection === `leg-${index}-to` ? (
+                                  <input
+                                    autoFocus
+                                    className="w-full text-sm font-semibold text-gray-900 bg-transparent outline-none truncate placeholder-gray-400"
+                                    value={leg.to}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      const newLegs = [...flightSearchData.legs];
+                                      newLegs[index] = { ...newLegs[index], to: val };
+                                      setFlightSearchData(prev => ({ ...prev, legs: newLegs }));
+                                    }}
+                                    placeholder="City or Airport"
+                                  />
+                                ) : (
+                                  <div className="text-sm font-semibold text-gray-900 truncate">{leg.to || 'Select City'}</div>
+                                )}
+                                <div className="text-[10px] text-gray-500 truncate">{leg.toCode}</div>
+
+                                {flightActiveSection === `leg-${index}-to` && (
+                                  <div className="absolute top-[calc(100%+12px)] left-0 w-[350px] bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-50">
+                                    <div className="px-4 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Suggested Airports</div>
+                                    {locationSuggestionsData?.map((loc, idx) => (
+                                      <div
+                                        key={idx}
+                                        className="px-3 py-2 hover:bg-gray-50 cursor-pointer flex items-center gap-3"
+                                        onMouseDown={(e) => {
+                                          e.stopPropagation();
+                                          const newLegs = [...flightSearchData.legs];
+                                          newLegs[index] = { ...newLegs[index], to: loc.city, toCode: loc.code || (loc.city || '').substring(0, 3).toUpperCase() };
+                                          setFlightSearchData(prev => ({ ...prev, legs: newLegs }));
+                                          setFlightActiveSection(`leg-${index}-date`);
+                                        }}
+                                      >
+                                        <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500"><FiMapPin className="w-4 h-4" /></div>
+                                        <div>
+                                          <div className="font-semibold text-sm text-gray-900">{loc.city}</div>
+                                          <div className="text-[10px] text-gray-500">{loc.country}</div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Divider */}
+                              <div className="h-8 w-px bg-gray-200" />
+
+                              {/* DATE Segment */}
+                              <div
+                                data-section-id={`leg-${index}-date`}
+                                className={`flex-[0.8] relative h-[66px] flex flex-col justify-center px-6 rounded-full transition-all ${flightActiveSection === `leg-${index}-date` ? 'bg-white shadow-lg z-30' : 'hover:bg-gray-100'}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  // Don't reopen if clicking inside the datepicker
+                                  if (e.target.closest('.flight-datepicker')) return;
+                                  setFlightActiveSection(`leg-${index}-date`);
+                                }}
+                              >
+                                <div className="text-xs font-bold text-gray-900">Date</div>
+                                <div className="text-sm font-semibold text-gray-900 truncate">
+                                  {leg.date ? leg.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Select Date'}
                                 </div>
+                                {flightActiveSection === `leg-${index}-date` && (
+                                  <div className="flight-datepicker absolute top-[calc(100%+12px)] left-0 bg-white rounded-2xl shadow-xl border border-gray-100 p-6 z-[101]">
+                                    <DatePicker
+                                      selected={leg.date}
+                                      onChange={(date) => {
+                                        const newLegs = [...flightSearchData.legs];
+                                        newLegs[index] = { ...newLegs[index], date: date };
+                                        setFlightSearchData(prev => ({ ...prev, legs: newLegs }));
+                                        // Delay closing slightly to prevent click event fall-through/bubbling issues
+                                        setTimeout(() => setFlightActiveSection(null), 50);
+                                      }}
+                                      minDate={new Date()}
+                                      monthsShown={1}
+                                      inline
+                                    />
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* TRAVELERS & CLASS - Only on First Row */}
+                              {index === 0 && (
+                                <>
+                                  <div className="h-8 w-px bg-gray-200" />
+                                  <div
+                                    data-section-id="leg-0-travelers"
+                                    className={`flex-[1.2] relative h-[66px] flex flex-col justify-center px-6 rounded-full transition-all ${flightActiveSection === 'leg-0-travelers' ? 'bg-white shadow-lg z-30' : 'hover:bg-gray-100'}`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setFlightActiveSection('leg-0-travelers');
+                                    }}
+                                  >
+                                    <div className="text-xs font-bold text-gray-900">Travelers & Class</div>
+                                    <div className="text-sm font-semibold text-gray-900 truncate">
+                                      {flightSearchData.travelers} Traveler, {flightSearchData.flightClass}
+                                    </div>
+                                    {flightActiveSection === 'leg-0-travelers' && (
+                                      <div className="absolute top-[calc(100%+12px)] right-0 w-[300px] bg-white rounded-2xl shadow-xl border border-gray-100 p-6 z-50 cursor-default" onClick={(e) => e.stopPropagation()}>
+                                        <div className="flex justify-between items-center mb-6">
+                                          <div>
+                                            <div className="font-bold text-gray-900">Travelers</div>
+                                            <div className="text-xs text-gray-500">Age 13+</div>
+                                          </div>
+                                          <div className="flex items-center gap-3">
+                                            <button onClick={() => setFlightSearchData(p => ({ ...p, travelers: Math.max(1, p.travelers - 1) }))} className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:border-black transition-colors">-</button>
+                                            <span className="w-4 text-center font-bold">{flightSearchData.travelers}</span>
+                                            <button onClick={() => setFlightSearchData(p => ({ ...p, travelers: p.travelers + 1 }))} className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:border-black transition-colors">+</button>
+                                          </div>
+                                        </div>
+                                        <div className="border-t border-gray-100 pt-6">
+                                          <div className="font-bold text-gray-900 mb-3">Cabin Class</div>
+                                          <div className="flex flex-wrap gap-2">
+                                            {['Economy', 'Business', 'First'].map(c => (
+                                              <button
+                                                key={c}
+                                                onClick={() => setFlightSearchData(p => ({ ...p, flightClass: c }))}
+                                                className={`px-4 py-2 rounded-full text-xs font-bold border transition-all ${flightSearchData.flightClass === c ? 'bg-black text-white border-black' : 'border-gray-200 text-gray-700 hover:border-black'}`}
+                                              >
+                                                {c}
+                                              </button>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </>
+                              )}
+
+                              {/* ACTIONS */}
+                              <div className="px-2 flex items-center gap-2">
+                                {index === flightSearchData.legs.length - 1 ? (
+                                  <>
+                                    <button
+                                      className="w-10 h-10 rounded-full bg-[#E41D57] hover:bg-[#c01b4b] text-white flex items-center justify-center transition-all shadow-md"
+                                      onClick={() => {
+                                        setFlightSearchData(prev => ({
+                                          ...prev,
+                                          legs: [
+                                            ...prev.legs,
+                                            {
+                                              id: prev.legs.length + 1,
+                                              from: prev.legs[prev.legs.length - 1].to,
+                                              fromCode: prev.legs[prev.legs.length - 1].toCode,
+                                              to: '',
+                                              toCode: '',
+                                              date: new Date()
+                                            }
+                                          ]
+                                        }))
+                                      }}
+                                    >
+                                      <FiPlus className="w-5 h-5" />
+                                    </button>
+                                    <button
+                                      className="w-auto px-6 h-12 rounded-full bg-[#E41D57] hover:bg-[#c01b4b] text-white flex items-center justify-center transition-all shadow-lg gap-2"
+                                      onClick={() => {
+                                        navigate(`/search?property_type=flight&tripType=multiCity`);
+                                      }}
+                                    >
+                                      <FiSearch className="w-5 h-5" />
+                                      <span className="font-bold text-base">Search</span>
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button
+                                    className="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 flex items-center justify-center transition-all"
+                                    onClick={() => {
+                                      if (flightSearchData.legs.length > 1) {
+                                        const newLegs = flightSearchData.legs.filter((_, i) => i !== index);
+                                        setFlightSearchData(prev => ({ ...prev, legs: newLegs }));
+                                      }
+                                    }}
+                                  >
+                                    <FiX className="w-5 h-5" />
+                                  </button>
+                                )}
                               </div>
                             </div>
-                          )}
+                          ))}
                         </div>
-
-                        {/* Search Button */}
-                        <button
-                          className="w-12 h-12 rounded-full bg-[#E41D57] hover:bg-[#c01b4b] text-white shadow-md flex items-center justify-center transition-all hover:scale-105 active:scale-95 m-2"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const params = new URLSearchParams();
-                            params.set('property_type', 'flight');
-                            params.set('from', flightSearchData.fromCode || 'DAC');
-                            params.set('to', flightSearchData.toCode || 'CXB');
-                            params.set('depart', flightSearchData.departDate ? flightSearchData.departDate.toISOString() : new Date().toISOString());
-                            if (flightSearchData.returnDate) params.set('return', flightSearchData.returnDate.toISOString());
-                            params.set('travelers', flightSearchData.travelers);
-                            params.set('class', flightSearchData.flightClass);
-                            navigate(`/search?${params.toString()}`);
-                          }}
-                        >
-                          <FiSearch className="w-5 h-5 font-bold" />
-                        </button>
-                      </div>
-                      );                    </div>
+                      )}
+                    </div>
                   );
                 }
 
@@ -1343,33 +1680,36 @@ const StickySearchHeader = ({
                 )}
               </div>
             </div>
-          </div>
-          {/* Desktop Property Types Strip - Visible ONLY when search header is ACTIVE (expanded) */}
-          {desktopActiveSection && (
-            <div className="hidden md:block border-t border-gray-100 bg-white animate-fadeIn">
-              <div className="max-w-7xl mx-auto px-4 lg:px-8">
-                <div className="flex items-center gap-8 py-3 overflow-x-auto scrollbar-hide">
-                  {propertyTypes && propertyTypes.map((type) => {
-                    const isActive = activePropertyType === (type.name || '').toLowerCase();
-                    return (
-                      <button
-                        key={type.id}
-                        onClick={() => handlePropertyTypeClick(type.name)}
-                        className={`flex flex-col items-center gap-2 min-w-max group cursor-pointer transition-all duration-200 ${isActive ? 'opacity-100' : 'opacity-60 hover:opacity-80'}`}
-                      >
-                        <div className={`w-6 h-6 object-contain transition-all duration-300 ${isActive ? 'grayscale-0' : 'grayscale'}`}>
-                          {getTypeIcon(type.name, isActive)}
-                        </div>
-                        <span className={`text-xs font-semibold whitespace-nowrap pb-1 border-b-2 transition-all duration-200 ${isActive ? 'text-black border-black' : 'text-gray-500 border-transparent hover:text-gray-800'}`}>
-                          {type.name}
-                        </span>
-                      </button>
-                    );
-                  })}
+
+            {/* Desktop Property Types Strip - Visible ONLY when search header is ACTIVE (expanded) */}
+            {
+              desktopActiveSection && (
+                <div className="hidden md:block border-t border-gray-100 bg-white animate-fadeIn">
+                  <div className="max-w-7xl mx-auto px-4 lg:px-8">
+                    <div className="flex items-center gap-8 py-3 overflow-x-auto scrollbar-hide">
+                      {propertyTypes && propertyTypes.map((type) => {
+                        const isActive = activePropertyType === (type.name || '').toLowerCase();
+                        return (
+                          <button
+                            key={type.id}
+                            onClick={() => handlePropertyTypeClick(type.name)}
+                            className={`flex flex-col items-center gap-2 min-w-max group cursor-pointer transition-all duration-200 ${isActive ? 'opacity-100' : 'opacity-60 hover:opacity-80'}`}
+                          >
+                            <div className={`w-6 h-6 object-contain transition-all duration-300 ${isActive ? 'grayscale-0' : 'grayscale'}`}>
+                              {getTypeIcon(type.name, isActive)}
+                            </div>
+                            <span className={`text-xs font-semibold whitespace-nowrap pb-1 border-b-2 transition-all duration-200 ${isActive ? 'text-black border-black' : 'text-gray-500 border-transparent hover:text-gray-800'}`}>
+                              {type.name}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-          )}
+              )
+            }
+          </div>
         </div>
       </div>
     </>

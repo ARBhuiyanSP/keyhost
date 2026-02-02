@@ -56,14 +56,22 @@ const Navbar = () => {
   const [headerActivePillStyle, setHeaderActivePillStyle] = useState({ x: 0, w: 0, visible: false });
 
   // Flight Search State
-  const [flightSearchData, setFlightSearchData] = useState({
-    from: 'Dhaka', fromCode: 'DAC', fromFull: 'DAC, Hazrat Shahjalal International Airport',
-    to: "Cox's Bazar", toCode: 'CXB', toFull: "CXB, Cox's Bazar Airport",
-    departDate: new Date('2026-02-12'),
-    returnDate: null,
-    travelers: 1,
-    flightClass: 'Economy',
-    tripType: 'oneWay'
+  const [flightSearchData, setFlightSearchData] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    const urlTripType = params.get('tripType');
+    return {
+      from: 'Dhaka', fromCode: 'DAC', fromFull: 'DAC, Hazrat Shahjalal International Airport',
+      to: "Cox's Bazar", toCode: 'CXB', toFull: "CXB, Cox's Bazar Airport",
+      departDate: new Date('2026-02-12'),
+      returnDate: null,
+      travelers: 1,
+      flightClass: 'Economy',
+      tripType: urlTripType || 'oneWay',
+      legs: [
+        { id: 1, from: 'Chattogram', fromCode: 'CGP', to: 'Dhaka', toCode: 'DAC', date: null },
+        { id: 2, from: 'Dhaka', fromCode: 'DAC', to: 'Saidpur', toCode: 'SPD', date: null }
+      ]
+    };
   });
   const [flightActiveSection, setFlightActiveSection] = useState(null);
   const [guestCounts, setGuestCounts] = useState({
@@ -421,13 +429,21 @@ const Navbar = () => {
         setHeaderDateOpen(false);
       }
 
+      // precise click-outside check for flight active section (Multi City)
+      if (flightActiveSection) {
+        const activeEl = document.querySelector(`[data-section-id="${flightActiveSection}"]`);
+        if (activeEl && !activeEl.contains(event.target) && !event.target.closest('.react-datepicker-popper') && !event.target.closest('.react-datepicker')) {
+          setFlightActiveSection(null);
+        }
+      }
+
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showHeaderLocationSuggestions, showGuestsDropdown, headerDateOpen, showHeaderToSuggestions]); // Added showHeaderToSuggestions
+  }, [showHeaderLocationSuggestions, showGuestsDropdown, headerDateOpen, showHeaderToSuggestions, flightActiveSection]); // Added flightActiveSection
 
   const isActive = (path) => {
     return location.pathname === path;
@@ -821,15 +837,15 @@ const Navbar = () => {
                     setSearchData(prev => ({ ...prev, checkOut: null }));
                   }}
                 >
-                  <div className={`w-5 h-5 rounded-full border-[5px] transition-all bg-white ${flightSearchData.tripType === 'oneWay' ? 'border-[#1e2049]' : 'border-gray-300'}`}></div>
-                  <span className={`text-sm font-bold transition-colors ${flightSearchData.tripType === 'oneWay' ? 'text-[#1e2049]' : 'text-gray-400 group-hover:text-gray-600'}`}>One Way</span>
+                  <div className={`w-5 h-5 rounded-full border-[5px] transition-all bg-white ${flightSearchData.tripType === 'oneWay' ? 'border-[#E41D57]' : 'border-gray-300'}`}></div>
+                  <span className={`text-sm font-bold transition-colors ${flightSearchData.tripType === 'oneWay' ? 'text-[#E41D57]' : 'text-gray-400 group-hover:text-gray-600'}`}>One Way</span>
                 </label>
                 <label
                   className="flex items-center gap-2 cursor-pointer group"
                   onClick={() => setFlightSearchData(prev => ({ ...prev, tripType: 'roundTrip' }))}
                 >
-                  <div className={`w-5 h-5 rounded-full border-[5px] transition-all bg-white ${flightSearchData.tripType === 'roundTrip' || !flightSearchData.tripType ? 'border-[#1e2049]' : 'border-gray-300'}`}></div>
-                  <span className={`text-sm font-bold transition-colors ${flightSearchData.tripType === 'roundTrip' || !flightSearchData.tripType ? 'text-[#1e2049]' : 'text-gray-400 group-hover:text-gray-600'}`}>Round Way</span>
+                  <div className={`w-5 h-5 rounded-full border-[5px] transition-all bg-white ${flightSearchData.tripType === 'roundTrip' || !flightSearchData.tripType ? 'border-[#E41D57]' : 'border-gray-300'}`}></div>
+                  <span className={`text-sm font-bold transition-colors ${flightSearchData.tripType === 'roundTrip' || !flightSearchData.tripType ? 'text-[#E41D57]' : 'text-gray-400 group-hover:text-gray-600'}`}>Round Way</span>
                 </label>
                 <label
                   className="flex items-center gap-2 cursor-pointer group"
@@ -838,477 +854,840 @@ const Navbar = () => {
                     setSearchData(prev => ({ ...prev, checkOut: null }));
                   }}
                 >
-                  <div className={`w-5 h-5 rounded-full border-[5px] transition-all bg-white ${flightSearchData.tripType === 'multiCity' ? 'border-[#1e2049]' : 'border-gray-300'}`}></div>
-                  <span className={`text-sm font-semibold transition-colors ${flightSearchData.tripType === 'multiCity' ? 'text-[#1e2049] font-bold' : 'text-gray-400 group-hover:text-gray-600'}`}>Multi City</span>
+                  <div className={`w-5 h-5 rounded-full border-[5px] transition-all bg-white ${flightSearchData.tripType === 'multiCity' ? 'border-[#E41D57]' : 'border-gray-300'}`}></div>
+                  <span className={`text-sm font-semibold transition-colors ${flightSearchData.tripType === 'multiCity' ? 'text-[#E41D57] font-bold' : 'text-gray-400 group-hover:text-gray-600'}`}>Multi City</span>
                 </label>
               </div>
             )}
-            <form
-              ref={searchFormRef}
-              onSubmit={handleSearch}
-              className={`pr-2 static rounded-full border transition-all duration-300 ease-out flex items-center ${headerActiveType === 'flight' ? 'max-w-6xl' : 'max-w-4xl'} mx-auto z-[90] overflow-visible relative 
+            {headerActiveType === 'flight' && flightSearchData.tripType === 'multiCity' ? (
+              <div className="flex flex-col gap-2 w-full max-w-6xl mx-auto relative z-[90]">
+                <style>{`
+                  .flight-datepicker .react-datepicker {
+                    font-family: 'Inter', sans-serif;
+                    border: none !important;
+                    box-shadow: none !important;
+                    width: 100%;
+                  }
+                  .flight-datepicker .react-datepicker__header {
+                    background-color: white !important;
+                    border-bottom: none !important;
+                    padding-top: 20px;
+                    padding-bottom: 10px;
+                  }
+                  .flight-datepicker .react-datepicker__current-month {
+                    font-size: 16px;
+                    font-weight: 700;
+                    color: #000;
+                    margin-bottom: 16px;
+                  }
+                  .flight-datepicker .react-datepicker__day-names {
+                    margin-bottom: 8px;
+                  }
+                  .flight-datepicker .react-datepicker__day-name {
+                    color: #6b7280;
+                    font-weight: 600;
+                    width: 2.5rem;
+                    margin: 0.1rem;
+                    font-size: 0.85rem;
+                  }
+                  .flight-datepicker .react-datepicker__month {
+                    margin: 0;
+                  }
+                  .flight-datepicker .react-datepicker__day {
+                    width: 2.5rem;
+                    line-height: 2.5rem;
+                    margin: 0.1rem;
+                    border-radius: 50% !important;
+                    font-weight: 500;
+                    color: #1f2937;
+                    font-size: 0.9rem;
+                  }
+                  .flight-datepicker .react-datepicker__day--selected,
+                  .flight-datepicker .react-datepicker__day--keyboard-selected {
+                    background-color: #1e2049 !important;
+                    color: white !important;
+                  }
+                  .flight-datepicker .react-datepicker__day--outside-month {
+                    color: #e5e7eb !important;
+                  }
+                  .flight-datepicker .react-datepicker__day:hover:not(.react-datepicker__day--selected) {
+                    background-color: #f3f4f6 !important;
+                  }
+                  .flight-datepicker .react-datepicker__navigation {
+                    top: 20px;
+                  }
+                  .flight-datepicker .react-datepicker__navigation-icon::before {
+                    border-color: #374151;
+                    border-width: 2px 2px 0 0;
+                  }
+                `}</style>
+                {flightSearchData.legs && flightSearchData.legs.map((leg, index) => (
+                  <div key={leg.id} className={`flex items-center shadow-md border border-gray-200 rounded-full w-full max-w-6xl mx-auto transition-all duration-300 ease-out relative mb-2 ${flightActiveSection && flightActiveSection.startsWith(`leg-${index}`) ? 'bg-[#EBEBEB] z-[100]' : 'bg-white z-[90]'}`}>
+                    {/* FROM Segment */}
+                    <div
+                      data-section-id={`leg-${index}-from`}
+                      className={`flex-1 relative h-[66px] flex flex-col justify-center px-6 rounded-full transition-all ${flightActiveSection === `leg-${index}-from` ? 'bg-white shadow-lg z-30' : 'hover:bg-gray-100'}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFlightActiveSection(`leg-${index}-from`);
+                      }}
+                    >
+                      <div className="text-xs font-bold text-gray-900">From</div>
+                      {flightActiveSection === `leg-${index}-from` ? (
+                        <input
+                          autoFocus
+                          className="w-full text-sm font-semibold text-gray-900 bg-transparent outline-none truncate placeholder-gray-400"
+                          value={leg.from}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const newLegs = [...flightSearchData.legs];
+                            newLegs[index] = { ...newLegs[index], from: val };
+                            setFlightSearchData(prev => ({ ...prev, legs: newLegs }));
+                          }}
+                          placeholder="City or Airport"
+                        />
+                      ) : (
+                        <div className="text-sm font-semibold text-gray-900 truncate">{leg.from || 'Select City'}</div>
+                      )}
+                      <div className="text-[10px] text-gray-500 truncate">{leg.fromCode}</div>
+
+                      {flightActiveSection === `leg-${index}-from` && (
+                        <div className="absolute top-[calc(100%+12px)] left-0 w-[350px] bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-[101]">
+                          <div className="px-4 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Suggested Airports</div>
+                          {locationSuggestionsData?.map((loc, idx) => (
+                            <div
+                              key={idx}
+                              className="px-3 py-2 hover:bg-gray-50 cursor-pointer flex items-center gap-3"
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                const newLegs = [...flightSearchData.legs];
+                                newLegs[index] = { ...newLegs[index], from: loc.city, fromCode: loc.code || (loc.city || '').substring(0, 3).toUpperCase() };
+                                setFlightSearchData(prev => ({ ...prev, legs: newLegs }));
+                                setFlightActiveSection(`leg-${index}-to`);
+                              }}
+                            >
+                              <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500"><FiMapPin className="w-4 h-4" /></div>
+                              <div>
+                                <div className="font-semibold text-sm text-gray-900">{loc.city}</div>
+                                <div className="text-[10px] text-gray-500">{loc.country}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Divider */}
+                    <div className="h-8 w-px bg-gray-200" />
+
+                    {/* TO Segment */}
+                    <div
+                      data-section-id={`leg-${index}-to`}
+                      className={`flex-1 relative h-[66px] flex flex-col justify-center px-6 rounded-full transition-all ${flightActiveSection === `leg-${index}-to` ? 'bg-white shadow-lg z-30' : 'hover:bg-gray-100'}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFlightActiveSection(`leg-${index}-to`);
+                      }}
+                    >
+                      <div className="text-xs font-bold text-gray-900">To</div>
+                      {flightActiveSection === `leg-${index}-to` ? (
+                        <input
+                          autoFocus
+                          className="w-full text-sm font-semibold text-gray-900 bg-transparent outline-none truncate placeholder-gray-400"
+                          value={leg.to}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const newLegs = [...flightSearchData.legs];
+                            newLegs[index] = { ...newLegs[index], to: val };
+                            setFlightSearchData(prev => ({ ...prev, legs: newLegs }));
+                          }}
+                          placeholder="City or Airport"
+                        />
+                      ) : (
+                        <div className="text-sm font-semibold text-gray-900 truncate">{leg.to || 'Select City'}</div>
+                      )}
+                      <div className="text-[10px] text-gray-500 truncate">{leg.toCode}</div>
+
+                      {flightActiveSection === `leg-${index}-to` && (
+                        <div className="absolute top-[calc(100%+12px)] left-0 w-[350px] bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-[101]">
+                          <div className="px-4 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Suggested Airports</div>
+                          {locationSuggestionsData?.map((loc, idx) => (
+                            <div
+                              key={idx}
+                              className="px-3 py-2 hover:bg-gray-50 cursor-pointer flex items-center gap-3"
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                const newLegs = [...flightSearchData.legs];
+                                newLegs[index] = { ...newLegs[index], to: loc.city, toCode: loc.code || (loc.city || '').substring(0, 3).toUpperCase() };
+                                setFlightSearchData(prev => ({ ...prev, legs: newLegs }));
+                                setFlightActiveSection(`leg-${index}-date`);
+                              }}
+                            >
+                              <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500"><FiMapPin className="w-4 h-4" /></div>
+                              <div>
+                                <div className="font-semibold text-sm text-gray-900">{loc.city}</div>
+                                <div className="text-[10px] text-gray-500">{loc.country}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Divider */}
+                    <div className="h-8 w-px bg-gray-200" />
+
+                    {/* DATE Segment */}
+                    <div
+                      data-section-id={`leg-${index}-date`}
+                      className={`flex-[0.8] relative h-[66px] flex flex-col justify-center px-6 rounded-full transition-all ${flightActiveSection === `leg-${index}-date` ? 'bg-white shadow-lg z-30' : 'hover:bg-gray-100'}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Don't reopen if clicking inside the datepicker
+                        if (e.target.closest('.flight-datepicker')) return;
+                        setFlightActiveSection(`leg-${index}-date`);
+                      }}
+                    >
+                      <div className="text-xs font-bold text-gray-900">Date</div>
+                      <div className="text-sm font-semibold text-gray-900 truncate">
+                        {leg.date ? leg.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Select Date'}
+                      </div>
+                      {flightActiveSection === `leg-${index}-date` && (
+                        <div className="flight-datepicker absolute top-[calc(100%+12px)] left-0 bg-white rounded-2xl shadow-xl border border-gray-100 p-6 z-[101]">
+                          <DatePicker
+                            selected={leg.date}
+                            onChange={(date) => {
+                              const newLegs = [...flightSearchData.legs];
+                              newLegs[index] = { ...newLegs[index], date: date };
+                              setFlightSearchData(prev => ({ ...prev, legs: newLegs }));
+                              // Delay closing slightly to prevent click event fall-through/bubbling issues
+                              setTimeout(() => setFlightActiveSection(null), 50);
+                            }}
+                            minDate={new Date()}
+                            monthsShown={1}
+                            inline
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* TRAVELERS & CLASS - Only on First Row */}
+                    {index === 0 && (
+                      <>
+                        <div className="h-8 w-px bg-gray-200" />
+                        <div
+                          data-section-id="nav-leg-0-travelers"
+                          className={`flex-[1.2] relative h-[66px] flex flex-col justify-center px-6 rounded-full transition-all ${flightActiveSection === 'nav-leg-0-travelers' ? 'bg-white shadow-lg z-30' : 'hover:bg-gray-100'}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFlightActiveSection('nav-leg-0-travelers');
+                          }}
+                        >
+                          <div className="text-xs font-bold text-gray-900">Travelers & Class</div>
+                          <div className="text-sm font-semibold text-gray-900 truncate">
+                            {flightSearchData.travelers} Traveler, {flightSearchData.flightClass}
+                          </div>
+                          {/* Simplified Dropdown for Travelers/Class */}
+                          {flightActiveSection === 'nav-leg-0-travelers' && (
+                            <div className="absolute top-[calc(100%+12px)] right-0 w-[300px] bg-white rounded-2xl shadow-xl mt-2 p-6 z-50 border border-gray-100 cursor-default" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex justify-between items-center mb-6">
+                                <div>
+                                  <div className="font-bold text-gray-900">Travelers</div>
+                                  <div className="text-xs text-gray-500">Age 13+</div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <button onClick={(e) => { e.stopPropagation(); setFlightSearchData(p => ({ ...p, travelers: Math.max(1, p.travelers - 1) })); }} className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:border-black transition-colors">-</button>
+                                  <span className="w-4 text-center font-bold">{flightSearchData.travelers}</span>
+                                  <button onClick={(e) => { e.stopPropagation(); setFlightSearchData(p => ({ ...p, travelers: p.travelers + 1 })); }} className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:border-black transition-colors">+</button>
+                                </div>
+                              </div>
+                              <div className="border-t border-gray-100 pt-6">
+                                <div className="font-bold text-gray-900 mb-3">Cabin Class</div>
+                                <div className="flex flex-wrap gap-2">
+                                  {['Economy', 'Business', 'First'].map(c => (
+                                    <button key={c} onClick={(e) => { e.stopPropagation(); setFlightSearchData(p => ({ ...p, flightClass: c })); }} className={`px-4 py-2 rounded-full text-xs font-bold border transition-all ${flightSearchData.flightClass === c ? 'bg-black text-white border-black' : 'border-gray-200 text-gray-700 hover:border-black'}`}>{c}</button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+
+                    {/* ACTION Buttons */}
+                    <div className="px-2 flex items-center gap-2">
+                      {index === flightSearchData.legs.length - 1 ? (
+                        <>
+                          <button
+                            type="button"
+                            className="w-10 h-10 rounded-full bg-[#E41D57] hover:bg-[#c01b4b] text-white flex items-center justify-center transition-all shadow-md"
+                            onClick={() => {
+                              setFlightSearchData(prev => ({
+                                ...prev,
+                                legs: [
+                                  ...prev.legs,
+                                  {
+                                    id: prev.legs.length + 1,
+                                    from: prev.legs[prev.legs.length - 1].to,
+                                    fromCode: prev.legs[prev.legs.length - 1].toCode,
+                                    to: '',
+                                    toCode: '',
+                                    date: new Date()
+                                  }
+                                ]
+                              }))
+                            }}
+                          >
+                            <FiPlus className="w-5 h-5" />
+                          </button>
+                          <button
+                            type="button"
+                            className="w-auto px-4 h-10 rounded-full bg-[#E41D57] hover:bg-[#c01b4b] text-white flex items-center justify-center transition-all shadow-md gap-2"
+                            onClick={() => {
+                              // Handle search
+                              navigate(`/search?property_type=flight&tripType=multiCity`);
+                            }}
+                          >
+                            <FiSearch className="w-4 h-4" />
+                            <span className="font-bold text-sm">Search</span>
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="w-10 h-10 rounded-full bg-[#E41D57] hover:bg-[#c01b4b] text-white flex items-center justify-center transition-all"
+                          onClick={() => {
+                            if (flightSearchData.legs.length > 1) {
+                              const newLegs = flightSearchData.legs.filter((_, i) => i !== index);
+                              setFlightSearchData(prev => ({ ...prev, legs: newLegs }));
+                            }
+                          }}
+                        >
+                          <FiX className="w-5 h-5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <form
+                ref={searchFormRef}
+                onSubmit={handleSearch}
+                className={`pr-2 static rounded-full border transition-all duration-300 ease-out flex items-center ${headerActiveType === 'flight' ? 'max-w-6xl' : 'max-w-4xl'} mx-auto z-[90] overflow-visible relative 
                 ${isHeaderSearchActive ? 'bg-[#EBEBEB] border-transparent scale-100 opacity-100' : 'bg-white shadow-md border-gray-200'} 
                 ${!isHeaderSearchActive && (isDetailOrContact || isSearchPage) ? 'scale-0 opacity-0 pointer-events-none h-0 p-0 overflow-hidden absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2' : ''}
               `}
-            >  <div ref={headerPillSegmentsRef} className="relative flex items-center flex-1 min-w-0">
-                <div
-                  className={`pointer-events-none absolute top-0 bottom-0 left-0 rounded-full transition-all duration-300 ease-out ${headerActivePillStyle.visible ? 'opacity-100' : 'opacity-0'} ${isActivePill ? 'bg-white shadow-sm' : 'bg-gray-50'}`}
-                  style={{ transform: `translateX(${headerActivePillStyle.x}px)`, width: headerActivePillStyle.w }}
-                />
+              >  <div ref={headerPillSegmentsRef} className="relative flex items-center flex-1 min-w-0">
+                  <div
+                    className={`pointer-events-none absolute top-0 bottom-0 left-0 rounded-full transition-all duration-300 ease-out ${headerActivePillStyle.visible ? 'opacity-100' : 'opacity-0'} ${isActivePill ? 'bg-white shadow-sm' : 'bg-gray-50'}`}
+                    style={{ transform: `translateX(${headerActivePillStyle.x}px)`, width: headerActivePillStyle.w }}
+                  />
 
-                <div
-                  ref={headerWhereRef}
-                  className="flex items-center flex-1 min-w-0 h-full px-7 py-3 transition-colors duration-300 ease-out relative rounded-full cursor-pointer z-10"
-                  onClick={() => {
-                    setIsHeaderSearchActive(true);
-                    setShowHeaderLocationSuggestions(true);
-                    setHeaderDateOpen(false);
-                    setShowGuestsDropdown(false);
-                  }}
-                  onMouseEnter={() => setHeaderHoverSection('location')}
-                  onMouseLeave={() => setHeaderHoverSection(null)}
-                >
-                  <div className="w-full">
-                    <div className="text-xs font-semibold text-gray-900">
-                      {headerActiveType === 'flight' ? 'From' : 'Where'}
-                    </div>
-                    <input
-                      type="text"
-                      value={searchData.location}
-                      onChange={(e) => setSearchData(prev => ({ ...prev, location: e.target.value }))}
-                      placeholder="Search destinations"
-                      ref={headerLocationInputRef}
-                      onFocus={() => {
-                        setIsHeaderSearchActive(true);
-                        setShowHeaderLocationSuggestions(true);
-                        setHeaderDateOpen(false);
-                        setShowGuestsDropdown(false);
-                      }}
-                      className={`w-full bg-transparent text-sm text-gray-900 placeholder-gray-400 focus:outline-none cursor-pointer ${effectiveHeaderSection === 'location' && hasLocation ? 'pr-8' : ''}`}
-                    />
-                    {showHeaderLocationSuggestions && (
-                      <div
-                        ref={headerLocationSuggestionsRef}
-                        className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-xl border border-gray-100 max-h-96 overflow-y-auto z-[9999]"
-                      >
-                        <div className="px-4 pt-4 pb-2">
-                          <h3 className="text-sm font-semibold text-gray-900">Search results</h3>
+                  <div
+                    ref={headerWhereRef}
+                    className="flex items-center flex-1 min-w-0 h-full px-7 py-3 transition-colors duration-300 ease-out relative rounded-full cursor-pointer z-10"
+                    onClick={() => {
+                      setIsHeaderSearchActive(true);
+                      setShowHeaderLocationSuggestions(true);
+                      setHeaderDateOpen(false);
+                      setShowGuestsDropdown(false);
+                    }}
+                    onMouseEnter={() => setHeaderHoverSection('location')}
+                    onMouseLeave={() => setHeaderHoverSection(null)}
+                  >
+                    <div className="w-full">
+                      <div className="text-xs font-semibold text-gray-900">
+                        {headerActiveType === 'flight' ? 'From' : 'Where'}
+                      </div>
+                      <input
+                        type="text"
+                        value={searchData.location}
+                        onChange={(e) => setSearchData(prev => ({ ...prev, location: e.target.value }))}
+                        placeholder="Search destinations"
+                        ref={headerLocationInputRef}
+                        onFocus={() => {
+                          setIsHeaderSearchActive(true);
+                          setShowHeaderLocationSuggestions(true);
+                          setHeaderDateOpen(false);
+                          setShowGuestsDropdown(false);
+                        }}
+                        className={`w-full bg-transparent text-sm text-gray-900 placeholder-gray-400 focus:outline-none cursor-pointer ${effectiveHeaderSection === 'location' && hasLocation ? 'pr-8' : ''}`}
+                      />
+                      {showHeaderLocationSuggestions && (
+                        <div
+                          ref={headerLocationSuggestionsRef}
+                          className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-xl border border-gray-100 max-h-96 overflow-y-auto z-[9999]"
+                        >
+                          <div className="px-4 pt-4 pb-2">
+                            <h3 className="text-sm font-semibold text-gray-900">Search results</h3>
+                          </div>
+                          {locationSuggestionsData && locationSuggestionsData.length > 0 ? (
+                            locationSuggestionsData
+                              .filter(loc => {
+                                const query = (searchData.location || '').toLowerCase();
+                                const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ').toLowerCase();
+                                return !query || label.includes(query);
+                              })
+                              .slice(0, 8)
+                              .map((loc, idx) => {
+                                const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ');
+                                return (
+                                  <button
+                                    key={`${label}-${idx}`}
+                                    type="button"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const newLocation = loc.city || label;
+                                      setSearchData(prev => ({ ...prev, location: newLocation }));
+                                      // Save to localStorage for persistence
+                                      const searchState = {
+                                        location: newLocation,
+                                        locationTo: searchData.locationTo, // Added for 'To' field
+                                        checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
+                                        checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
+                                        guests: searchData.guests,
+                                        flightClass: searchData.flightClass // Added for Flight Class
+                                      };
+                                      localStorage.setItem('searchState', JSON.stringify(searchState));
+                                      window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
+
+                                      setShowHeaderLocationSuggestions(false);
+
+                                      if (headerActiveType === 'flight') {
+                                        // Flight mode: Auto-open 'Where to' suggestions
+                                        setShowHeaderToSuggestions(true);
+                                        setTimeout(() => {
+                                          headerToInputRef.current?.focus();
+                                        }, 100);
+                                      } else {
+                                        // Standard mode: Auto-open calendar
+                                        setTimeout(() => {
+                                          setHeaderDateOpen(true);
+                                          setShowGuestsDropdown(false);
+                                        }, 100);
+                                      }
+                                    }}
+                                    className="w-full text-left px-4 py-3 hover:bg-pink-50 active:bg-pink-50 transition-colors flex items-start gap-3"
+                                  >
+                                    <FiMapPin className="w-5 h-5 text-[#E41D57] mt-0.5 flex-shrink-0" />
+                                    <div className="flex flex-col">
+                                      <span className="text-sm font-semibold text-gray-900">{loc.city}</span>
+                                      <span className="text-xs text-gray-500">{[loc.state, loc.country].filter(Boolean).join(', ')}</span>
+                                    </div>
+                                  </button>
+                                );
+                              })
+                          ) : (
+                            <div className="px-4 py-3 text-sm text-gray-500">No locations found</div>
+                          )}
                         </div>
-                        {locationSuggestionsData && locationSuggestionsData.length > 0 ? (
-                          locationSuggestionsData
-                            .filter(loc => {
-                              const query = (searchData.location || '').toLowerCase();
-                              const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ').toLowerCase();
-                              return !query || label.includes(query);
-                            })
-                            .slice(0, 8)
-                            .map((loc, idx) => {
-                              const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ');
-                              return (
+                      )}
+                    </div>
+
+                    {effectiveHeaderSection === 'location' && hasLocation && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setIsHeaderSearchActive(true);
+                          setSearchData((prev) => ({ ...prev, location: '' }));
+                          persistSearchState({
+                            location: '',
+                            locationTo: searchData.locationTo, // Added for 'To' field
+                            checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
+                            checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
+                            guests: searchData.guests || 1,
+                            flightClass: searchData.flightClass // Added for Flight Class
+                          });
+                          setShowHeaderLocationSuggestions(true);
+                          setHeaderDateOpen(false);
+                          setShowGuestsDropdown(false);
+                          if (headerLocationInputRef.current) {
+                            headerLocationInputRef.current.focus({ preventScroll: true });
+                          }
+                        }}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 flex items-center justify-center"
+                        aria-label="Clear location"
+                      >
+                        <FiX className="w-4 h-4" />
+                      </button>
+                    )}
+
+                  </div>
+
+                  {/* TO Field (Flight Only) */}
+                  {headerActiveType === 'flight' && (
+                    <>
+                      <div className={`h-8 w-px bg-gray-200 transition-opacity duration-300 ease-out`} />
+                      <div
+                        ref={headerToRef}
+                        className="flex items-center flex-1 min-w-0 h-full px-7 py-3 transition-colors duration-300 ease-out relative rounded-full cursor-pointer z-10"
+                        onClick={() => {
+                          setIsHeaderSearchActive(true);
+                          setShowHeaderToSuggestions(true);
+                          setShowHeaderLocationSuggestions(false);
+                          setHeaderDateOpen(false);
+                          setShowGuestsDropdown(false);
+                        }}
+                        onMouseEnter={() => setHeaderHoverSection('to')}
+                        onMouseLeave={() => setHeaderHoverSection(null)}
+                      >
+                        <div className="w-full">
+                          <div className="text-xs font-semibold text-gray-900">To</div>
+                          <input
+                            type="text"
+                            value={searchData.locationTo || ''}
+                            onChange={(e) => setSearchData(prev => ({ ...prev, locationTo: e.target.value }))}
+                            placeholder="Search destinations"
+                            ref={headerToInputRef}
+                            onFocus={() => {
+                              setIsHeaderSearchActive(true);
+                              setShowHeaderToSuggestions(true);
+                              setShowHeaderLocationSuggestions(false);
+                              setHeaderDateOpen(false);
+                              setShowGuestsDropdown(false);
+                            }}
+                            className={`w-full bg-transparent text-sm text-gray-900 placeholder-gray-400 focus:outline-none cursor-pointer`}
+                          />
+                          {showHeaderToSuggestions && (
+                            <div
+                              ref={headerToSuggestionsRef}
+                              className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-xl border border-gray-100 max-h-96 overflow-y-auto z-[9999]"
+                            >
+                              <div className="px-4 pt-4 pb-2">
+                                <h3 className="text-sm font-semibold text-gray-900">Suggested</h3>
+                              </div>
+                              {locationSuggestionsData?.filter(loc => {
+                                const query = (searchData.locationTo || '').toLowerCase();
+                                const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ').toLowerCase();
+                                return !query || label.includes(query);
+                              }).slice(0, 8).map((loc, idx) => (
                                 <button
-                                  key={`${label}-${idx}`}
+                                  key={idx}
                                   type="button"
                                   onMouseDown={(e) => e.preventDefault()}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    const newLocation = loc.city || label;
-                                    setSearchData(prev => ({ ...prev, location: newLocation }));
-                                    // Save to localStorage for persistence
-                                    const searchState = {
-                                      location: newLocation,
-                                      locationTo: searchData.locationTo, // Added for 'To' field
-                                      checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
-                                      checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
-                                      guests: searchData.guests,
-                                      flightClass: searchData.flightClass // Added for Flight Class
-                                    };
-                                    localStorage.setItem('searchState', JSON.stringify(searchState));
-                                    window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
-
-                                    setShowHeaderLocationSuggestions(false);
-
-                                    if (headerActiveType === 'flight') {
-                                      // Flight mode: Auto-open 'Where to' suggestions
-                                      setShowHeaderToSuggestions(true);
-                                      setTimeout(() => {
-                                        headerToInputRef.current?.focus();
-                                      }, 100);
-                                    } else {
-                                      // Standard mode: Auto-open calendar
-                                      setTimeout(() => {
-                                        setHeaderDateOpen(true);
-                                        setShowGuestsDropdown(false);
-                                      }, 100);
-                                    }
+                                    const newLocation = loc.city || [loc.city, loc.state, loc.country].filter(Boolean).join(', ');
+                                    setSearchData(prev => ({ ...prev, locationTo: newLocation }));
+                                    setShowHeaderToSuggestions(false);
+                                    setTimeout(() => setHeaderDateOpen(true), 100);
                                   }}
                                   className="w-full text-left px-4 py-3 hover:bg-pink-50 active:bg-pink-50 transition-colors flex items-start gap-3"
                                 >
-                                  <FiMapPin className="w-5 h-5 text-[#E41D57] mt-0.5 flex-shrink-0" />
+                                  <FiMapPin className="w-5 h-5 text-[#E41D57] mt-0.5" />
                                   <div className="flex flex-col">
                                     <span className="text-sm font-semibold text-gray-900">{loc.city}</span>
                                     <span className="text-xs text-gray-500">{[loc.state, loc.country].filter(Boolean).join(', ')}</span>
                                   </div>
                                 </button>
-                              );
-                            })
-                        ) : (
-                          <div className="px-4 py-3 text-sm text-gray-500">No locations found</div>
+                              )) || <div className="px-4 py-3 text-sm text-gray-500">No locations found</div>}
+                            </div>
+                          )}
+                        </div>
+                        {/* Clear Button */}
+                        {searchData.locationTo && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSearchData(prev => ({ ...prev, locationTo: '' }));
+                              headerToInputRef.current?.focus();
+                            }}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 flex items-center justify-center"
+                          >
+                            <FiX className="w-4 h-4" />
+                          </button>
                         )}
                       </div>
+                    </>
+                  )}
+
+                  <div className={`h-8 w-px bg-gray-200 transition-opacity duration-300 ease-out`} />
+
+                  <div
+                    ref={headerDateRef}
+                    className="flex items-center flex-1 min-w-0 h-full px-5 py-3 transition-colors duration-300 ease-out rounded-full cursor-pointer relative z-10"
+                    onClick={() => {
+                      setIsHeaderSearchActive(true);
+                      setHeaderDateOpen(true);
+                      setShowHeaderLocationSuggestions(false);
+                      setShowGuestsDropdown(false);
+                    }}
+                    onMouseEnter={() => setHeaderHoverSection('dates')}
+                    onMouseLeave={() => setHeaderHoverSection(null)}
+                  >
+                    <div className="w-full relative">
+                      <div className="text-xs font-semibold text-gray-900">
+                        {headerActiveType === 'flight'
+                          ? (['oneWay', 'multiCity'].includes(flightSearchData.tripType) ? 'Departure Date' : 'Departure & Return Date')
+                          : 'When'}
+                      </div>
+                      <div className={`header-date-display text-sm text-gray-900 pointer-events-none ${effectiveHeaderSection === 'dates' && hasDates ? 'pr-8' : ''}`}>
+                        {getDateRangeDisplay() || <span className="text-gray-400">Add dates</span>}
+                      </div>
+                      <DatePicker
+                        selected={searchData.checkIn}
+                        onChange={(update) => {
+                          const isOneWay = headerActiveType === 'flight' && ['oneWay', 'multiCity'].includes(flightSearchData.tripType);
+
+                          if (isOneWay) {
+                            // Single date selection
+                            const date = update;
+                            setSearchData(prev => ({ ...prev, checkIn: date, checkOut: null }));
+
+                            // Persist
+                            const searchState = {
+                              location: searchData.location,
+                              locationTo: searchData.locationTo,
+                              checkIn: date ? formatDateLocal(date) : null,
+                              checkOut: null,
+                              guests: searchData.guests,
+                              flightClass: searchData.flightClass
+                            };
+                            localStorage.setItem('searchState', JSON.stringify(searchState));
+                            window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
+
+                            // Auto advance
+                            if (date) {
+                              setTimeout(() => {
+                                setHeaderDateOpen(false);
+                                setShowGuestsDropdown(true);
+                                setShowHeaderLocationSuggestions(false);
+                              }, 100);
+                            }
+                          } else {
+                            // Range selection
+                            const [start, end] = update;
+                            setSearchData(prev => ({ ...prev, checkIn: start, checkOut: end }));
+                            // Save to localStorage for persistence
+                            const searchState = {
+                              location: searchData.location,
+                              locationTo: searchData.locationTo, // Added for 'To' field
+                              checkIn: start ? formatDateLocal(start) : null,
+                              checkOut: end ? formatDateLocal(end) : null,
+                              guests: searchData.guests,
+                              flightClass: searchData.flightClass // Added for Flight Class
+                            };
+                            localStorage.setItem('searchState', JSON.stringify(searchState));
+                            window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
+
+                            if (end) {
+                              // Both dates selected - close calendar and open guests
+                              setTimeout(() => {
+                                setHeaderDateOpen(false);
+                                setShowGuestsDropdown(true);
+                                setShowHeaderLocationSuggestions(false);
+                              }, 100);
+                            } else if (start) {
+                              // Only check-in selected - keep calendar open
+                              setHeaderDateOpen(true);
+                              setShowHeaderLocationSuggestions(false);
+                              setShowGuestsDropdown(false);
+                            }
+                          }
+                        }}
+                        startDate={searchData.checkIn}
+                        endDate={headerActiveType === 'flight' && ['oneWay', 'multiCity'].includes(flightSearchData.tripType) ? null : searchData.checkOut}
+                        selectsRange={!(headerActiveType === 'flight' && ['oneWay', 'multiCity'].includes(flightSearchData.tripType))}
+                        monthsShown={2}
+                        minDate={new Date()}
+                        placeholderText="Add dates"
+                        className="w-full bg-transparent text-sm text-gray-900 placeholder-gray-400 focus:outline-none border-none p-0 cursor-pointer header-date-input-readonly"
+                        popperClassName="header-date-popper"
+                        calendarClassName="header-date-calendar"
+                        open={headerDateOpen}
+                        onCalendarOpen={() => {
+                          setIsHeaderSearchActive(true);
+                          setHeaderDateOpen(true);
+                          setShowHeaderLocationSuggestions(false);
+                          setShowGuestsDropdown(false);
+                        }}
+                        onCalendarClose={() => setHeaderDateOpen(false)}
+                        dateFormat="MMM dd"
+                        onKeyDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (e.key === 'Tab' || e.key === 'Escape') {
+                            return;
+                          }
+                          setHeaderDateOpen(true);
+                        }}
+                        onKeyPress={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onPaste={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onInputClick={() => setHeaderDateOpen(true)}
+                        readOnly
+                      />
+                    </div>
+
+                    {effectiveHeaderSection === 'dates' && hasDates && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setIsHeaderSearchActive(true);
+                          setSearchData((prev) => ({ ...prev, checkIn: null, checkOut: null }));
+                          persistSearchState({
+                            location: searchData.location,
+                            locationTo: searchData.locationTo, // Added for 'To' field
+                            checkIn: null,
+                            checkOut: null,
+                            guests: searchData.guests || 1,
+                            flightClass: searchData.flightClass // Added for Flight Class
+                          });
+                          setHeaderDateOpen(true);
+                          setShowHeaderLocationSuggestions(false);
+                          setShowGuestsDropdown(false);
+                        }}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 flex items-center justify-center"
+                        aria-label="Clear dates"
+                      >
+                        <FiX className="w-4 h-4" />
+                      </button>
                     )}
                   </div>
 
-                  {effectiveHeaderSection === 'location' && hasLocation && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setIsHeaderSearchActive(true);
-                        setSearchData((prev) => ({ ...prev, location: '' }));
-                        persistSearchState({
-                          location: '',
-                          locationTo: searchData.locationTo, // Added for 'To' field
-                          checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
-                          checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
-                          guests: searchData.guests || 1,
-                          flightClass: searchData.flightClass // Added for Flight Class
-                        });
-                        setShowHeaderLocationSuggestions(true);
-                        setHeaderDateOpen(false);
-                        setShowGuestsDropdown(false);
-                        if (headerLocationInputRef.current) {
-                          headerLocationInputRef.current.focus({ preventScroll: true });
-                        }
-                      }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 flex items-center justify-center"
-                      aria-label="Clear location"
-                    >
-                      <FiX className="w-4 h-4" />
-                    </button>
-                  )}
+                  <div className={`h-8 w-px bg-gray-200 transition-opacity duration-300 ease-out ${hideHeaderSep2 ? 'opacity-0' : 'opacity-100'}`} />
 
-                </div>
-
-                {/* TO Field (Flight Only) */}
-                {headerActiveType === 'flight' && (
-                  <>
-                    <div className={`h-8 w-px bg-gray-200 transition-opacity duration-300 ease-out`} />
+                  <div
+                    className="flex items-center flex-1 min-w-0 h-full px-4 py-3 transition-colors duration-300 ease-out relative rounded-full cursor-pointer z-10"
+                    ref={guestDropdownRef}
+                    onMouseEnter={() => setHeaderHoverSection('guests')}
+                    onMouseLeave={() => setHeaderHoverSection(null)}
+                  >
                     <div
-                      ref={headerToRef}
-                      className="flex items-center flex-1 min-w-0 h-full px-7 py-3 transition-colors duration-300 ease-out relative rounded-full cursor-pointer z-10"
                       onClick={() => {
                         setIsHeaderSearchActive(true);
-                        setShowHeaderToSuggestions(true);
-                        setShowHeaderLocationSuggestions(false);
-                        setHeaderDateOpen(false);
-                        setShowGuestsDropdown(false);
-                      }}
-                      onMouseEnter={() => setHeaderHoverSection('to')}
-                      onMouseLeave={() => setHeaderHoverSection(null)}
-                    >
-                      <div className="w-full">
-                        <div className="text-xs font-semibold text-gray-900">To</div>
-                        <input
-                          type="text"
-                          value={searchData.locationTo || ''}
-                          onChange={(e) => setSearchData(prev => ({ ...prev, locationTo: e.target.value }))}
-                          placeholder="Search destinations"
-                          ref={headerToInputRef}
-                          onFocus={() => {
-                            setIsHeaderSearchActive(true);
-                            setShowHeaderToSuggestions(true);
-                            setShowHeaderLocationSuggestions(false);
-                            setHeaderDateOpen(false);
-                            setShowGuestsDropdown(false);
-                          }}
-                          className={`w-full bg-transparent text-sm text-gray-900 placeholder-gray-400 focus:outline-none cursor-pointer`}
-                        />
-                        {showHeaderToSuggestions && (
-                          <div
-                            ref={headerToSuggestionsRef}
-                            className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-xl border border-gray-100 max-h-96 overflow-y-auto z-[9999]"
-                          >
-                            <div className="px-4 pt-4 pb-2">
-                              <h3 className="text-sm font-semibold text-gray-900">Suggested</h3>
-                            </div>
-                            {locationSuggestionsData?.filter(loc => {
-                              const query = (searchData.locationTo || '').toLowerCase();
-                              const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ').toLowerCase();
-                              return !query || label.includes(query);
-                            }).slice(0, 8).map((loc, idx) => (
-                              <button
-                                key={idx}
-                                type="button"
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const newLocation = loc.city || [loc.city, loc.state, loc.country].filter(Boolean).join(', ');
-                                  setSearchData(prev => ({ ...prev, locationTo: newLocation }));
-                                  setShowHeaderToSuggestions(false);
-                                  setTimeout(() => setHeaderDateOpen(true), 100);
-                                }}
-                                className="w-full text-left px-4 py-3 hover:bg-pink-50 active:bg-pink-50 transition-colors flex items-start gap-3"
-                              >
-                                <FiMapPin className="w-5 h-5 text-[#E41D57] mt-0.5" />
-                                <div className="flex flex-col">
-                                  <span className="text-sm font-semibold text-gray-900">{loc.city}</span>
-                                  <span className="text-xs text-gray-500">{[loc.state, loc.country].filter(Boolean).join(', ')}</span>
-                                </div>
-                              </button>
-                            )) || <div className="px-4 py-3 text-sm text-gray-500">No locations found</div>}
-                          </div>
-                        )}
-                      </div>
-                      {/* Clear Button */}
-                      {searchData.locationTo && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSearchData(prev => ({ ...prev, locationTo: '' }));
-                            headerToInputRef.current?.focus();
-                          }}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 flex items-center justify-center"
-                        >
-                          <FiX className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  </>
-                )}
-
-                <div className={`h-8 w-px bg-gray-200 transition-opacity duration-300 ease-out`} />
-
-                <div
-                  ref={headerDateRef}
-                  className="flex items-center flex-1 min-w-0 h-full px-5 py-3 transition-colors duration-300 ease-out rounded-full cursor-pointer relative z-10"
-                  onClick={() => {
-                    setIsHeaderSearchActive(true);
-                    setHeaderDateOpen(true);
-                    setShowHeaderLocationSuggestions(false);
-                    setShowGuestsDropdown(false);
-                  }}
-                  onMouseEnter={() => setHeaderHoverSection('dates')}
-                  onMouseLeave={() => setHeaderHoverSection(null)}
-                >
-                  <div className="w-full relative">
-                    <div className="text-xs font-semibold text-gray-900">
-                      {headerActiveType === 'flight'
-                        ? (['oneWay', 'multiCity'].includes(flightSearchData.tripType) ? 'Departure Date' : 'Departure & Return Date')
-                        : 'When'}
-                    </div>
-                    <div className={`header-date-display text-sm text-gray-900 pointer-events-none ${effectiveHeaderSection === 'dates' && hasDates ? 'pr-8' : ''}`}>
-                      {getDateRangeDisplay() || <span className="text-gray-400">Add dates</span>}
-                    </div>
-                    <DatePicker
-                      selected={searchData.checkIn}
-                      onChange={(update) => {
-                        const isOneWay = headerActiveType === 'flight' && ['oneWay', 'multiCity'].includes(flightSearchData.tripType);
-
-                        if (isOneWay) {
-                          // Single date selection
-                          const date = update;
-                          setSearchData(prev => ({ ...prev, checkIn: date, checkOut: null }));
-
-                          // Persist
-                          const searchState = {
-                            location: searchData.location,
-                            locationTo: searchData.locationTo,
-                            checkIn: date ? formatDateLocal(date) : null,
-                            checkOut: null,
-                            guests: searchData.guests,
-                            flightClass: searchData.flightClass
-                          };
-                          localStorage.setItem('searchState', JSON.stringify(searchState));
-                          window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
-
-                          // Auto advance
-                          if (date) {
-                            setTimeout(() => {
-                              setHeaderDateOpen(false);
-                              setShowGuestsDropdown(true);
-                              setShowHeaderLocationSuggestions(false);
-                            }, 100);
-                          }
-                        } else {
-                          // Range selection
-                          const [start, end] = update;
-                          setSearchData(prev => ({ ...prev, checkIn: start, checkOut: end }));
-                          // Save to localStorage for persistence
-                          const searchState = {
-                            location: searchData.location,
-                            locationTo: searchData.locationTo, // Added for 'To' field
-                            checkIn: start ? formatDateLocal(start) : null,
-                            checkOut: end ? formatDateLocal(end) : null,
-                            guests: searchData.guests,
-                            flightClass: searchData.flightClass // Added for Flight Class
-                          };
-                          localStorage.setItem('searchState', JSON.stringify(searchState));
-                          window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
-
-                          if (end) {
-                            // Both dates selected - close calendar and open guests
-                            setTimeout(() => {
-                              setHeaderDateOpen(false);
-                              setShowGuestsDropdown(true);
-                              setShowHeaderLocationSuggestions(false);
-                            }, 100);
-                          } else if (start) {
-                            // Only check-in selected - keep calendar open
-                            setHeaderDateOpen(true);
-                            setShowHeaderLocationSuggestions(false);
-                            setShowGuestsDropdown(false);
-                          }
-                        }
-                      }}
-                      startDate={searchData.checkIn}
-                      endDate={headerActiveType === 'flight' && ['oneWay', 'multiCity'].includes(flightSearchData.tripType) ? null : searchData.checkOut}
-                      selectsRange={!(headerActiveType === 'flight' && ['oneWay', 'multiCity'].includes(flightSearchData.tripType))}
-                      monthsShown={2}
-                      minDate={new Date()}
-                      placeholderText="Add dates"
-                      className="w-full bg-transparent text-sm text-gray-900 placeholder-gray-400 focus:outline-none border-none p-0 cursor-pointer header-date-input-readonly"
-                      popperClassName="header-date-popper"
-                      calendarClassName="header-date-calendar"
-                      open={headerDateOpen}
-                      onCalendarOpen={() => {
-                        setIsHeaderSearchActive(true);
-                        setHeaderDateOpen(true);
-                        setShowHeaderLocationSuggestions(false);
-                        setShowGuestsDropdown(false);
-                      }}
-                      onCalendarClose={() => setHeaderDateOpen(false)}
-                      dateFormat="MMM dd"
-                      onKeyDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (e.key === 'Tab' || e.key === 'Escape') {
-                          return;
-                        }
-                        setHeaderDateOpen(true);
-                      }}
-                      onKeyPress={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                      }}
-                      onPaste={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                      }}
-                      onInputClick={() => setHeaderDateOpen(true)}
-                      readOnly
-                    />
-                  </div>
-
-                  {effectiveHeaderSection === 'dates' && hasDates && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setIsHeaderSearchActive(true);
-                        setSearchData((prev) => ({ ...prev, checkIn: null, checkOut: null }));
-                        persistSearchState({
-                          location: searchData.location,
-                          locationTo: searchData.locationTo, // Added for 'To' field
-                          checkIn: null,
-                          checkOut: null,
-                          guests: searchData.guests || 1,
-                          flightClass: searchData.flightClass // Added for Flight Class
-                        });
-                        setHeaderDateOpen(true);
-                        setShowHeaderLocationSuggestions(false);
-                        setShowGuestsDropdown(false);
-                      }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 flex items-center justify-center"
-                      aria-label="Clear dates"
-                    >
-                      <FiX className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-
-                <div className={`h-8 w-px bg-gray-200 transition-opacity duration-300 ease-out ${hideHeaderSep2 ? 'opacity-0' : 'opacity-100'}`} />
-
-                <div
-                  className="flex items-center flex-1 min-w-0 h-full px-4 py-3 transition-colors duration-300 ease-out relative rounded-full cursor-pointer z-10"
-                  ref={guestDropdownRef}
-                  onMouseEnter={() => setHeaderHoverSection('guests')}
-                  onMouseLeave={() => setHeaderHoverSection(null)}
-                >
-                  <div
-                    onClick={() => {
-                      setIsHeaderSearchActive(true);
-                      setShowGuestsDropdown(true);
-                      setShowHeaderLocationSuggestions(false);
-                      setShowHeaderToSuggestions(false); // Close 'To' suggestions
-                      setHeaderDateOpen(false);
-                    }}
-                    className="text-left flex-1 min-w-0 px-3"
-                  >
-                    <div className="text-xs font-semibold text-gray-900">
-                      {headerActiveType === 'flight' ? 'Traveller & Class' : 'Who'}
-                    </div>
-                    <div className={`text-[10px] text-gray-900 ${effectiveHeaderSection === 'guests' && hasGuests ? 'pr-8' : ''}`}>
-                      {headerActiveType === 'flight'
-                        ? `${searchData.guests} Traveler, ${searchData.flightClass}`
-                        : (totalGuests > 1 ? `${totalGuests} guests` : 'Add guests') + (guestCounts.pets ? `, ${guestCounts.pets} pet${guestCounts.pets > 1 ? 's' : ''}` : '')
-                      }
-                    </div>
-                  </div>
-
-                  {effectiveHeaderSection === 'guests' && hasGuests && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setIsHeaderSearchActive(true);
-                        setGuestCounts({ adults: 1, children: 0, infants: 0, pets: 0 });
-                        setSearchData((prev) => ({ ...prev, guests: 1, flightClass: 'Economy' }));
-                        persistSearchState({
-                          location: searchData.location,
-                          locationTo: searchData.locationTo, // Added for 'To' field
-                          checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
-                          checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
-                          guests: 1,
-                          flightClass: 'Economy' // Added for Flight Class
-                        });
                         setShowGuestsDropdown(true);
                         setShowHeaderLocationSuggestions(false);
+                        setShowHeaderToSuggestions(false); // Close 'To' suggestions
                         setHeaderDateOpen(false);
                       }}
-                      className="absolute right-[120px] top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 flex items-center justify-center z-20"
-                      aria-label="Clear guests"
+                      className="text-left flex-1 min-w-0 px-3"
                     >
-                      <FiX className="w-4 h-4" />
+                      <div className="text-xs font-semibold text-gray-900">
+                        {headerActiveType === 'flight' ? 'Traveller & Class' : 'Who'}
+                      </div>
+                      <div className={`text-[10px] text-gray-900 ${effectiveHeaderSection === 'guests' && hasGuests ? 'pr-8' : ''}`}>
+                        {headerActiveType === 'flight'
+                          ? `${searchData.guests} Traveler, ${searchData.flightClass}`
+                          : (totalGuests > 1 ? `${totalGuests} guests` : 'Add guests') + (guestCounts.pets ? `, ${guestCounts.pets} pet${guestCounts.pets > 1 ? 's' : ''}` : '')
+                        }
+                      </div>
+                    </div>
+
+                    {effectiveHeaderSection === 'guests' && hasGuests && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setIsHeaderSearchActive(true);
+                          setGuestCounts({ adults: 1, children: 0, infants: 0, pets: 0 });
+                          setSearchData((prev) => ({ ...prev, guests: 1, flightClass: 'Economy' }));
+                          persistSearchState({
+                            location: searchData.location,
+                            locationTo: searchData.locationTo, // Added for 'To' field
+                            checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
+                            checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
+                            guests: 1,
+                            flightClass: 'Economy' // Added for Flight Class
+                          });
+                          setShowGuestsDropdown(true);
+                          setShowHeaderLocationSuggestions(false);
+                          setHeaderDateOpen(false);
+                        }}
+                        className="absolute right-[120px] top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 flex items-center justify-center z-20"
+                        aria-label="Clear guests"
+                      >
+                        <FiX className="w-4 h-4" />
+                      </button>
+                    )}
+
+                    <button
+                      type="submit"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSearch(e);
+                      }}
+                      className={`flex items-center justify-center h-10 rounded-full bg-[#E41D57] text-white shadow-md hover:bg-[#C01A4A] transition-all duration-300 ease-out flex-shrink-0 overflow-hidden ${isHeaderSearchActive ? 'w-[100px] px-4' : 'w-10 px-0'}`}
+                    >
+                      <FiSearch className={`w-5 h-5 flex-shrink-0 ${isHeaderSearchActive ? 'mr-2' : ''}`} />
+                      <span className={`whitespace-nowrap font-bold transition-all duration-300 ease-out ${isHeaderSearchActive ? 'max-w-[100px] opacity-100' : 'max-w-0 opacity-0 overflow-hidden'}`}>
+                        Search
+                      </span>
                     </button>
-                  )}
 
-                  <button
-                    type="submit"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSearch(e);
-                    }}
-                    className={`flex items-center justify-center h-10 rounded-full bg-[#E41D57] text-white shadow-md hover:bg-[#C01A4A] transition-all duration-300 ease-out flex-shrink-0 overflow-hidden ${isHeaderSearchActive ? 'w-[100px] px-4' : 'w-10 px-0'}`}
-                  >
-                    <FiSearch className={`w-5 h-5 flex-shrink-0 ${isHeaderSearchActive ? 'mr-2' : ''}`} />
-                    <span className={`whitespace-nowrap font-bold transition-all duration-300 ease-out ${isHeaderSearchActive ? 'max-w-[100px] opacity-100' : 'max-w-0 opacity-0 overflow-hidden'}`}>
-                      Search
-                    </span>
-                  </button>
+                    {showGuestsDropdown && (
+                      <div className="absolute right-0 top-full mt-2 w-[400px] bg-white rounded-2xl shadow-xl border border-gray-100 z-[200] p-6 space-y-6 text-left">
+                        {headerActiveType === 'flight' ? (
+                          <>
+                            {/* Flight specific travelers */}
+                            {[
+                              { key: 'adults', label: 'Adults', subtitle: 'Age 12+' },
+                              { key: 'children', label: 'Children', subtitle: 'Age 2-11' },
+                              { key: 'infants', label: 'Infants', subtitle: 'Under 2' }
+                            ].map((item) => (
+                              <div key={item.key} className="flex items-center justify-between">
+                                <div>
+                                  <div className="text-base font-semibold text-gray-900">{item.label}</div>
+                                  <div className="text-sm text-gray-500">{item.subtitle}</div>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                  <button
+                                    type="button"
+                                    onClick={() => updateGuests(item.key, -1)}
+                                    className={`w-9 h-9 rounded-full border flex items-center justify-center transition-colors ${guestCounts[item.key] > (item.key === 'adults' ? 1 : 0) ? 'text-gray-700 border-gray-300 bg-white hover:bg-gray-100' : 'text-gray-300 border-gray-200 bg-gray-50 cursor-not-allowed'}`}
+                                    disabled={guestCounts[item.key] <= (item.key === 'adults' ? 1 : 0)}
+                                  >
+                                    <FiMinus className="w-4 h-4" />
+                                  </button>
+                                  <span className="min-w-[24px] text-center text-base font-medium text-gray-900">{guestCounts[item.key]}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => updateGuests(item.key, 1)}
+                                    className="w-9 h-9 rounded-full border border-gray-300 bg-white flex items-center justify-center text-gray-700 hover:bg-gray-100 transition-colors"
+                                  >
+                                    <FiPlus className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
 
-                  {showGuestsDropdown && (
-                    <div className="absolute right-0 top-full mt-2 w-[400px] bg-white rounded-2xl shadow-xl border border-gray-100 z-[200] p-6 space-y-6 text-left">
-                      {headerActiveType === 'flight' ? (
-                        <>
-                          {/* Flight specific travelers */}
-                          {[
-                            { key: 'adults', label: 'Adults', subtitle: 'Age 12+' },
-                            { key: 'children', label: 'Children', subtitle: 'Age 2-11' },
-                            { key: 'infants', label: 'Infants', subtitle: 'Under 2' }
+                            <div className="border-t border-gray-200 my-4 pt-4">
+                              <div className="text-base font-semibold text-gray-900 mb-3">Cabin Class</div>
+                              <div className="grid grid-cols-2 gap-3">
+                                {['Economy', 'Business', 'First Class'].map(cls => (
+                                  <button
+                                    key={cls}
+                                    type="button"
+                                    onClick={() => setSearchData(prev => ({ ...prev, flightClass: cls }))}
+                                    className={`px-3 py-2 rounded-lg text-sm font-medium border transition-all ${searchData.flightClass === cls ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-700 hover:border-gray-900'}`}
+                                  >
+                                    {cls}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          /* Standard Guests */
+                          [
+                            { key: 'adults', label: 'Adults', subtitle: 'Ages 13 or above' },
+                            { key: 'children', label: 'Children', subtitle: 'Ages 2 – 12' },
+                            { key: 'infants', label: 'Infants', subtitle: 'Under 2' },
+                            { key: 'pets', label: 'Pets', subtitle: 'Bringing a service animal?' },
                           ].map((item) => (
                             <div key={item.key} className="flex items-center justify-between">
                               <div>
@@ -1334,64 +1713,15 @@ const Navbar = () => {
                                 </button>
                               </div>
                             </div>
-                          ))}
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
 
-                          <div className="border-t border-gray-200 my-4 pt-4">
-                            <div className="text-base font-semibold text-gray-900 mb-3">Cabin Class</div>
-                            <div className="grid grid-cols-2 gap-3">
-                              {['Economy', 'Business', 'First Class'].map(cls => (
-                                <button
-                                  key={cls}
-                                  type="button"
-                                  onClick={() => setSearchData(prev => ({ ...prev, flightClass: cls }))}
-                                  className={`px-3 py-2 rounded-lg text-sm font-medium border transition-all ${searchData.flightClass === cls ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-700 hover:border-gray-900'}`}
-                                >
-                                  {cls}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        </>
-                      ) : (
-                        /* Standard Guests */
-                        [
-                          { key: 'adults', label: 'Adults', subtitle: 'Ages 13 or above' },
-                          { key: 'children', label: 'Children', subtitle: 'Ages 2 – 12' },
-                          { key: 'infants', label: 'Infants', subtitle: 'Under 2' },
-                          { key: 'pets', label: 'Pets', subtitle: 'Bringing a service animal?' },
-                        ].map((item) => (
-                          <div key={item.key} className="flex items-center justify-between">
-                            <div>
-                              <div className="text-base font-semibold text-gray-900">{item.label}</div>
-                              <div className="text-sm text-gray-500">{item.subtitle}</div>
-                            </div>
-                            <div className="flex items-center gap-4">
-                              <button
-                                type="button"
-                                onClick={() => updateGuests(item.key, -1)}
-                                className={`w-9 h-9 rounded-full border flex items-center justify-center transition-colors ${guestCounts[item.key] > (item.key === 'adults' ? 1 : 0) ? 'text-gray-700 border-gray-300 bg-white hover:bg-gray-100' : 'text-gray-300 border-gray-200 bg-gray-50 cursor-not-allowed'}`}
-                                disabled={guestCounts[item.key] <= (item.key === 'adults' ? 1 : 0)}
-                              >
-                                <FiMinus className="w-4 h-4" />
-                              </button>
-                              <span className="min-w-[24px] text-center text-base font-medium text-gray-900">{guestCounts[item.key]}</span>
-                              <button
-                                type="button"
-                                onClick={() => updateGuests(item.key, 1)}
-                                className="w-9 h-9 rounded-full border border-gray-300 bg-white flex items-center justify-center text-gray-700 hover:bg-gray-100 transition-colors"
-                              >
-                                <FiPlus className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
                 </div>
-
-              </div>
-            </form>
+              </form>
+            )}
           </div>
         )}
 
