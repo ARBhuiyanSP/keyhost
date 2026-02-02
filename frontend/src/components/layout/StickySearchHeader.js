@@ -82,6 +82,7 @@ const StickySearchHeader = ({
     travelers: 1,
     adults: 1,
     children: 0,
+    kids: 0,
     infants: 0,
     flightClass: 'Economy',
     tripType: 'oneWay'
@@ -1186,7 +1187,7 @@ const StickySearchHeader = ({
                         >
                           <div className="text-xs font-bold text-gray-900">Traveller & Class</div>
                           <div className="text-[10px] text-gray-900 truncate">
-                            {flightSearchData.adults + flightSearchData.children + flightSearchData.infants} Traveler(s), {flightSearchData.flightClass}
+                            {flightSearchData.adults + flightSearchData.children + flightSearchData.kids + flightSearchData.infants} Travelers
                           </div>
 
                           {/* Travelers Dropdown */}
@@ -1195,11 +1196,11 @@ const StickySearchHeader = ({
                               <div className="flex items-center justify-between mb-6">
                                 <div>
                                   <div className="font-bold text-gray-900">Adults</div>
-                                  <div className="text-xs text-gray-500">Age 12+</div>
+                                  <div className="text-xs text-gray-500">12 years & above</div>
                                 </div>
                                 <div className="flex items-center gap-3">
                                   <button
-                                    className={`w-8 h-8 rounded-full border flex items-center justify-center ${flightSearchData.adults <= 1 ? 'border-gray-200 text-gray-300' : 'border-gray-400 text-gray-600 hover:border-black hover:text-black'}`}
+                                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${flightSearchData.adults <= 1 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-[#10B981] text-white hover:bg-[#059669]'}`}
                                     onClick={() => setFlightSearchData(prev => ({ ...prev, adults: Math.max(1, prev.adults - 1) }))}
                                     disabled={flightSearchData.adults <= 1}
                                   >
@@ -1207,7 +1208,7 @@ const StickySearchHeader = ({
                                   </button>
                                   <span className="font-bold text-base min-w-[20px] text-center">{flightSearchData.adults}</span>
                                   <button
-                                    className="w-8 h-8 rounded-full border border-gray-400 text-gray-600 hover:border-black hover:text-black flex items-center justify-center"
+                                    className="w-8 h-8 rounded-full bg-[#10B981] text-white hover:bg-[#059669] flex items-center justify-center transition-all"
                                     onClick={() => setFlightSearchData(prev => ({ ...prev, adults: Math.min(9, prev.adults + 1) }))}
                                   >
                                     <FiPlus className="w-4 h-4" />
@@ -1218,11 +1219,11 @@ const StickySearchHeader = ({
                               <div className="flex items-center justify-between mb-6">
                                 <div>
                                   <div className="font-bold text-gray-900">Children</div>
-                                  <div className="text-xs text-gray-500">Age 2-12</div>
+                                  <div className="text-xs text-gray-500">5 to 11 years</div>
                                 </div>
                                 <div className="flex items-center gap-3">
                                   <button
-                                    className={`w-8 h-8 rounded-full border flex items-center justify-center ${flightSearchData.children <= 0 ? 'border-gray-200 text-gray-300' : 'border-gray-400 text-gray-600 hover:border-black hover:text-black'}`}
+                                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${flightSearchData.children <= 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-[#10B981] text-white hover:bg-[#059669]'}`}
                                     onClick={() => setFlightSearchData(prev => ({ ...prev, children: Math.max(0, prev.children - 1) }))}
                                     disabled={flightSearchData.children <= 0}
                                   >
@@ -1230,7 +1231,7 @@ const StickySearchHeader = ({
                                   </button>
                                   <span className="font-bold text-base min-w-[20px] text-center">{flightSearchData.children}</span>
                                   <button
-                                    className="w-8 h-8 rounded-full border border-gray-400 text-gray-600 hover:border-black hover:text-black flex items-center justify-center"
+                                    className="w-8 h-8 rounded-full bg-[#10B981] text-white hover:bg-[#059669] flex items-center justify-center transition-all"
                                     onClick={() => setFlightSearchData(prev => ({ ...prev, children: Math.min(9, prev.children + 1) }))}
                                   >
                                     <FiPlus className="w-4 h-4" />
@@ -1240,12 +1241,35 @@ const StickySearchHeader = ({
 
                               <div className="flex items-center justify-between mb-6">
                                 <div>
-                                  <div className="font-bold text-gray-900">Infants</div>
-                                  <div className="text-xs text-gray-500">Under 2</div>
+                                  <div className="font-bold text-gray-900">Kids</div>
+                                  <div className="text-xs text-gray-500">2 to 4 years</div>
                                 </div>
                                 <div className="flex items-center gap-3">
                                   <button
-                                    className={`w-8 h-8 rounded-full border flex items-center justify-center ${flightSearchData.infants <= 0 ? 'border-gray-200 text-gray-300' : 'border-gray-400 text-gray-600 hover:border-black hover:text-black'}`}
+                                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${flightSearchData.kids <= 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-[#10B981] text-white hover:bg-[#059669]'}`}
+                                    onClick={() => setFlightSearchData(prev => ({ ...prev, kids: Math.max(0, prev.kids - 1) }))}
+                                    disabled={flightSearchData.kids <= 0}
+                                  >
+                                    <FiMinus className="w-4 h-4" />
+                                  </button>
+                                  <span className="font-bold text-base min-w-[20px] text-center">{flightSearchData.kids}</span>
+                                  <button
+                                    className="w-8 h-8 rounded-full bg-[#10B981] text-white hover:bg-[#059669] flex items-center justify-center transition-all"
+                                    onClick={() => setFlightSearchData(prev => ({ ...prev, kids: Math.min(9, prev.kids + 1) }))}
+                                  >
+                                    <FiPlus className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between mb-6">
+                                <div>
+                                  <div className="font-bold text-gray-900">Infants</div>
+                                  <div className="text-xs text-gray-500">Below 2 years</div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <button
+                                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${flightSearchData.infants <= 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-[#10B981] text-white hover:bg-[#059669]'}`}
                                     onClick={() => setFlightSearchData(prev => ({ ...prev, infants: Math.max(0, prev.infants - 1) }))}
                                     disabled={flightSearchData.infants <= 0}
                                   >
@@ -1253,7 +1277,7 @@ const StickySearchHeader = ({
                                   </button>
                                   <span className="font-bold text-base min-w-[20px] text-center">{flightSearchData.infants}</span>
                                   <button
-                                    className="w-8 h-8 rounded-full border border-gray-400 text-gray-600 hover:border-black hover:text-black flex items-center justify-center"
+                                    className="w-8 h-8 rounded-full bg-[#10B981] text-white hover:bg-[#059669] flex items-center justify-center transition-all"
                                     onClick={() => setFlightSearchData(prev => ({ ...prev, infants: Math.min(flightSearchData.adults, prev.infants + 1) }))} // Typically 1 infant per adult max, logic can vary
                                   >
                                     <FiPlus className="w-4 h-4" />
@@ -1294,9 +1318,10 @@ const StickySearchHeader = ({
                             if (flightSearchData.returnDate) params.set('return', flightSearchData.returnDate.toISOString());
                             params.set('adults', flightSearchData.adults);
                             params.set('children', flightSearchData.children);
+                            params.set('kids', flightSearchData.kids);
                             params.set('infants', flightSearchData.infants);
                             // Keep 'travelers' for backward compatibility or display
-                            params.set('travelers', flightSearchData.adults + flightSearchData.children + flightSearchData.infants);
+                            params.set('travelers', flightSearchData.adults + flightSearchData.children + flightSearchData.kids + flightSearchData.infants);
                             params.set('class', flightSearchData.flightClass);
                             navigate(`/search?${params.toString()}`);
                           }}

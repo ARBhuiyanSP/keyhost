@@ -69,6 +69,7 @@ const Navbar = () => {
   const [guestCounts, setGuestCounts] = useState({
     adults: searchData.guests || 1, // Initialize from searchData.guests
     children: 0,
+    kids: 0,
     infants: 0,
     pets: 0,
   });
@@ -242,7 +243,7 @@ const Navbar = () => {
     setIsProfileOpen(false);
   };
 
-  const totalGuests = guestCounts.adults + guestCounts.children;
+  const totalGuests = guestCounts.adults + guestCounts.children + guestCounts.kids + guestCounts.infants;
 
   const updateGuests = (key, delta) => {
     setGuestCounts((prev) => {
@@ -250,7 +251,7 @@ const Navbar = () => {
       if (key === 'adults' && next.adults < 1) next.adults = 1;
 
       // Save to localStorage when guests change
-      const totalGuests = next.adults + next.children;
+      const totalGuests = next.adults + next.children + next.kids + next.infants;
       const searchState = {
         location: searchData.location,
         locationTo: searchData.locationTo, // Added for 'To' field
@@ -374,7 +375,11 @@ const Navbar = () => {
       if (searchData.locationTo) params.append('to', extractCode(searchData.locationTo));
       if (searchData.checkIn) params.append('depart', formatDateLocal(searchData.checkIn));
       if (searchData.checkOut) params.append('return', formatDateLocal(searchData.checkOut));
-      params.append('travelers', searchData.guests || 1);
+      params.append('adults', guestCounts.adults || 1);
+      params.append('children', guestCounts.children || 0);
+      params.append('kids', guestCounts.kids || 0);
+      params.append('infants', guestCounts.infants || 0);
+      params.append('travelers', totalGuests || 1); // Keep for backward compatibility
       if (searchData.flightClass) params.append('class', searchData.flightClass);
     } else {
       if (searchData.location) params.append('city', searchData.location);
@@ -1380,7 +1385,7 @@ const Navbar = () => {
                     </div>
                     <div className={`text-[10px] text-gray-900 ${effectiveHeaderSection === 'guests' && hasGuests ? 'pr-8' : ''}`}>
                       {headerActiveType === 'flight'
-                        ? `${searchData.guests} Traveler, ${searchData.flightClass}`
+                        ? `${guestCounts.adults + guestCounts.children + guestCounts.kids + guestCounts.infants} Travelers`
                         : (totalGuests > 1 ? `${totalGuests} guests` : 'Add guests') + (guestCounts.pets ? `, ${guestCounts.pets} pet${guestCounts.pets > 1 ? 's' : ''}` : '')
                       }
                     </div>
@@ -1393,7 +1398,7 @@ const Navbar = () => {
                         e.preventDefault();
                         e.stopPropagation();
                         setIsHeaderSearchActive(true);
-                        setGuestCounts({ adults: 1, children: 0, infants: 0, pets: 0 });
+                        setGuestCounts({ adults: 1, children: 0, kids: 0, infants: 0, pets: 0 });
                         setSearchData((prev) => ({ ...prev, guests: 1, flightClass: 'Economy' }));
                         persistSearchState({
                           location: searchData.location,
@@ -1434,9 +1439,10 @@ const Navbar = () => {
                         <>
                           {/* Flight specific travelers */}
                           {[
-                            { key: 'adults', label: 'Adults', subtitle: 'Age 12+' },
-                            { key: 'children', label: 'Children', subtitle: 'Age 2-11' },
-                            { key: 'infants', label: 'Infants', subtitle: 'Under 2' }
+                            { key: 'adults', label: 'Adults', subtitle: '12 years & above' },
+                            { key: 'children', label: 'Children', subtitle: '5 to 11 years' },
+                            { key: 'kids', label: 'Kids', subtitle: '2 to 4 years' },
+                            { key: 'infants', label: 'Infants', subtitle: 'Below 2 years' }
                           ].map((item) => (
                             <div key={item.key} className="flex items-center justify-between">
                               <div>
@@ -1447,7 +1453,7 @@ const Navbar = () => {
                                 <button
                                   type="button"
                                   onClick={() => updateGuests(item.key, -1)}
-                                  className={`w-9 h-9 rounded-full border flex items-center justify-center transition-colors ${guestCounts[item.key] > (item.key === 'adults' ? 1 : 0) ? 'text-gray-700 border-gray-300 bg-white hover:bg-gray-100' : 'text-gray-300 border-gray-200 bg-gray-50 cursor-not-allowed'}`}
+                                  className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${guestCounts[item.key] > (item.key === 'adults' ? 1 : 0) ? 'bg-[#10B981] text-white hover:bg-[#059669]' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
                                   disabled={guestCounts[item.key] <= (item.key === 'adults' ? 1 : 0)}
                                 >
                                   <FiMinus className="w-4 h-4" />
@@ -1456,7 +1462,7 @@ const Navbar = () => {
                                 <button
                                   type="button"
                                   onClick={() => updateGuests(item.key, 1)}
-                                  className="w-9 h-9 rounded-full border border-gray-300 bg-white flex items-center justify-center text-gray-700 hover:bg-gray-100 transition-colors"
+                                  className="w-9 h-9 rounded-full bg-[#10B981] text-white hover:bg-[#059669] flex items-center justify-center transition-all"
                                 >
                                   <FiPlus className="w-4 h-4" />
                                 </button>
