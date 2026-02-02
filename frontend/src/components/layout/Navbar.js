@@ -72,6 +72,32 @@ const Navbar = () => {
     infants: 0,
     pets: 0,
   });
+  const [airportList, setAirportList] = useState([]);
+
+  // Fetch airport list for flight search
+  useEffect(() => {
+    fetch('/data/airportlist.json')
+      .then(res => res.json())
+      .then(data => {
+        setAirportList(Object.values(data));
+      })
+      .catch(err => console.error('Failed to load airports:', err));
+  }, []);
+
+  const getAirportSuggestions = (input) => {
+    if (!input || typeof input !== 'string' || input.length < 2) return [];
+    const lower = input.toLowerCase();
+    return airportList.filter(a => {
+      if (!a) return false;
+      const combined = `${a.shortName} (${a.code})`.toLowerCase();
+      return (
+        (a.code && a.code.toLowerCase().includes(lower)) ||
+        (a.name && a.name.toLowerCase().includes(lower)) ||
+        (a.shortName && a.shortName.toLowerCase().includes(lower)) ||
+        combined.includes(lower)
+      );
+    }).slice(0, 10);
+  };
 
   const dropdownRef = useRef(null);
   const headerSearchRef = useRef(null);
@@ -335,31 +361,47 @@ const Navbar = () => {
   const handleSearch = (e) => {
     e.preventDefault();
     const params = new URLSearchParams();
-    if (searchData.location) params.append('city', searchData.location);
-    if (headerActiveType === 'flight' && searchData.locationTo) params.append('destination_city', searchData.locationTo); // Added for 'To' field
-    if (searchData.checkIn) params.append('check_in_date', formatDateLocal(searchData.checkIn));
-    if (searchData.checkOut) params.append('check_out_date', formatDateLocal(searchData.checkOut));
-    if (searchData.guests) params.append('min_guests', searchData.guests);
+
+    const extractCode = (val) => {
+      if (!val) return '';
+      const match = val.match(/\((.*?)\)/);
+      return match ? match[1] : val;
+    };
+
+    if (headerActiveType === 'flight') {
+      if (flightSearchData.tripType) params.append('trip_type', flightSearchData.tripType);
+      if (searchData.location) params.append('from', extractCode(searchData.location));
+      if (searchData.locationTo) params.append('to', extractCode(searchData.locationTo));
+      if (searchData.checkIn) params.append('depart', formatDateLocal(searchData.checkIn));
+      if (searchData.checkOut) params.append('return', formatDateLocal(searchData.checkOut));
+      params.append('travelers', searchData.guests || 1);
+      if (searchData.flightClass) params.append('class', searchData.flightClass);
+    } else {
+      if (searchData.location) params.append('city', searchData.location);
+      if (searchData.checkIn) params.append('check_in_date', formatDateLocal(searchData.checkIn));
+      if (searchData.checkOut) params.append('check_out_date', formatDateLocal(searchData.checkOut));
+      if (searchData.guests) params.append('min_guests', searchData.guests);
+    }
+
     if (headerActiveType) params.append('property_type', headerActiveType);
-    if (headerActiveType === 'flight' && searchData.flightClass) params.append('flight_class', searchData.flightClass); // Added for Flight Class
 
     // Save search state to localStorage for persistence
     const searchState = {
       location: searchData.location,
-      locationTo: searchData.locationTo, // Added for 'To' field
+      locationTo: searchData.locationTo,
       checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
       checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
       guests: searchData.guests,
       propertyType: headerActiveType,
-      flightClass: searchData.flightClass // Added for Flight Class
+      flightClass: searchData.flightClass,
+      tripType: flightSearchData.tripType
     };
     localStorage.setItem('searchState', JSON.stringify(searchState));
-    // Dispatch event to notify other components
     window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
 
     // Close all dropdowns
     setShowHeaderLocationSuggestions(false);
-    setShowHeaderToSuggestions(false); // Added for 'To' field
+    setShowHeaderToSuggestions(false);
     setHeaderDateOpen(false);
     setShowGuestsDropdown(false);
 
@@ -894,65 +936,115 @@ const Navbar = () => {
                         <div className="px-4 pt-4 pb-2">
                           <h3 className="text-sm font-semibold text-gray-900">Search results</h3>
                         </div>
-                        {locationSuggestionsData && locationSuggestionsData.length > 0 ? (
-                          locationSuggestionsData
-                            .filter(loc => {
-                              const query = (searchData.location || '').toLowerCase();
-                              const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ').toLowerCase();
-                              return !query || label.includes(query);
-                            })
-                            .slice(0, 8)
-                            .map((loc, idx) => {
-                              const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ');
-                              return (
-                                <button
-                                  key={`${label}-${idx}`}
-                                  type="button"
-                                  onMouseDown={(e) => e.preventDefault()}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const newLocation = loc.city || label;
-                                    setSearchData(prev => ({ ...prev, location: newLocation }));
-                                    // Save to localStorage for persistence
-                                    const searchState = {
-                                      location: newLocation,
-                                      locationTo: searchData.locationTo, // Added for 'To' field
-                                      checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
-                                      checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
-                                      guests: searchData.guests,
-                                      flightClass: searchData.flightClass // Added for Flight Class
-                                    };
-                                    localStorage.setItem('searchState', JSON.stringify(searchState));
-                                    window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
+                        {headerActiveType === 'flight' ? (
+                          // Airport Suggestions for 'From'
+                          getAirportSuggestions(searchData.location).map((a, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const newLocation = `${a.shortName} (${a.code})`;
+                                setSearchData(prev => ({
+                                  ...prev,
+                                  location: newLocation,
+                                  fromCode: a.code // Added extra codes if needed by backend
+                                }));
 
-                                    setShowHeaderLocationSuggestions(false);
+                                // Save to localStorage for persistence
+                                const searchState = {
+                                  ...searchData,
+                                  location: newLocation,
+                                  fromCode: a.code,
+                                  propertyType: headerActiveType
+                                };
+                                localStorage.setItem('searchState', JSON.stringify(searchState));
+                                window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
 
-                                    if (headerActiveType === 'flight') {
-                                      // Flight mode: Auto-open 'Where to' suggestions
-                                      setShowHeaderToSuggestions(true);
-                                      setTimeout(() => {
-                                        headerToInputRef.current?.focus();
-                                      }, 100);
-                                    } else {
-                                      // Standard mode: Auto-open calendar
-                                      setTimeout(() => {
-                                        setHeaderDateOpen(true);
-                                        setShowGuestsDropdown(false);
-                                      }, 100);
-                                    }
-                                  }}
-                                  className="w-full text-left px-4 py-3 hover:bg-pink-50 active:bg-pink-50 transition-colors flex items-start gap-3"
-                                >
-                                  <FiMapPin className="w-5 h-5 text-[#E41D57] mt-0.5 flex-shrink-0" />
-                                  <div className="flex flex-col">
-                                    <span className="text-sm font-semibold text-gray-900">{loc.city}</span>
-                                    <span className="text-xs text-gray-500">{[loc.state, loc.country].filter(Boolean).join(', ')}</span>
-                                  </div>
-                                </button>
-                              );
-                            })
+                                setShowHeaderLocationSuggestions(false);
+                                setShowHeaderToSuggestions(true);
+                                setTimeout(() => {
+                                  headerToInputRef.current?.focus();
+                                }, 100);
+                              }}
+                              className="w-full text-left px-4 py-3 hover:bg-pink-50 active:bg-pink-50 transition-colors flex items-start gap-3"
+                            >
+                              <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 overflow-hidden flex-shrink-0">
+                                <FiMapPin className="w-4 h-4" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-semibold text-gray-900 truncate">{a.shortName}</div>
+                                <div className="text-xs text-gray-500 truncate">{a.name}</div>
+                              </div>
+                              <div className="text-xs font-bold text-[#E41D57]">{a.code}</div>
+                            </button>
+                          ))
                         ) : (
-                          <div className="px-4 py-3 text-sm text-gray-500">No locations found</div>
+                          // Standard Property Suggestions
+                          locationSuggestionsData && locationSuggestionsData.length > 0 ? (
+                            locationSuggestionsData
+                              .filter(loc => {
+                                const query = (searchData.location || '').toLowerCase();
+                                const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ').toLowerCase();
+                                return !query || label.includes(query);
+                              })
+                              .slice(0, 8)
+                              .map((loc, idx) => {
+                                const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ');
+                                return (
+                                  <button
+                                    key={`${label}-${idx}`}
+                                    type="button"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const newLocation = loc.city || label;
+                                      setSearchData(prev => ({ ...prev, location: newLocation }));
+                                      // Save to localStorage for persistence
+                                      const searchState = {
+                                        location: newLocation,
+                                        locationTo: searchData.locationTo, // Added for 'To' field
+                                        checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
+                                        checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
+                                        guests: searchData.guests,
+                                        flightClass: searchData.flightClass // Added for Flight Class
+                                      };
+                                      localStorage.setItem('searchState', JSON.stringify(searchState));
+                                      window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
+
+                                      setShowHeaderLocationSuggestions(false);
+
+                                      if (headerActiveType === 'flight') {
+                                        // Flight mode: Auto-open 'Where to' suggestions
+                                        setShowHeaderToSuggestions(true);
+                                        setTimeout(() => {
+                                          headerToInputRef.current?.focus();
+                                        }, 100);
+                                      } else {
+                                        // Standard mode: Auto-open calendar
+                                        setTimeout(() => {
+                                          setHeaderDateOpen(true);
+                                          setShowGuestsDropdown(false);
+                                        }, 100);
+                                      }
+                                    }}
+                                    className="w-full text-left px-4 py-3 hover:bg-pink-50 active:bg-pink-50 transition-colors flex items-start gap-3"
+                                  >
+                                    <FiMapPin className="w-5 h-5 text-[#E41D57] mt-0.5 flex-shrink-0" />
+                                    <div className="flex flex-col">
+                                      <span className="text-sm font-semibold text-gray-900">{loc.city}</span>
+                                      <span className="text-xs text-gray-500">{[loc.state, loc.country].filter(Boolean).join(', ')}</span>
+                                    </div>
+                                  </button>
+                                );
+                              })
+                          ) : (
+                            <div className="px-4 py-3 text-sm text-gray-500">No locations found</div>
+                          )
+                        )}
+                        {headerActiveType === 'flight' && searchData.location && searchData.location.length >= 2 && getAirportSuggestions(searchData.location).length === 0 && (
+                          <div className="px-4 py-3 text-sm text-gray-500 italic text-center">No airports found</div>
                         )}
                       </div>
                     )}
@@ -1032,31 +1124,67 @@ const Navbar = () => {
                             <div className="px-4 pt-4 pb-2">
                               <h3 className="text-sm font-semibold text-gray-900">Suggested</h3>
                             </div>
-                            {locationSuggestionsData?.filter(loc => {
-                              const query = (searchData.locationTo || '').toLowerCase();
-                              const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ').toLowerCase();
-                              return !query || label.includes(query);
-                            }).slice(0, 8).map((loc, idx) => (
-                              <button
-                                key={idx}
-                                type="button"
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const newLocation = loc.city || [loc.city, loc.state, loc.country].filter(Boolean).join(', ');
-                                  setSearchData(prev => ({ ...prev, locationTo: newLocation }));
-                                  setShowHeaderToSuggestions(false);
-                                  setTimeout(() => setHeaderDateOpen(true), 100);
-                                }}
-                                className="w-full text-left px-4 py-3 hover:bg-pink-50 active:bg-pink-50 transition-colors flex items-start gap-3"
-                              >
-                                <FiMapPin className="w-5 h-5 text-[#E41D57] mt-0.5" />
-                                <div className="flex flex-col">
-                                  <span className="text-sm font-semibold text-gray-900">{loc.city}</span>
-                                  <span className="text-xs text-gray-500">{[loc.state, loc.country].filter(Boolean).join(', ')}</span>
-                                </div>
-                              </button>
-                            )) || <div className="px-4 py-3 text-sm text-gray-500">No locations found</div>}
+                            {headerActiveType === 'flight' ? (
+                              // Airport Suggestions for 'To'
+                              getAirportSuggestions(searchData.locationTo).map((a, idx) => (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const newLocation = `${a.shortName} (${a.code})`;
+                                    setSearchData(prev => ({
+                                      ...prev,
+                                      locationTo: newLocation,
+                                      toCode: a.code
+                                    }));
+                                    setShowHeaderToSuggestions(false);
+                                    setTimeout(() => setHeaderDateOpen(true), 100);
+                                  }}
+                                  className="w-full text-left px-4 py-3 hover:bg-pink-50 active:bg-pink-50 transition-colors flex items-start gap-3"
+                                >
+                                  <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 overflow-hidden flex-shrink-0">
+                                    <FiMapPin className="w-4 h-4" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-semibold text-gray-900 truncate">{a.shortName}</div>
+                                    <div className="text-xs text-gray-500 truncate">{a.name}</div>
+                                  </div>
+                                  <div className="text-xs font-bold text-[#E41D57]">{a.code}</div>
+                                </button>
+                              ))
+                            ) : (
+                              locationSuggestionsData?.filter(loc => {
+                                const query = (searchData.locationTo || '').toLowerCase();
+                                const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ').toLowerCase();
+                                return !query || label.includes(query);
+                              }).slice(0, 8).map((loc, idx) => (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const newLocation = loc.city || [loc.city, loc.state, loc.country].filter(Boolean).join(', ');
+                                    setSearchData(prev => ({ ...prev, locationTo: newLocation }));
+                                    setShowHeaderToSuggestions(false);
+                                    setTimeout(() => setHeaderDateOpen(true), 100);
+                                  }}
+                                  className="w-full text-left px-4 py-3 hover:bg-pink-50 active:bg-pink-50 transition-colors flex items-start gap-3"
+                                >
+                                  <FiMapPin className="w-5 h-5 text-[#E41D57] mt-0.5" />
+                                  <div className="flex flex-col">
+                                    <span className="text-sm font-semibold text-gray-900">{loc.city}</span>
+                                    <span className="text-xs text-gray-500">{[loc.state, loc.country].filter(Boolean).join(', ')}</span>
+                                  </div>
+                                </button>
+                              )) || <div className="px-4 py-3 text-sm text-gray-500">No locations found</div>
+                            )}
+
+                            {headerActiveType === 'flight' && searchData.locationTo && searchData.locationTo.length >= 2 && getAirportSuggestions(searchData.locationTo).length === 0 && (
+                              <div className="px-4 py-3 text-sm text-gray-500 italic text-center">No airports found</div>
+                            )}
                           </div>
                         )}
                       </div>
