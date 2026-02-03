@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { FiChevronDown, FiSun, FiMoon, FiLoader, FiX, FiEdit2, FiSearch } from 'react-icons/fi'; // Added FiEdit2 for Modify Search
 import { useSearchParams } from 'react-router-dom';
-import { initiateSearch, fetchAmadeusResults, fetchSabreResults } from '../../utils/flightApi';
+import { searchSabre, searchAmadeus } from '../../utils/flightApi';
 import { format } from 'date-fns';
 import FlightSearchForm from './FlightSearchForm';
+import { DUMMY_FLIGHTS } from '../../utils/dummyFlights';
 
 const FlightSearchResults = () => {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -13,6 +14,8 @@ const FlightSearchResults = () => {
     const [searchId, setSearchId] = useState(null);
     const [error, setError] = useState(null);
     const [providersStatus, setProvidersStatus] = useState({ amadeus: 'pending', sabre: 'pending' });
+    const [rawResponses, setRawResponses] = useState({ amadeus: null, sabre: null });
+    const [searchStatus, setSearchStatus] = useState('Idle');
 
     // Collapsible Search State
     const [isSearchExpanded, setIsSearchExpanded] = useState(true);
@@ -27,8 +30,10 @@ const FlightSearchResults = () => {
     const [activeTab, setActiveTab] = useState('flight_details');
 
     const handleSearch = (newParams) => {
-        setSearchParams(newParams);
-        setIsSearchExpanded(false); // Auto-collapse on search
+        // Ensure we stay on a flight results related path
+        const path = window.location.pathname.includes('/flight/results') ? '/flight/results' : '/search';
+        setSearchParams({ ...newParams, property_type: 'flight' });
+        setIsSearchExpanded(false);
     };
 
     useEffect(() => {
@@ -41,86 +46,103 @@ const FlightSearchResults = () => {
             return match ? match[1] : val;
         };
 
+        const safeFormat = (dateStr, fmt) => {
+            if (!dateStr || dateStr === 'null' || dateStr === 'undefined') return null;
+            try {
+                const date = new Date(dateStr);
+                if (isNaN(date.getTime())) return null;
+                return format(date, fmt);
+            } catch (e) {
+                return null;
+            }
+        };
+
         const startSearch = async () => {
-            // Only search if we have minimum required params
-            if ((!currentParams.from && !currentParams.to) && currentParams.trip_type !== 'multiCity') {
+            console.log('startSearch triggered with params:', currentParams);
+            setSearchStatus('Starting...');
+
+            // Relax parameter check to allow hitting API for debugging/error visibility
+            if (!currentParams.trip_type && !currentParams.from && !currentParams.to) {
+                console.log('Search skipped: no params provided at all');
+                setSearchStatus('Skipped: No Params');
                 setLoading(false);
                 return;
             }
 
             setLoading(true);
-            setHasSearched(true); // Mark search as started
+            setHasSearched(true);
             setError(null);
             setResults([]);
             setProvidersStatus({ amadeus: 'pending', sabre: 'pending' });
 
-            // Ensure search is collapsed if params exist (e.g. page refresh with params)
             if (Object.keys(currentParams).length > 0) setIsSearchExpanded(false);
 
             try {
-                const cabinMap = {
-                    'Economy': 'ECONOMY',
-                    'Premium Economy': 'PREMIUM_ECONOMY',
-                    'Business': 'BUSINESS',
-                    'First Class': 'FIRST'
-                };
+                const tripType = currentParams.trip_type === 'roundTrip' ? 'round_trip' :
+                    currentParams.trip_type === 'multiCity' ? 'multi_city' : 'one_way';
 
-                const apiParams = {
-                    tripType: currentParams.trip_type === 'roundTrip' ? 'round_trip' :
-                        currentParams.trip_type === 'multiCity' ? 'multi_city' : 'one_way',
-                    departure_one_round: extractCode(currentParams.from),
-                    destination_one_round: extractCode(currentParams.to),
-                    depart_date: currentParams.depart ? format(new Date(currentParams.depart), 'dd MMM yy') : format(new Date(), 'dd MMM yy'),
-                    return_date: currentParams.return ? format(new Date(currentParams.return), 'dd MMM yy') : null,
-                    ADTs: parseInt(currentParams.adults) || 1,
-                    C07s: (parseInt(currentParams.children) || 0) + (parseInt(currentParams.kids) || 0),
-                    C03s: 0,
-                    INFs: parseInt(currentParams.infants) || 0,
-                    classOfService: currentParams.class || 'Economy',
-                    cabin: cabinMap[currentParams.class] || 'ECONOMY',
-                    fare_type: 'regular'
-                };
+                let apiParams = { tripType };
 
-                // Multi-city logic handling (simplified for this context)
-                if (currentParams.segments) {
+                if (tripType === 'multi_city') {
                     try {
-                        const segments = JSON.parse(currentParams.segments);
-                        // If API supports segments directly, add them. 
-                        // For now, keyhost API might expect flat or specific structure.
-                        // apiParams.segments = segments; 
-                    } catch (e) { }
-                }
-
-                console.log('Initiating Search with:', apiParams);
-
-                const initData = await initiateSearch(apiParams);
-                if (initData.randomNumber) {
-                    setSearchId(initData.randomNumber);
-
-                    const amadeusPromise = fetchAmadeusResults(initData.randomNumber)
-                        .then(res => {
-                            if (res.data) setResults(prev => [...prev, ...res.data]);
-                            setProvidersStatus(prev => ({ ...prev, amadeus: 'success' }));
-                        })
-                        .catch(err => {
-                            setProvidersStatus(prev => ({ ...prev, amadeus: 'error' }));
-                        });
-
-                    const sabrePromise = fetchSabreResults(initData.randomNumber, apiParams.tripType)
-                        .then(res => {
-                            if (res.data) setResults(prev => [...prev, ...res.data]);
-                            setProvidersStatus(prev => ({ ...prev, sabre: 'success' }));
-                        })
-                        .catch(err => {
-                            setProvidersStatus(prev => ({ ...prev, sabre: 'error' }));
-                        });
-
-                    await Promise.allSettled([amadeusPromise, sabrePromise]);
+                        const segments = JSON.parse(currentParams.segments || '[]');
+                        apiParams['departure'] = segments.map(s => extractCode(s.from));
+                        apiParams['destination'] = segments.map(s => extractCode(s.to));
+                        apiParams['departure_date'] = segments.map(s => safeFormat(s.depart, 'dd MMM yy') || '');
+                        apiParams['ADT'] = parseInt(currentParams.adults) || 1;
+                        apiParams['C07'] = (parseInt(currentParams.children) || 0) + (parseInt(currentParams.kids) || 0);
+                        apiParams['C03'] = 0;
+                        apiParams['INF'] = parseInt(currentParams.infants) || 0;
+                    } catch (e) {
+                        console.error('Error parsing multi-city segments:', e);
+                    }
                 } else {
-                    throw new Error('Failed to initiate search ID');
+                    apiParams['departure_one_round'] = extractCode(currentParams.from);
+                    apiParams['destination_one_round'] = extractCode(currentParams.to);
+                    apiParams['depart_date'] = safeFormat(currentParams.depart, 'dd MMM yy') || format(new Date(), 'dd MMM yy');
+                    apiParams['return_date'] = safeFormat(currentParams.return, 'dd MMM yy');
+                    apiParams['ADTs'] = parseInt(currentParams.adults) || 1;
+                    apiParams['C07s'] = (parseInt(currentParams.children) || 0) + (parseInt(currentParams.kids) || 0);
+                    apiParams['C03s'] = 0;
+                    apiParams['INFs'] = parseInt(currentParams.infants) || 0;
                 }
+
+                apiParams['fare_type'] = 'Public';
+                apiParams['classOfService'] = currentParams.class || 'Economy';
+
+                console.log('Initiating Search with Aerotake Params:', apiParams);
+
+                const amadeusPromise = searchAmadeus(apiParams)
+                    .then(res => {
+                        setRawResponses(prev => ({ ...prev, amadeus: res }));
+                        if (res.data) setResults(prev => [...prev, ...res.data]);
+                        setProvidersStatus(prev => ({ ...prev, amadeus: 'success' }));
+                    })
+                    .catch(err => {
+                        console.error('Amadeus error:', err);
+                        setRawResponses(prev => ({ ...prev, amadeus: err.response?.data || err.message }));
+                        setProvidersStatus(prev => ({ ...prev, amadeus: 'error' }));
+                    });
+
+                const sabrePromise = searchSabre(apiParams)
+                    .then(res => {
+                        setRawResponses(prev => ({ ...prev, sabre: res }));
+                        if (res.data) setResults(prev => [...prev, ...res.data]);
+                        setProvidersStatus(prev => ({ ...prev, sabre: 'success' }));
+                    })
+                    .catch(err => {
+                        console.error('Sabre error:', err);
+                        setRawResponses(prev => ({ ...prev, sabre: err.response?.data || err.message }));
+                        setProvidersStatus(prev => ({ ...prev, sabre: 'error' }));
+                    });
+
+                const [amadeusRes, sabreRes] = await Promise.allSettled([amadeusPromise, sabrePromise]);
+
+                console.log('Search Settled:', { amadeusRes, sabreRes });
+                setSearchStatus('Completed');
             } catch (err) {
                 console.error('Search error:', err);
+                setSearchStatus(`Error: ${err.message}`);
                 setError(err.message || 'Failed to start flight search');
             } finally {
                 setLoading(false);
@@ -376,9 +398,10 @@ const FlightSearchResults = () => {
                             )}
 
                             {!loading && hasSearched && filteredResults.length > 0 && filteredResults.map((flight, idx) => {
-                                const firstLegKey = Object.keys(flight.legs)[0];
-                                const leg = flight.legs[firstLegKey];
-                                const firstSchedule = leg.schedules[0];
+                                const allLegs = Object.values(flight.legs || {});
+                                if (allLegs.length === 0) return null;
+                                const leg = allLegs[0];
+                                const firstSchedule = (leg.schedules || [])[0];
 
                                 return (
                                     <div key={idx} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
@@ -679,6 +702,36 @@ const FlightSearchResults = () => {
                     </div>
                 </div>
             )}
+
+            {/* RAW DATA DEBUG SECTION */}
+            <div className="mt-12 p-6 bg-gray-900 rounded-xl overflow-hidden">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-white font-bold flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full animate-pulse ${searchStatus === 'Completed' ? 'bg-green-500' : 'bg-yellow-500'}`}></span>
+                        Raw API Responses (Debug)
+                    </h3>
+                    <div className="text-xs text-gray-400 font-mono">Status: <span className="text-white">{searchStatus}</span></div>
+                </div>
+
+                <div className="mb-4 p-3 bg-black/30 rounded border border-gray-800 font-mono text-[10px] text-gray-300">
+                    URL Params: {JSON.stringify(Object.fromEntries([...searchParams]), null, 2)}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-2">
+                        <div className="text-xs font-bold text-gray-400 uppercase">Amadeus Response</div>
+                        <pre className="bg-black/50 p-4 rounded-lg text-green-400 text-[10px] overflow-auto max-h-[400px] border border-gray-800">
+                            {rawResponses.amadeus ? JSON.stringify(rawResponses.amadeus, null, 2) : '// Waiting for search...'}
+                        </pre>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                        <div className="text-xs font-bold text-gray-400 uppercase">Sabre Response</div>
+                        <pre className="bg-black/50 p-4 rounded-lg text-blue-400 text-[10px] overflow-auto max-h-[400px] border border-gray-800">
+                            {rawResponses.sabre ? JSON.stringify(rawResponses.sabre, null, 2) : '// Waiting for search...'}
+                        </pre>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 };

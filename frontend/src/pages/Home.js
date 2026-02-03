@@ -623,7 +623,7 @@ const Home = () => {
     };
     localStorage.setItem('searchState', JSON.stringify(searchState));
 
-    navigate(`/search?${params.toString()}`);
+    navigate(`${activePropertyType === 'flight' ? '/flight/results' : '/search'}?${params.toString()}`);
   };
 
   const getTypeIcon = (typeName, isActive = false) => {

@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const FLIGHT_API_BASE_URL = 'http://aerotake.test/api/v1';
+const FLIGHT_API_BASE_URL = 'http://127.0.0.1:8000/api';
 
 const flightApi = axios.create({
     baseURL: FLIGHT_API_BASE_URL,
@@ -8,6 +8,27 @@ const flightApi = axios.create({
         'Content-Type': 'application/json',
     },
 });
+
+// Aerotake Search Hub (New)
+export const searchSabre = async (params) => {
+    try {
+        const response = await flightApi.post('/searchSabre', params);
+        return response.data;
+    } catch (error) {
+        console.error('Error in searchSabre:', error);
+        throw error;
+    }
+};
+
+export const searchAmadeus = async (params) => {
+    try {
+        const response = await flightApi.post('/searchAmadeus', params);
+        return response.data;
+    } catch (error) {
+        console.error('Error in searchAmadeus:', error);
+        throw error;
+    }
+};
 
 export const initiateSearch = async (params) => {
     try {

@@ -16,14 +16,14 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
     const [tripType, setTripType] = useState(searchParams.trip_type || 'oneWay');
 
     // Standard State (OneWay/RoundTrip)
-    const [fromInput, setFromInput] = useState(searchParams.from || '');
-    const [toInput, setToInput] = useState(searchParams.to || '');
-    const [departDate, setDepartDate] = useState(searchParams.depart ? new Date(searchParams.depart) : new Date());
+    const [fromInput, setFromInput] = useState(searchParams.from || 'Dhaka (DAC)');
+    const [toInput, setToInput] = useState(searchParams.to || 'Dubai (DXB)');
+    const [departDate, setDepartDate] = useState(searchParams.depart ? new Date(searchParams.depart) : new Date(2026, 1, 15));
     const [returnDate, setReturnDate] = useState(searchParams.return ? new Date(searchParams.return) : null);
 
     // Multi City State
     const [segments, setSegments] = useState([
-        { from: searchParams.from || '', to: searchParams.to || '', depart: searchParams.depart ? new Date(searchParams.depart) : new Date() },
+        { from: searchParams.from || 'Dhaka (DAC)', to: searchParams.to || 'Dubai (DXB)', depart: searchParams.depart ? new Date(searchParams.depart) : new Date(2026, 1, 15) },
         { from: '', to: '', depart: null }
     ]);
 
@@ -114,6 +114,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
             params.depart = departDate ? departDate.toISOString() : null;
             params.return = (tripType === 'roundTrip' && returnDate) ? returnDate.toISOString() : null;
         }
+        params.property_type = 'flight';
         onSearch(params);
     };
 

@@ -17,6 +17,7 @@ import Home from './pages/Home';
 import Properties from './pages/Properties';
 import PropertyDetail from './pages/PropertyDetail';
 import SearchResults from './pages/SearchResults';
+import FlightResultsPage from './pages/FlightResultsPage';
 import CarBooking from './pages/CarBooking';
 import Help from './pages/Help';
 import Login from './pages/auth/Login';
@@ -117,6 +118,7 @@ function App() {
           <Route path="/property/:id" element={<PropertyDetail />} />
           <Route path="/properties/:id/contact-host" element={<ContactHost />} />
           <Route path="/search" element={<SearchResults />} />
+          <Route path="/flight/results" element={<FlightResultsPage />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
