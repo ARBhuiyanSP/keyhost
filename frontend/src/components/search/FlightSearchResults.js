@@ -491,7 +491,7 @@ const FlightSearchResults = () => {
                                                                         <div className="w-1.5 h-1.5 rounded-full border border-gray-300 bg-white absolute left-0"></div>
                                                                         <div className="bg-white px-1 z-10 text-[8px] text-gray-400 uppercase">
                                                                             {leg.stopovers?.length === 0 ? 'Non Stop' :
-                                                                                leg.stopovers?.length === 1 ? `1 Stop via ${leg.stopovers[0].airport}` :
+                                                                                leg.stopovers?.length === 1 ? `1 Stop via ${leg.stopovers[0]}` :
                                                                                     `${leg.stopovers?.length} Stops`}
                                                                         </div>
                                                                         <div className="w-1.5 h-1.5 rounded-full border border-blue-500 bg-white absolute right-0"></div>
