@@ -446,7 +446,9 @@ const FlightSearchResults = () => {
                                                             <div className="w-full h-px bg-gray-300 relative flex items-center justify-center">
                                                                 <div className="w-1.5 h-1.5 rounded-full border border-gray-300 bg-white absolute left-0"></div>
                                                                 <div className="bg-white px-1 z-10 text-[8px] text-gray-400 uppercase">
-                                                                    {leg.stopovers?.length === 0 ? 'Non Stop' : `${leg.stopovers?.length} Stop`}
+                                                                    {leg.stopovers?.length === 0 ? 'Non Stop' :
+                                                                        leg.stopovers?.length === 1 ? `1 Stop via ${leg.stopovers[0].airport}` :
+                                                                            `${leg.stopovers?.length} Stops`}
                                                                 </div>
                                                                 <div className="w-1.5 h-1.5 rounded-full border border-blue-500 bg-white absolute right-0"></div>
                                                             </div>
@@ -564,114 +566,144 @@ const FlightSearchResults = () => {
                             {activeTab === 'flight_details' && (
                                 <div className="space-y-6">
                                     {Object.values(selectedFlight.legs).map((leg, legIdx) => (
-                                        <div key={legIdx} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                            <div className="flex justify-between items-center mb-4 cursor-pointer">
-                                                <h3 className="text-[#1e2049] font-bold text-lg flex items-center gap-2">
+                                        <div key={legIdx} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                                            {/* Leg Header */}
+                                            <div className="bg-gray-50 px-6 py-3 border-b border-gray-200">
+                                                <h3 className="text-[#1E2049] font-bold text-base flex items-center gap-2">
                                                     {leg.departure.airportShortName || leg.departure.airport} &rarr; {leg.arrival.airportShortName || leg.arrival.airport}
                                                     <span className="text-sm font-normal text-gray-500">({leg.departure.formattedDate})</span>
                                                 </h3>
                                             </div>
 
-                                            <div className="flex items-center gap-4 mb-6">
-                                                <img
-                                                    src={selectedFlight.airlineLogo}
-                                                    alt={selectedFlight.airlineName}
-                                                    className="w-8 h-8 object-contain"
-                                                />
-                                                <div>
-                                                    <div className="font-bold text-[#1e2049]">{selectedFlight.airlineName}</div>
-                                                    <div className="text-xs text-gray-500">
-                                                        Operated by: {leg.schedules[0]?.carrier?.operating || selectedFlight.airlineName} <br />
-                                                        Aircraft: {leg.schedules[0]?.aircraft?.code || '738'}
-                                                    </div>
-                                                </div>
+                                            <div className="p-6 space-y-8">
+                                                {leg.schedules.map((schedule, sIdx) => {
+                                                    // Calculate layover if not the first segment
+                                                    let layoverText = null;
+                                                    if (sIdx > 0) {
+                                                        const prevSchedule = leg.schedules[sIdx - 1];
+                                                        try {
+                                                            const arrival = new Date(prevSchedule.arrival.dateTime);
+                                                            const departure = new Date(schedule.departure.dateTime);
+                                                            const diffMs = departure - arrival;
+                                                            const diffHrs = Math.floor(diffMs / 3600000);
+                                                            const diffMins = Math.round((diffMs % 3600000) / 60000);
+                                                            layoverText = `Transit at ${prevSchedule.arrival.airportShortName || prevSchedule.arrival.airport} — Duration: ${diffHrs}h ${diffMins}m`;
+                                                        } catch (e) { }
+                                                    }
+
+                                                    return (
+                                                        <React.Fragment key={sIdx}>
+                                                            {layoverText && (
+                                                                <div className="flex items-center justify-center -my-4">
+                                                                    <div className="bg-orange-50 text-orange-600 px-4 py-1.5 rounded-full text-xs font-bold border border-orange-100 flex items-center gap-2">
+                                                                        <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-pulse"></span>
+                                                                        {layoverText}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+
+                                                            <div className="relative pl-6 border-l-2 border-dashed border-gray-200 py-2">
+                                                                {/* Segment Header */}
+                                                                <div className="mb-4">
+                                                                    <h4 className="font-bold text-gray-900 text-sm">
+                                                                        {schedule.departure.airportShortName || schedule.departure.airport} &rarr; {schedule.arrival.airportShortName || schedule.arrival.airport}
+                                                                        <span className="ml-2 font-normal text-gray-500 text-xs">({schedule.departure.formattedDate})</span>
+                                                                    </h4>
+                                                                </div>
+
+                                                                {/* Segment Content */}
+                                                                <div className="flex flex-col md:flex-row gap-6 mb-4">
+                                                                    <div className="flex items-center gap-4 min-w-[200px]">
+                                                                        <img
+                                                                            src={`http://127.0.0.1:8000/images/airline-logo/${schedule.carrier.marketing}.png`}
+                                                                            alt={schedule.carrier.marketingName}
+                                                                            className="w-8 h-8 object-contain"
+                                                                            onError={(e) => { e.target.src = selectedFlight.airlineLogo }}
+                                                                        />
+                                                                        <div>
+                                                                            <div className="font-bold text-[#1E2049] text-sm">{schedule.carrier.marketingName}</div>
+                                                                            <div className="text-[10px] text-gray-500">
+                                                                                Operated by: {schedule.carrier.operatingName || schedule.carrier.marketingName} <br />
+                                                                                Aircraft: {schedule.aircraft?.code || '738'} • Flight: {schedule.carrier.marketing}-{schedule.carrier.flightNumber}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="flex-1 flex items-center justify-between">
+                                                                        <div className="text-center md:text-left">
+                                                                            <div className="text-lg font-bold text-[#1e2049]">{schedule.departure.time.split(':').slice(0, 2).join(':')}</div>
+                                                                            <div className="text-xs text-gray-500">{schedule.departure.formattedDate}</div>
+                                                                            <div className="text-xs font-medium text-gray-400 uppercase tracking-tighter">{schedule.departure.airportShortName || schedule.departure.airport}</div>
+                                                                        </div>
+
+                                                                        <div className="flex flex-col items-center flex-1 max-w-[120px]">
+                                                                            <div className="text-[10px] text-gray-400 mb-1">{schedule.formattedElapsedTime}</div>
+                                                                            <div className="w-full h-px bg-gray-300 relative">
+                                                                                <div className="absolute right-0 -top-1 w-2 h-2 border-r-2 border-t-2 border-gray-300 rotate-45"></div>
+                                                                            </div>
+                                                                        </div>
+
+                                                                        <div className="text-center md:text-right">
+                                                                            <div className="text-lg font-bold text-[#1e2049]">{schedule.arrival.time.split(':').slice(0, 2).join(':')}</div>
+                                                                            <div className="text-xs text-gray-500">{schedule.arrival.formattedDate}</div>
+                                                                            <div className="text-xs font-medium text-gray-400 uppercase tracking-tighter">{schedule.arrival.airportShortName || schedule.arrival.airport}</div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+
+                                                                <details className="group">
+                                                                    <summary className="flex items-center justify-center p-2 text-blue-600 font-bold text-xs cursor-pointer hover:bg-blue-50 rounded-lg select-none list-none border border-blue-100 border-dashed">
+                                                                        <span className="group-open:hidden flex items-center gap-1">Show Baggage and Cabin <FiChevronDown /></span>
+                                                                        <span className="hidden group-open:flex items-center gap-1">Hide Baggage and Cabin <FiChevronDown className="rotate-180" /></span>
+                                                                    </summary>
+
+                                                                    <div className="mt-4 bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+                                                                        <table className="w-full text-xs text-left">
+                                                                            <thead className="bg-gray-100 text-[10px] font-bold text-gray-500 uppercase">
+                                                                                <tr>
+                                                                                    <th className="px-4 py-2">Passenger</th>
+                                                                                    <th className="px-4 py-2">Segment</th>
+                                                                                    <th className="px-4 py-2">Baggage Allowance</th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody className="divide-y divide-gray-200 bg-white">
+                                                                                {(() => {
+                                                                                    const summary = selectedFlight.passengerFareSummary || {};
+                                                                                    const passengers = Object.keys(summary).filter(k => k !== 'totalPassenger');
+
+                                                                                    return passengers.map((key, pIdx) => {
+                                                                                        const pax = summary[key];
+                                                                                        // Baggage for this specific segment
+                                                                                        let baggageText = '30 KG';
+                                                                                        try {
+                                                                                            const baggage = schedule.baggageInfo?.[pIdx]?.quantity || schedule.baggageInfo?.[0]?.quantity;
+                                                                                            if (baggage) {
+                                                                                                if (baggage.pieceCount) baggageText = `${baggage.pieceCount} PC`;
+                                                                                                else if (baggage.weight) baggageText = `${baggage.weight} ${(baggage.unit || 'KG')}`;
+                                                                                            }
+                                                                                        } catch (e) { }
+
+                                                                                        const cabin = schedule.cabinBookings?.[pIdx] || schedule.cabinBookings?.[0] || {};
+                                                                                        return (
+                                                                                            <tr key={pIdx}>
+                                                                                                <td className="px-4 py-2 font-medium">{pax.passengerType || 'Adult'}</td>
+                                                                                                <td className="px-4 py-2 text-gray-500">
+                                                                                                    Cabin: {cabin.cabinCode || 'Y'} • Class: {cabin.bookingCode || 'K'}
+                                                                                                </td>
+                                                                                                <td className="px-4 py-2 font-bold text-[#E41D57]">{baggageText}</td>
+                                                                                            </tr>
+                                                                                        );
+                                                                                    });
+                                                                                })()}
+                                                                            </tbody>
+                                                                        </table>
+                                                                    </div>
+                                                                </details>
+                                                            </div>
+                                                        </React.Fragment>
+                                                    );
+                                                })}
                                             </div>
-
-                                            <div className="flex justify-between items-center mb-6">
-                                                <div>
-                                                    <div className="text-lg font-bold text-[#1e2049]">{leg.departure.time.split(':').slice(0, 2).join(':')}</div>
-                                                    <div className="text-xs text-gray-500">{leg.departure.formattedDate}</div>
-                                                    <div className="text-sm font-medium">{leg.departure.airportShortName || leg.departure.airport}</div>
-                                                </div>
-
-                                                <div className="flex flex-col items-center">
-                                                    <div className="text-xs text-orange-500 font-medium mb-1">{leg.formattedElapsedTime}</div>
-                                                    <div className="w-24 h-px bg-gray-300 relative">
-                                                        <div className="absolute right-0 -top-1 w-2 h-2 border-r-2 border-t-2 border-gray-300 rotate-45"></div>
-                                                    </div>
-                                                    <div className="text-[10px] text-gray-400 mt-1">
-                                                        {leg.stopovers?.length === 0 ? 'Non Stop' : `${leg.stopovers?.length} Stop`}
-                                                    </div>
-                                                </div>
-
-                                                <div className="text-right">
-                                                    <div className="text-lg font-bold text-[#1e2049]">{leg.arrival.time.split(':').slice(0, 2).join(':')}</div>
-                                                    <div className="text-xs text-gray-500">{leg.arrival.formattedDate}</div>
-                                                    <div className="text-sm font-medium">{leg.arrival.airportShortName || leg.arrival.airport}</div>
-                                                </div>
-                                            </div>
-
-                                            <details className="group" open>
-                                                <summary className="flex items-center justify-center p-2 text-blue-600 font-bold text-sm cursor-pointer hover:bg-blue-50 rounded-lg select-none list-none mb-4">
-                                                    <span className="group-open:hidden flex items-center gap-1">Show Baggage and Cabin <FiChevronDown /></span>
-                                                    <span className="hidden group-open:flex items-center gap-1">Hide Baggage and Cabin <FiChevronDown className="rotate-180" /></span>
-                                                </summary>
-
-                                                <div className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
-                                                    <table className="w-full text-sm text-left">
-                                                        <thead className="bg-gray-100 text-xs font-bold text-gray-500 uppercase">
-                                                            <tr>
-                                                                <th className="px-4 py-2">Passenger</th>
-                                                                <th className="px-4 py-2">Segment</th>
-                                                                <th className="px-4 py-2">Baggage Allowance</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="divide-y divide-gray-200 bg-white">
-                                                            {(() => {
-                                                                const passengerFareSummary = selectedFlight.passengerFareSummary || {};
-                                                                const passengers = Object.keys(passengerFareSummary)
-                                                                    .filter(key => key !== 'totalPassenger')
-                                                                    .map(key => passengerFareSummary[key]);
-
-                                                                const renderRow = (pax, pIdx) => {
-                                                                    const schedule = leg.schedules[0];
-                                                                    // Baggage
-                                                                    let baggageText = '30 KG';
-                                                                    try {
-                                                                        const baggage = schedule?.baggageInfo?.[pIdx]?.quantity || schedule?.baggageInfo?.[0]?.quantity;
-                                                                        if (baggage) {
-                                                                            if (baggage.pieceCount) baggageText = `${baggage.pieceCount} PC`;
-                                                                            else if (baggage.weight) baggageText = `${baggage.weight} ${(baggage.unit || 'KG').toUpperCase()}`;
-                                                                        }
-                                                                    } catch (e) { }
-
-                                                                    const cabin = schedule?.cabinBookings?.[pIdx] || schedule?.cabinBookings?.[0] || {};
-                                                                    const cabinCode = cabin.cabinCode || 'Y';
-                                                                    const bookingCode = cabin.bookingCode || cabin.rbd || 'K';
-                                                                    const seats = cabin.seatsAvailable || cabin.availableSeats || '9';
-
-                                                                    return (
-                                                                        <tr key={pIdx}>
-                                                                            <td className="px-4 py-3 text-gray-900">{pax ? (pax.passengerType || 'Adult') : 'Adult'}</td>
-                                                                            <td className="px-4 py-3 text-gray-600 text-xs">
-                                                                                <div className="flex flex-col gap-0.5">
-                                                                                    <span>Cabin: {cabinCode}</span>
-                                                                                    <span>Booking: {bookingCode}</span>
-                                                                                    <span>Seats: {seats}</span>
-                                                                                </div>
-                                                                            </td>
-                                                                            <td className="px-4 py-3 text-gray-600 font-medium">{baggageText}</td>
-                                                                        </tr>
-                                                                    );
-                                                                };
-
-                                                                if (passengers.length > 0) return passengers.map(renderRow);
-                                                                return renderRow(null, 0);
-                                                            })()}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </details>
                                         </div>
                                     ))}
                                 </div>
