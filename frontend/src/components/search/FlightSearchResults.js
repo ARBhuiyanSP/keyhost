@@ -317,20 +317,34 @@ const FlightSearchResults = () => {
                                 <FilterSection title="Airlines" defaultOpen={true}>
                                     <div className="space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
                                         {results.length > 0 ? (
-                                            availableAirlines.map((airline, idx) => (
-                                                <label key={idx} className="flex items-center gap-3 cursor-pointer group">
-                                                    <input
-                                                        type="checkbox"
-                                                        className="hidden"
-                                                        checked={selectedAirlines.includes(airline)}
-                                                        onChange={() => toggleFilter(selectedAirlines, setSelectedAirlines, airline)}
-                                                    />
-                                                    <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedAirlines.includes(airline) ? 'bg-[#E41D57] border-[#E41D57] text-white' : 'border-gray-300 bg-white'}`}>
-                                                        {selectedAirlines.includes(airline) && <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                                                    </div>
-                                                    <span className="text-sm text-gray-700 group-hover:text-gray-900 truncate">{airline}</span>
-                                                </label>
-                                            ))
+                                            availableAirlines.map((airline, idx) => {
+                                                // Find flight data that matches this airline name
+                                                const matchingFlight = results.find(r => r.airlineName === airline);
+                                                const airlineLogoUrl = matchingFlight?.airlineLogo || '';
+
+                                                return (
+                                                    <label key={idx} className="flex items-center gap-3 cursor-pointer group">
+                                                        <input
+                                                            type="checkbox"
+                                                            className="hidden"
+                                                            checked={selectedAirlines.includes(airline)}
+                                                            onChange={() => toggleFilter(selectedAirlines, setSelectedAirlines, airline)}
+                                                        />
+                                                        <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedAirlines.includes(airline) ? 'bg-[#E41D57] border-[#E41D57] text-white' : 'border-gray-300 bg-white'}`}>
+                                                            {selectedAirlines.includes(airline) && <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                                                        </div>
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <img
+                                                                src={airlineLogoUrl}
+                                                                alt={airline}
+                                                                className="w-6 h-6 object-contain"
+                                                                onError={(e) => { e.target.style.display = 'none'; }}
+                                                            />
+                                                            <span className="text-sm text-gray-700 group-hover:text-gray-900 truncate">{airline}</span>
+                                                        </div>
+                                                    </label>
+                                                )
+                                            })
                                         ) : (
                                             <p className="text-xs text-gray-400 italic">No airlines found</p>
                                         )}
@@ -412,6 +426,7 @@ const FlightSearchResults = () => {
                                 <div className="mb-8">
                                     {isSearchExpanded ? (
                                         <div className="relative bg-white rounded-3xl shadow-sm border border-gray-200 p-6">
+                                            <h1 className="text-lg font-normal text-[#1e2049] mb-6 text-center">Find your perfect flight</h1>
                                             <FlightSearchForm
                                                 searchParams={Object.fromEntries([...searchParams])}
                                                 onSearch={handleSearch}
@@ -513,7 +528,7 @@ const FlightSearchResults = () => {
                                                         <div className="text-xs text-gray-500">Starting from</div>
                                                         <div className="text-xl font-bold text-[#1e2049]">BDT {flight.fare.totalPrice.toLocaleString()}</div>
                                                         <button className="bg-[#E41D57] hover:bg-[#c01b4b] text-white font-bold py-2 px-6 rounded-full text-sm transition-colors w-full md:w-auto">
-                                                            View Fares
+                                                            Book Now
                                                         </button>
                                                     </div>
                                                 </div>
@@ -576,7 +591,7 @@ const FlightSearchResults = () => {
                         className="relative w-full max-w-2xl bg-[#F8F9FA] h-full shadow-2xl overflow-y-auto flex flex-col"
                         style={{ animation: 'slideInRight 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards' }}
                     >
-                        <div className="bg-[#E41D57] text-white px-6 py-4 flex items-center justify-between sticky top-0 z-10 shadow-md">
+                        <div className="bg-[#E41D57] text-white px-6 py-4 flex items-center justify-between sticky top-0 z-50 shadow-md">
                             <div>
                                 <h2 className="text-lg font-bold">Flight Details</h2>
                                 <div className="text-xs opacity-90">{selectedFlight.airlineName} | {selectedFlight.flightType === 'one_way' ? 'One Way' : selectedFlight.flightType === 'round_trip' ? 'Round Trip' : 'Multi City'}</div>
@@ -589,7 +604,7 @@ const FlightSearchResults = () => {
                             </button>
                         </div>
 
-                        <div className="flex bg-white border-b border-gray-200 sticky top-[72px] z-10">
+                        <div className="flex bg-white border-b border-gray-200 sticky top-[72px] z-40">
                             {['flight_details', 'fare_summary'].map((tab) => (
                                 <button
                                     key={tab}
