@@ -514,7 +514,7 @@ const FlightSearchResults = () => {
 
             {/* Flight Details Side Modal (Reused) */}
             {selectedFlight && (
-                <div className="fixed inset-0 z-[100] flex justify-end">
+                <div className="fixed inset-0 z-[1000] flex justify-end">
                     <style>{`
                         @keyframes slideInRight {
                             from { transform: translateX(100%); }
@@ -613,8 +613,8 @@ const FlightSearchResults = () => {
 
                                             <details className="group" open>
                                                 <summary className="flex items-center justify-center p-2 text-blue-600 font-bold text-sm cursor-pointer hover:bg-blue-50 rounded-lg select-none list-none mb-4">
-                                                    <span className="group-open:hidden flex items-center gap-1">Show More Details <FiChevronDown /></span>
-                                                    <span className="hidden group-open:flex items-center gap-1">Hide More Details <FiChevronDown className="rotate-180" /></span>
+                                                    <span className="group-open:hidden flex items-center gap-1">Show Baggage and Cabin <FiChevronDown /></span>
+                                                    <span className="hidden group-open:flex items-center gap-1">Hide Baggage and Cabin <FiChevronDown className="rotate-180" /></span>
                                                 </summary>
 
                                                 <div className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
@@ -679,27 +679,68 @@ const FlightSearchResults = () => {
 
                             {activeTab === 'fare_summary' && (
                                 <div className="space-y-4">
-                                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                        <h3 className="font-bold text-gray-900 mb-4">Fare Breakdown</h3>
-                                        <div className="space-y-2 text-sm">
-                                            <div className="flex justify-between">
-                                                <span className="text-gray-500">Base Fare</span>
-                                                <span className="font-medium">BDT {(selectedFlight.fare.baseFare || 0).toLocaleString()}</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-gray-500">Taxes & Fees</span>
-                                                <span className="font-medium">BDT {(selectedFlight.fare.tax || 0).toLocaleString()}</span>
-                                            </div>
-                                            {selectedFlight.fare.otherCharges > 0 && (
-                                                <div className="flex justify-between">
-                                                    <span className="text-gray-500">Other Charges</span>
-                                                    <span className="font-medium">BDT {selectedFlight.fare.otherCharges.toLocaleString()}</span>
-                                                </div>
-                                            )}
-                                            <div className="border-t border-gray-100 my-2 pt-2 flex justify-between font-bold text-lg text-[#1e2049]">
-                                                <span>Total</span>
-                                                <span>BDT {selectedFlight.fare.totalPrice.toLocaleString()}</span>
-                                            </div>
+                                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                                        <div className="p-4 border-b border-gray-100 bg-gray-50/50">
+                                            <h3 className="font-bold text-gray-900">Fare Summary</h3>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-sm text-left">
+                                                <thead className="bg-[#F8F9FA] text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                                                    <tr>
+                                                        <th className="px-4 py-3">Passenger Type</th>
+                                                        <th className="px-4 py-3">Base Fare</th>
+                                                        <th className="px-4 py-3">Tax</th>
+                                                        <th className="px-4 py-3">Total Fare</th>
+                                                        <th className="px-4 py-3">Quantity</th>
+                                                        <th className="px-4 py-3">Penalty</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-100 text-gray-700">
+                                                    {(() => {
+                                                        const summary = selectedFlight.passengerFareSummary || {};
+                                                        const rawPenalties = selectedFlight.penaltyInfos || [];
+
+                                                        return Object.keys(summary)
+                                                            .filter(key => key !== 'totalPassenger')
+                                                            .map((key, idx) => {
+                                                                const pax = summary[key];
+                                                                const penalties = (rawPenalties[idx]?.penalties || []).map(pen => {
+                                                                    const amountStr = pen.amount ? ` BDT ${pen.amount.toLocaleString()}` : ' Free';
+                                                                    return `${pen.type} ${pen.applicability}: ${amountStr}`;
+                                                                });
+
+                                                                return (
+                                                                    <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
+                                                                        <td className="px-4 py-4 font-medium text-gray-900">{pax.passengerType || 'Adult'}</td>
+                                                                        <td className="px-4 py-4">{(pax.passengerBaseFare || 0).toLocaleString()}</td>
+                                                                        <td className="px-4 py-4">{(pax.passengerTax || 0).toLocaleString()}</td>
+                                                                        <td className="px-4 py-4 font-bold">{(pax.passengerTotalFare || 0).toLocaleString()}</td>
+                                                                        <td className="px-4 py-4">{pax.passengerNumberByType || 1}</td>
+                                                                        <td className="px-4 py-4 text-[10px] leading-relaxed text-gray-500">
+                                                                            {penalties.length > 0 ? (
+                                                                                <div className="flex flex-col gap-1">
+                                                                                    {penalties.map((p, i) => <span key={i}>{p}</span>)}
+                                                                                </div>
+                                                                            ) : 'N/A'}
+                                                                        </td>
+                                                                    </tr>
+                                                                );
+                                                            });
+                                                    })()}
+                                                </tbody>
+                                                <tfoot className="bg-gray-50 font-bold border-t-2 border-gray-100">
+                                                    <tr>
+                                                        <td className="px-4 py-3 text-gray-900">Total</td>
+                                                        <td className="px-4 py-3"></td>
+                                                        <td className="px-4 py-3"></td>
+                                                        <td className="px-4 py-3 text-[#1e2049] font-black text-base">
+                                                            {selectedFlight.fare.totalPrice.toLocaleString()}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-gray-900">{selectedFlight.passengerFareSummary?.totalPassenger}</td>
+                                                        <td className="px-4 py-3"></td>
+                                                    </tr>
+                                                </tfoot>
+                                            </table>
                                         </div>
                                     </div>
                                 </div>
