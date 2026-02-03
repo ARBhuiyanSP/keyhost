@@ -4,8 +4,24 @@ import { FaPlaneDeparture, FaPlaneArrival, FaCalendarAlt, FaUser } from 'react-i
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { format } from 'date-fns';
+import { createPortal } from 'react-dom';
+
+// Robust anchor for Popper.js positioning
+const HiddenAnchor = React.forwardRef(({ value, onClick }, ref) => (
+    <div
+        ref={ref}
+        onClick={onClick}
+        className="absolute inset-0 w-full h-full z-0"
+        aria-hidden="true"
+    />
+));
 
 const FlightSearchForm = ({ searchParams, onSearch }) => {
+    // Refs for manual calendar positioning
+    const departContainerRef = useRef(null);
+    const returnContainerRef = useRef(null);
+    const multiCityContainerRefs = useRef({});
+
     // Helper to extract IATA code
     const extractCode = (val) => {
         if (!val) return '';
@@ -131,7 +147,33 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                     <button
                         key={type}
                         onClick={() => {
+                            const prevType = tripType;
                             setTripType(type);
+
+                            // Sync Logic
+                            if (type === 'multiCity') {
+                                // Syncing FROM OneWay/RoundTrip TO MultiCity
+                                setSegments(prev => {
+                                    const newSegments = [...prev];
+                                    if (newSegments.length > 0) {
+                                        newSegments[0] = {
+                                            ...newSegments[0],
+                                            from: fromInput, // Sync Location
+                                            to: toInput,     // Sync Location
+                                            depart: departDate // Sync Date
+                                        };
+                                    }
+                                    return newSegments;
+                                });
+                            } else if (prevType === 'multiCity') {
+                                // Syncing FROM MultiCity TO OneWay/RoundTrip
+                                if (segments.length > 0) {
+                                    setFromInput(segments[0].from);
+                                    setToInput(segments[0].to);
+                                    setDepartDate(segments[0].depart);
+                                }
+                            }
+
                             if (type === 'oneWay') setReturnDate(null);
                         }}
                         className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${tripType === type
@@ -190,33 +232,48 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                     {/* DATES */}
                     <div className={`${pillSectionBase} basis-[30%] z-[53] flex items-center`}>
                         <div className="flex w-full h-full">
-                            <div
-                                className="flex-1 relative h-full flex flex-col justify-center items-start text-left cursor-pointer hover:bg-gray-50 rounded-l-full px-4"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setActiveSuggestion(null);
-                                    setDepartOpen(true);
-                                    setReturnOpen(false);
-                                }}
-                            >
-                                <div className="text-[10px] font-bold text-black uppercase tracking-wider mb-0.5">Depart</div>
-                                <div className={`text-[13px] font-bold leading-tight ${departDate ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
-                                    {departDate ? format(departDate, "dd MMM") : 'Select Date'}
+                            <div className="flex-1 relative h-full flex flex-col justify-center" ref={departContainerRef}>
+                                <div
+                                    className="flex-1 h-full flex flex-col justify-center items-start text-left cursor-pointer hover:bg-gray-50 rounded-l-full px-4"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveSuggestion(null);
+                                        setDepartOpen(true);
+                                        setReturnOpen(false);
+                                    }}
+                                >
+                                    <div className="text-[10px] font-bold text-black uppercase tracking-wider mb-0.5">Depart</div>
+                                    <div className={`text-[13px] font-bold leading-tight ${departDate ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
+                                        {departDate ? format(departDate, "dd MMM") : 'Select Date'}
+                                    </div>
                                 </div>
                                 <DatePicker
                                     selected={departDate}
-                                    onChange={(date) => {
-                                        setDepartDate(date);
-                                        setDepartOpen(false);
-                                        if (tripType === 'roundTrip') setReturnOpen(true);
+                                    onChange={(update, event) => {
+                                        if (event) event.stopPropagation();
+                                        if (tripType === 'roundTrip') {
+                                            const [start, end] = update;
+                                            setDepartDate(start);
+                                            setReturnDate(end);
+                                            if (end) setDepartOpen(false);
+                                        } else {
+                                            setDepartDate(update);
+                                            setDepartOpen(false);
+                                        }
                                     }}
+                                    startDate={departDate}
+                                    endDate={returnDate}
+                                    selectsRange={tripType === 'roundTrip'}
                                     open={departOpen}
                                     onClickOutside={() => setDepartOpen(false)}
-                                    className="hidden"
+                                    // Portal to LOCAL container for correct positioning
+                                    popperContainer={({ children }) => departContainerRef.current ? createPortal(children, departContainerRef.current) : null}
+                                    dateFormat="dd MMM"
+                                    className="hidden" // Hides default input
                                     popperClassName="fresh-datepicker-popper"
-                                    monthsShown={window.innerWidth >= 768 ? 2 : 1}
+                                    monthsShown={tripType === 'roundTrip' && window.innerWidth >= 768 ? 2 : 1}
                                     minDate={new Date()}
-                                    popperPlacement="bottom-start"
+                                    popperPlacement="bottom-start" // Ignored mostly due to manual CSS overrides now
                                     popperModifiers={[
                                         { name: "flip", enabled: false },
                                         { name: "preventOverflow", enabled: true }
@@ -226,47 +283,56 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
 
                             <div className="w-px h-8 bg-gray-200 self-center" />
 
-                            <div
-                                className="flex-1 relative h-full flex flex-col justify-center items-start text-left cursor-pointer hover:bg-gray-50 rounded-r-full px-4"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setActiveSuggestion(null);
-                                    if (tripType === 'oneWay') {
-                                        setTripType('roundTrip');
-                                        setTimeout(() => setReturnOpen(true), 50);
-                                    } else {
-                                        setDepartOpen(false);
-                                        setReturnOpen(true);
-                                    }
-                                }}
-                            >
-                                <div className="text-[10px] font-bold text-black uppercase tracking-wider mb-0.5">Return</div>
-                                {tripType === 'oneWay' ? (
-                                    <div className="text-[13px] text-gray-400 font-normal leading-tight hover:text-[#E41D57]">Add return</div>
-                                ) : (
-                                    <>
+                            <div className="flex-1 relative h-full flex flex-col justify-center" ref={returnContainerRef}>
+                                <div
+                                    className="flex-1 h-full flex flex-col justify-center items-start text-left cursor-pointer hover:bg-gray-50 rounded-r-full px-4"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveSuggestion(null);
+                                        if (tripType === 'oneWay') {
+                                            setTripType('roundTrip');
+                                            setTimeout(() => setReturnOpen(true), 50);
+                                        } else {
+                                            setDepartOpen(false);
+                                            setReturnOpen(true);
+                                        }
+                                    }}
+                                >
+                                    <div className="text-[10px] font-bold text-black uppercase tracking-wider mb-0.5">Return</div>
+                                    {tripType === 'oneWay' ? (
+                                        <div className="text-[13px] text-gray-400 font-normal leading-tight hover:text-[#E41D57]">Add return</div>
+                                    ) : (
                                         <div className={`text-[13px] font-bold leading-tight ${returnDate ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
                                             {returnDate ? format(returnDate, "dd MMM") : 'Select Date'}
                                         </div>
-                                        <DatePicker
-                                            selected={returnDate}
-                                            onChange={(date) => {
-                                                setReturnDate(date);
-                                                setReturnOpen(false);
-                                            }}
-                                            open={returnOpen}
-                                            onClickOutside={() => setReturnOpen(false)}
-                                            className="hidden"
-                                            popperClassName="fresh-datepicker-popper"
-                                            monthsShown={window.innerWidth >= 768 ? 2 : 1}
-                                            minDate={departDate || new Date()}
-                                            popperPlacement="bottom-start"
-                                            popperModifiers={[
-                                                { name: "flip", enabled: false },
-                                                { name: "preventOverflow", enabled: true }
-                                            ]}
-                                        />
-                                    </>
+                                    )}
+                                </div>
+                                {tripType === 'roundTrip' && (
+                                    <DatePicker
+                                        selected={returnDate}
+                                        onChange={(date, event) => {
+                                            if (event) event.stopPropagation();
+                                            setReturnDate(date);
+                                            setReturnOpen(false);
+                                        }}
+                                        startDate={departDate}
+                                        endDate={returnDate}
+                                        selectsEnd
+                                        open={returnOpen}
+                                        onClickOutside={() => setReturnOpen(false)}
+                                        // Portal to LOCAL container
+                                        popperContainer={({ children }) => returnContainerRef.current ? createPortal(children, returnContainerRef.current) : null}
+                                        dateFormat="dd MMM"
+                                        className="hidden"
+                                        popperClassName="fresh-datepicker-popper"
+                                        monthsShown={window.innerWidth >= 768 ? 2 : 1}
+                                        minDate={departDate || new Date()}
+                                        popperPlacement="bottom-start"
+                                        popperModifiers={[
+                                            { name: "flip", enabled: false },
+                                            { name: "preventOverflow", enabled: true }
+                                        ]}
+                                    />
                                 )}
                             </div>
                         </div>
@@ -358,21 +424,24 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                             <div className={dividerClass} />
 
                             {/* DATE */}
-                            <div
-                                className={`${pillSectionBase} !flex-none w-[22%] relative h-full flex flex-col justify-center items-start text-left cursor-pointer hover:bg-gray-50 px-4`}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setActiveSuggestion(null);
-                                    setMultiCityDatesOpen(prev => ({ ...prev, [idx]: true }));
-                                }}
-                            >
-                                <div className="text-[10px] font-bold text-black uppercase tracking-wider mb-0.5">Date</div>
-                                <div className={`text-[13px] font-bold leading-tight ${segment.depart ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
-                                    {segment.depart ? format(segment.depart, "dd MMM") : 'Select Date'}
+                            <div className="flex-1 relative h-full flex flex-col justify-center" ref={el => multiCityContainerRefs.current[idx] = el}>
+                                <div
+                                    className="flex-1 h-full flex flex-col justify-center items-start text-left cursor-pointer hover:bg-gray-50 px-4 w-full rounded-r-full"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveSuggestion(null);
+                                        setMultiCityDatesOpen(prev => ({ ...prev, [idx]: true }));
+                                    }}
+                                >
+                                    <div className="text-[10px] font-bold text-black uppercase tracking-wider mb-0.5">Depart</div>
+                                    <div className={`text-[13px] font-bold leading-tight ${segment.depart ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
+                                        {segment.depart ? format(segment.depart, "dd MMM") : 'Select Date'}
+                                    </div>
                                 </div>
                                 <DatePicker
                                     selected={segment.depart}
-                                    onChange={(date) => {
+                                    onChange={(date, event) => {
+                                        if (event) event.stopPropagation();
                                         const newSegments = [...segments];
                                         newSegments[idx].depart = date;
                                         setSegments(newSegments);
@@ -381,9 +450,11 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                                     }}
                                     open={multiCityDatesOpen[idx] || false}
                                     onClickOutside={() => setMultiCityDatesOpen(prev => ({ ...prev, [idx]: false }))}
+                                    // Portal to LOCAL container
+                                    popperContainer={({ children }) => multiCityContainerRefs.current[idx] ? createPortal(children, multiCityContainerRefs.current[idx]) : null}
                                     className="hidden"
                                     popperClassName="fresh-datepicker-popper"
-                                    monthsShown={window.innerWidth >= 768 ? 2 : 1}
+                                    monthsShown={1}
                                     minDate={new Date()}
                                     popperPlacement="bottom-start"
                                     popperModifiers={[
