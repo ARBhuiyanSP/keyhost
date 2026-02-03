@@ -87,6 +87,85 @@
     width: auto !important;
   }
 
+  .fresh-datepicker-popper {
+    z-index: 99999 !important;
+  }
+
+  .fresh-datepicker-popper .react-datepicker {
+    border: none !important;
+    box-shadow: 0 10px 50px rgba(228, 29, 87, 0.15) !important;
+    border-radius: 24px !important;
+    background: white !important;
+    padding: 20px !important;
+    font-family: inherit !important;
+  }
+
+  .fresh-datepicker-popper .react-datepicker__header {
+    background-color: white !important;
+    border-bottom: none !important;
+    padding-top: 10px !important;
+  }
+
+  .fresh-datepicker-popper .react-datepicker__current-month {
+    color: #E41D57 !important;
+    font-weight: 800 !important;
+    font-size: 1.2rem !important;
+    margin-bottom: 15px !important;
+    text-transform: capitalize !important;
+  }
+
+  .fresh-datepicker-popper .react-datepicker__day-name {
+    color: #E41D57 !important;
+    opacity: 0.6 !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    font-size: 0.75rem !important;
+  }
+
+  .fresh-datepicker-popper .react-datepicker__day {
+    color: #1e2049 !important;
+    font-weight: 600 !important;
+    border-radius: 12px !important;
+    width: 40px !important;
+    line-height: 40px !important;
+    margin: 2px !important;
+    transition: all 0.2s ease !important;
+  }
+
+  .fresh-datepicker-popper .react-datepicker__day:hover {
+    background-color: #E41D57 !important;
+    color: white !important;
+    transform: scale(1.1) !important;
+  }
+
+  .fresh-datepicker-popper .react-datepicker__day--selected,
+  .fresh-datepicker-popper .react-datepicker__day--keyboard-selected,
+  .fresh-datepicker-popper .react-datepicker__day--in-range {
+    background-color: #E41D57 !important;
+    color: white !important;
+    font-weight: 700 !important;
+    box-shadow: 0 4px 12px rgba(228, 29, 87, 0.3) !important;
+  }
+
+  .fresh-datepicker-popper .react-datepicker__navigation {
+    top: 25px !important;
+  }
+
+  .fresh-datepicker-popper .react-datepicker__triangle {
+    display: none !important;
+  }
+
+  .header-date-input-readonly {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    opacity: 0 !important;
+    cursor: pointer !important;
+    z-index: 1 !important;
+  }
+
   /* Ensure date picker wrapper is visible and clickable in booking forms */
   .property-detail-booking-form .react-datepicker-wrapper,
   .property-detail-booking-form .react-datepicker__input-container {
@@ -373,11 +452,11 @@
   .pb-safe {
     padding-bottom: env(safe-area-inset-bottom);
   }
-  
+
   .pt-safe {
     padding-top: env(safe-area-inset-top);
   }
-  
+
   .min-h-safe {
     min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   }
@@ -960,12 +1039,14 @@ nav.sticky>div {
 .top-8-5 {
   top: 8.5rem;
 }
+
 /* Page Load Animation */
 @keyframes pageFadeIn {
   from {
     opacity: 0;
     transform: translateY(20px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);

@@ -7,6 +7,7 @@ import 'react-datepicker/dist/react-datepicker.css';
 import useAuthStore from '../../store/authStore';
 import useSettingsStore from '../../store/settingsStore';
 import api from '../../utils/api';
+import FlightSearchForm from '../search/FlightSearchForm';
 
 const Navbar = () => {
   const navigate = useNavigate();
@@ -483,13 +484,15 @@ const Navbar = () => {
   const handleTypeClick = (typeName = '') => {
     const normalized = (typeName || '').toLowerCase();
 
-    setHeaderActiveType(normalized);
+    // Redirect to separate search page for flights
     if (normalized === 'flight') {
-      setFlightActiveSection('from');
+      navigate('/search?property_type=flight');
+      return;
     }
+
+    setHeaderActiveType(normalized);
     window.dispatchEvent(new CustomEvent('setActivePropertyType', { detail: normalized }));
 
-    // If on search page, update the URL with property_type filter
     // If on search page, update the URL with property_type filter
     // EXCEPT for 'flight', which has its own form
     if (isSearchPage && normalized !== 'flight') {
@@ -859,7 +862,8 @@ const Navbar = () => {
         </div>
 
         {/* Home page, Search page, and Property Detail page desktop search bar inside header */}
-        {(isHome || isSearchPage || isPropertyDetail || isContactHost) && (
+        {/* Home page, Search page, and Property Detail page desktop search bar inside header */}
+        {(isHome || isSearchPage || isPropertyDetail || isContactHost) && headerActiveType !== 'flight' && (
           <div className={`hidden md:block home-nav-search static z-[90000] overflow-visible ${isHeaderSearchActive || (!isDetailOrContact && !isSearchPage) ? 'py-3' : 'py-0'}`}>
             {/* Flight Trip Type Toggles */}
             {headerActiveType === 'flight' && (
