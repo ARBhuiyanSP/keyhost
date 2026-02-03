@@ -201,8 +201,8 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                                 }}
                             >
                                 <div className="text-[10px] font-bold text-black uppercase tracking-wider mb-0.5">Depart</div>
-                                <div className={`text-[13px] font-bold leading-tight ${departDate ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
-                                    {departDate ? format(departDate, "dd MMM") : 'Select Date'}
+                                <div className={`text-[13px] font-bold leading-tight ${departDate && !isNaN(departDate.getTime()) ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
+                                    {departDate && !isNaN(departDate.getTime()) ? format(departDate, "dd MMM") : 'Select Date'}
                                 </div>
                                 <DatePicker
                                     selected={departDate}
@@ -246,8 +246,8 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                                     <div className="text-[13px] text-gray-400 font-normal leading-tight hover:text-[#E41D57]">Add return</div>
                                 ) : (
                                     <>
-                                        <div className={`text-[13px] font-bold leading-tight ${returnDate ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
-                                            {returnDate ? format(returnDate, "dd MMM") : 'Select Date'}
+                                        <div className={`text-[13px] font-bold leading-tight ${returnDate && !isNaN(returnDate.getTime()) ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
+                                            {returnDate && !isNaN(returnDate.getTime()) ? format(returnDate, "dd MMM") : 'Select Date'}
                                         </div>
                                         <DatePicker
                                             selected={returnDate}
