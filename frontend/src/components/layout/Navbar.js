@@ -511,7 +511,10 @@ const Navbar = () => {
       imgSrc = '/images/nav-icon-hotel.png';
     } else if (normalized.includes('flight')) {
       return (
-        <span className="text-2xl">✈️</span>
+        <span className={`text-2xl transition-all duration-300 filter ${active
+          ? 'opacity-100 grayscale-0 scale-110'
+          : 'opacity-60 grayscale hover:opacity-80'
+          }`}>✈️</span>
       );
     }
 
