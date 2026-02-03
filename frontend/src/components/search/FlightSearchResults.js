@@ -114,9 +114,11 @@ const FlightSearchResults = () => {
 
                 const amadeusPromise = searchAmadeus(apiParams)
                     .then(res => {
+                        console.log('Amadeus Success:', res);
                         setRawResponses(prev => ({ ...prev, amadeus: res }));
                         if (res.data) setResults(prev => [...prev, ...res.data]);
                         setProvidersStatus(prev => ({ ...prev, amadeus: 'success' }));
+                        setLoading(false); // Hide loader as soon as we get some results
                     })
                     .catch(err => {
                         console.error('Amadeus error:', err);
@@ -126,9 +128,11 @@ const FlightSearchResults = () => {
 
                 const sabrePromise = searchSabre(apiParams)
                     .then(res => {
+                        console.log('Sabre Success:', res);
                         setRawResponses(prev => ({ ...prev, sabre: res }));
                         if (res.data) setResults(prev => [...prev, ...res.data]);
                         setProvidersStatus(prev => ({ ...prev, sabre: 'success' }));
+                        setLoading(false); // Hide loader as soon as we get some results
                     })
                     .catch(err => {
                         console.error('Sabre error:', err);
@@ -136,15 +140,17 @@ const FlightSearchResults = () => {
                         setProvidersStatus(prev => ({ ...prev, sabre: 'error' }));
                     });
 
-                const [amadeusRes, sabreRes] = await Promise.allSettled([amadeusPromise, sabrePromise]);
+                // Inform the status tracker that we are waiting for both
+                Promise.allSettled([amadeusPromise, sabrePromise]).then((results) => {
+                    console.log('All search providers settled:', results);
+                    setSearchStatus('Completed');
+                    setLoading(false); // Ensure loader is off even if both fail
+                });
 
-                console.log('Search Settled:', { amadeusRes, sabreRes });
-                setSearchStatus('Completed');
             } catch (err) {
-                console.error('Search error:', err);
+                console.error('Search initiation error:', err);
                 setSearchStatus(`Error: ${err.message}`);
                 setError(err.message || 'Failed to start flight search');
-            } finally {
                 setLoading(false);
             }
         };
@@ -247,7 +253,7 @@ const FlightSearchResults = () => {
                         </div>
 
                         {/* Airlines */}
-                        <FilterSection title="Airlines" defaultOpen={false}>
+                        <FilterSection title="Airlines" defaultOpen={true}>
                             <div className="space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
                                 {results.length > 0 ? (
                                     availableAirlines.map((airline, idx) => (
@@ -271,7 +277,7 @@ const FlightSearchResults = () => {
                         </FilterSection>
 
                         {/* Stops (Blank if no results) */}
-                        <FilterSection title="Stops" defaultOpen={false}>
+                        <FilterSection title="Stops" defaultOpen={true}>
                             <div className="space-y-2">
                                 {results.length > 0 ? (
                                     ['Non-Stop', '1 Stop', '2 Stops or more'].map((stop, idx) => (
@@ -294,8 +300,8 @@ const FlightSearchResults = () => {
                             </div>
                         </FilterSection>
 
-                        {/* Price Range */}
-                        <FilterSection title="Price Range" defaultOpen={false}>
+                        {/* Price Range (Blank if no results) */}
+                        <FilterSection title="Price Range" defaultOpen={true}>
                             {results.length > 0 ? (
                                 <>
                                     <div className="px-2 mb-4">
@@ -318,8 +324,8 @@ const FlightSearchResults = () => {
                             )}
                         </FilterSection>
 
-                        {/* Departure Time (Keep) */}
-                        <FilterSection title="Departure Time" defaultOpen={false}>
+                        {/* Departure Time (Always shown for visual structure) */}
+                        <FilterSection title="Departure Time" defaultOpen={true}>
                             <div className="grid grid-cols-2 gap-2">
                                 <button className="p-2 border border-gray-200 rounded-lg flex flex-col items-center justify-center gap-1 hover:border-[#1e2049] hover:bg-blue-50 transition-colors">
                                     <FiSun className="w-4 h-4 text-gray-400" />
