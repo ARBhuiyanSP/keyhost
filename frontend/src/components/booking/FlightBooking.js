@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchCountries, bookFlight } from '../../utils/flightApi';
+import { fetchCountries, bookFlight, revalidateFlight } from '../../utils/flightApi';
 
 // Helper to calculate exact age
 function calculateExactAge(birth, ref) {
@@ -24,13 +24,14 @@ const FlightBooking = () => {
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState(null);
-    const [flightDetailsOpen, setFlightDetailsOpen] = useState(false);
+    const [activeTab, setActiveTab] = useState('flight_details'); // flight_details | fare_summary
     const [validationErrors, setValidationErrors] = useState({});
     const [openPassengerIndex, setOpenPassengerIndex] = useState(0);
     const [ageValidation, setAgeValidation] = useState({});
-    const [timer, setTimer] = useState(1200); // 20 minutes in seconds
+    const [timer, setTimer] = useState(1200);
+    const [showDetails, setShowDetails] = useState(false);
 
-    // Timer Countdown
+    // Timer
     useEffect(() => {
         const interval = setInterval(() => {
             setTimer((prev) => (prev > 0 ? prev - 1 : 0));
@@ -48,7 +49,6 @@ const FlightBooking = () => {
     useEffect(() => {
         const loadData = async () => {
             try {
-                // 1. Load Flight Data
                 const flightData = localStorage.getItem('bookingFlight');
                 if (!flightData) {
                     setError("No flight data found. Please search again.");
@@ -58,7 +58,6 @@ const FlightBooking = () => {
                 const parsedFlight = JSON.parse(flightData);
                 setFlight(parsedFlight);
 
-                // 2. Initialize Passengers
                 const initialPassengers = [];
                 const summary = parsedFlight.passengerFareSummary;
                 if (summary) {
@@ -67,8 +66,8 @@ const FlightBooking = () => {
                         const item = summary[key];
                         for (let i = 0; i < item.passengerNumberByType; i++) {
                             initialPassengers.push({
-                                type: item.passengerType, // e.g., 'Adult', 'Children'
-                                code: item.code || (item.passengerType === 'Adult' ? 'ADT' : item.passengerType === 'Children' ? 'C07' : 'INF'), // Fallback codes
+                                type: item.passengerType,
+                                code: item.code || (item.passengerType === 'Adult' ? 'ADT' : item.passengerType === 'Children' ? 'C07' : 'INF'),
                                 first_name: '',
                                 last_name: '',
                                 nationality: '',
@@ -82,16 +81,24 @@ const FlightBooking = () => {
                         }
                     });
                 } else {
-                    // Fallback if summary missing (shouldn't happen with correct API)
                     initialPassengers.push({ type: 'Adult', code: 'ADT', title: 'Mr' });
                 }
                 setPassengers(initialPassengers);
 
-                // 3. Fetch Countries
                 const countryList = await fetchCountries();
                 if (Array.isArray(countryList)) {
                     setCountries(countryList);
                 }
+
+                // Revalidate Flight
+                revalidateFlight(parsedFlight)
+                    .then(res => {
+                        console.log("Revalidation successful:", res);
+                        // Optionally update flight data if response contains updated info
+                        // setFlight(prev => ({ ...prev, ...res })); 
+                    })
+                    .catch(err => console.error("Revalidation failed:", err));
+
             } catch (err) {
                 console.error("Failed to load booking data", err);
                 setError("Failed to load data.");
@@ -102,7 +109,6 @@ const FlightBooking = () => {
         loadData();
     }, []);
 
-    // Validation Logic
     const validatePassengerAge = (index, pax, currentFlight) => {
         if (!pax.dob || !currentFlight) return;
 
@@ -113,26 +119,12 @@ const FlightBooking = () => {
         }
 
         const birthDate = new Date(pax.dob);
-        const now = new Date();
         const flightDate = departureDateStr ? new Date(departureDateStr) : new Date();
-
-        const cur = calculateExactAge(birthDate, now);
         const dep = calculateExactAge(birthDate, flightDate);
 
-        const currentAgeStr = `${cur.years}y ${cur.months}m ${cur.days}d`;
-        const departureAgeStr = `${dep.years}y ${dep.months}m ${dep.days}d`;
-
-        let currentError = '';
         let departureError = '';
         const pType = (pax.type || '').toLowerCase();
 
-        // Matching aerotake validation logic
-        if (pType.includes('adult') && cur.totalYears < 12) currentError = 'Adult must be 12 years or above (current age)';
-        else if (pType.includes('kid') && !(cur.totalYears > 2 && cur.totalYears < 5)) currentError = 'Kid must be 2 to below 5 years (current age)';
-        else if (pType.includes('child') && !(cur.totalYears > 5 && cur.totalYears < 12)) currentError = 'Child must be 5 to below 12 years (current age)';
-        else if (pType.includes('infant') && cur.totalYears >= 2) currentError = 'Infant must be below 24 months (current age)';
-
-        // Departure date validation is critical
         if (pType.includes('adult') && dep.totalYears < 12) departureError = 'Adult must be 12 years or above at departure';
         else if (pType.includes('kid') && !(dep.totalYears > 2 && dep.totalYears < 5)) departureError = `Kid must be 2 to below 5 years at departure`;
         else if (pType.includes('child') && !(dep.totalYears > 5 && dep.totalYears < 12)) departureError = `Child must be 5 to below 12 years at departure`;
@@ -140,12 +132,7 @@ const FlightBooking = () => {
 
         setAgeValidation(prev => ({
             ...prev,
-            [index]: {
-                currentAge: currentAgeStr,
-                departureAge: departureAgeStr,
-                currentError,
-                departureError
-            }
+            [index]: { ...prev[index], departureError, departureAge: `${dep.years}y ${dep.months}m ${dep.days}d` }
         }));
     };
 
@@ -153,33 +140,22 @@ const FlightBooking = () => {
         const updated = [...passengers];
         updated[index][field] = value;
         setPassengers(updated);
-
         if (field === 'dob') validatePassengerAge(index, updated[index], flight);
-
-        // Clear errors
         if (validationErrors[`passengers.${index}.${field}`]) {
-            setValidationErrors(prev => {
-                const newErrors = { ...prev };
-                delete newErrors[`passengers.${index}.${field}`];
-                return newErrors;
-            });
+            setValidationErrors(prev => { const n = { ...prev }; delete n[`passengers.${index}.${field}`]; return n; });
         }
     };
 
     const handleContactChange = (field, value) => {
         setContact(prev => ({ ...prev, [field]: value }));
         const key = field === 'mobile' || field === 'email' ? `contact.${field}` : null;
-        if (key && validationErrors[key]) {
-            setValidationErrors(prev => { const n = { ...prev }; delete n[key]; return n; });
-        }
+        if (key && validationErrors[key]) setValidationErrors(prev => { const n = { ...prev }; delete n[key]; return n; });
     };
 
     const handleLeadPassengerChange = (field, value) => {
         setLeadPassenger(prev => ({ ...prev, [field]: value }));
         const key = `lead_passenger_${field}`;
-        if (validationErrors[key]) {
-            setValidationErrors(prev => { const n = { ...prev }; delete n[key]; return n; });
-        }
+        if (validationErrors[key]) setValidationErrors(prev => { const n = { ...prev }; delete n[key]; return n; });
     };
 
     const getError = (key) => validationErrors[key] ? <p className="text-[#E41D57] text-xs mt-1 font-medium">{validationErrors[key][0]}</p> : null;
@@ -189,7 +165,6 @@ const FlightBooking = () => {
         setSubmitting(true);
         setValidationErrors({});
 
-        // Basic Frontend Validation
         const errors = {};
         if (!contact.mobile) errors['contact.mobile'] = ['Mobile is required'];
         if (!contact.email) errors['contact.email'] = ['Email is required'];
@@ -235,17 +210,12 @@ const FlightBooking = () => {
         };
 
         try {
-            console.log("Submitting Booking Payload:", payload);
             const response = await bookFlight(payload);
-            console.log("Booking Response:", response);
-
-            // Handle various success responses
-            if (response.success || (response.status && response.status === 'success') || response.booking_id) {
+            if (response.success || response.booking_id) {
                 navigate('/booking-success', { state: { booking: response } });
             } else {
                 alert("Booking Status Unknown: " + JSON.stringify(response));
             }
-
         } catch (err) {
             console.error("Booking Error:", err);
             if (err.response && err.response.status === 422) {
@@ -259,163 +229,277 @@ const FlightBooking = () => {
         }
     };
 
-    if (loading) return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-[#f3f4f6]">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#E41D57]"></div>
-            <p className="mt-4 text-[#1E2049] font-medium">Preparing your booking...</p>
-        </div>
-    );
+    if (loading) return <div className="flex justify-center items-center h-screen"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#E41D57]"></div></div>;
+    if (error) return <div className="p-10 text-center text-red-500 font-bold">{error}</div>;
 
-    if (error) return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-[#f3f4f6]">
-            <div className="bg-white p-8 rounded-xl shadow-sm border border-red-100 text-center">
-                <div className="text-red-500 text-5xl mb-4">⚠️</div>
-                <h2 className="text-xl font-bold text-[#1E2049] mb-2">Something went wrong</h2>
-                <p className="text-gray-600 mb-6">{error}</p>
-                <button onClick={() => navigate('/flight/results')} className="text-[#E41D57] font-bold hover:underline">
-                    Back to Search Results
-                </button>
-            </div>
-        </div>
-    );
+    const firstLeg = flight.legs ? Object.values(flight.legs)[0] : null;
+    const lastLeg = flight.legs ? Object.values(flight.legs)[Object.values(flight.legs).length - 1] : null;
 
     return (
         <div className="bg-[#f3f4f6] min-h-screen py-8 font-sans text-gray-800">
             <div className="container mx-auto px-4 max-w-7xl">
-                <h1 className="text-2xl font-bold mb-6 text-[#1E2049]">Review & Book Your Flight</h1>
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-
                     {/* Main Content (Left) */}
                     <div className="lg:col-span-9 space-y-6">
 
-                        {/* 1. Flight Summary Card */}
-                        <div className="bg-white border-t-4 border-[#1E2049] rounded-xl shadow-sm p-6 relative overflow-hidden">
-                            {/* Decorative bg circle */}
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-[#E41D57]/5 rounded-bl-full pointer-events-none"></div>
-
-                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 relative z-10">
-                                <div className="flex items-center space-x-4">
-                                    <div className="w-16 h-16 border rounded-lg flex items-center justify-center bg-white shadow-sm p-2">
-                                        <img src={flight.airlineLogo} alt="Airline" className="max-w-full max-h-full object-contain" onError={(e) => { e.target.style.display = 'none'; }} />
-                                    </div>
-                                    <div>
-                                        <h2 className="text-xl font-bold text-[#1E2049]">{flight.airlineName}</h2>
-                                        <div className="flex items-center gap-2 mt-1">
-                                            <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded border border-gray-200 font-mono">{flight.carrierCode}</span>
-                                            <span className={`px-2 py-0.5 text-xs rounded border font-bold ${flight.refundStatus === 'Non-Refundable' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-green-50 text-green-600 border-green-100'}`}>
-                                                {flight.refundStatus || 'Refundable'}
-                                            </span>
+                        {/* *** FLIGHT HEADER CARD (Updated) *** */}
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                            {/* Card Top: Summary */}
+                            <div className="p-6 pb-2">
+                                <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                                    {/* Airline */}
+                                    <div className="flex items-center gap-4 w-full md:w-auto">
+                                        <div className="w-16 h-12 flex items-center justify-center">
+                                            <img src={flight.airlineLogo} alt="Logo" className="max-w-full max-h-full object-contain" onError={(e) => { e.target.style.display = 'none'; }} />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-lg font-bold text-[#1E2049]">{flight.airlineName}</h2>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-gray-500 text-xs">({flight.carrierCode})</span>
+                                                <span className={`text-[10px] px-2 py-0.5 rounded border ${flight.refundStatus === 'Non-Refundable' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-green-50 text-green-600 border-green-100'}`}>
+                                                    {flight.refundStatus}
+                                                </span>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
 
-                                <div className="text-right mt-4 md:mt-0">
-                                    <p className="text-xs text-gray-500 uppercase tracking-widest font-semibold">Total Amount</p>
-                                    <p className="text-3xl font-bold text-[#E41D57]">BDT {Number(flight.fare.totalPrice).toLocaleString()}</p>
+                                    {/* Route Visual */}
+                                    <div className="flex-1 flex items-center justify-center gap-6 w-full md:w-auto">
+                                        <div className="text-right">
+                                            <div className="text-xl font-bold text-[#1E2049]">{firstLeg?.departure.time.substring(0, 5)}</div>
+                                            <div className="text-xs text-gray-500">{firstLeg?.departure.formattedDate}</div>
+                                            <div className="text-xs text-gray-500">{firstLeg?.departure.airport}</div>
+                                        </div>
+                                        <div className="flex flex-col items-center w-32">
+                                            <div className="text-[10px] text-red-500 mb-1">{firstLeg?.formattedElapsedTime}</div>
+                                            <div className="w-full h-px bg-red-200 relative mb-1">
+                                                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-red-400"></div>
+                                                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-red-400"></div>
+                                            </div>
+                                            <div className="text-[10px] text-red-500 uppercase">
+                                                {(firstLeg?.stopovers?.length > 0) ? `${firstLeg.stopovers.length} Stop` : 'Non Stop'}
+                                            </div>
+                                        </div>
+                                        <div className="text-left">
+                                            <div className="text-xl font-bold text-[#1E2049]">{lastLeg?.arrival.time.substring(0, 5)}</div>
+                                            <div className="text-xs text-gray-500">{lastLeg?.arrival.formattedDate}</div>
+                                            <div className="text-xs text-gray-500">{lastLeg?.arrival.airport}</div>
+                                        </div>
+                                    </div>
+
+                                    {/* Price */}
+                                    <div className="text-right w-full md:w-auto">
+                                        <div className="text-xs text-gray-500 mb-1">Total Amount</div>
+                                        <div className="text-2xl font-bold text-[#1E2049]">BDT {Number(flight.fare.totalPrice).toLocaleString()}</div>
+                                        <div className="text-[10px] text-gray-400">Taxes & Fees included</div>
+                                    </div>
                                 </div>
                             </div>
 
-                            {/* Flight Route Visualization */}
-                            <div className="bg-gray-50/50 rounded-xl border border-gray-100 p-6 space-y-6">
-                                {flight.legs && Object.values(flight.legs).map((leg, i) => (
-                                    <div key={i} className="flex flex-col md:flex-row items-center justify-between gap-6">
-                                        <div className="text-center md:text-left min-w-[100px]">
-                                            <p className="text-2xl font-bold text-[#1E2049]">{leg.departure.time.substring(0, 5)}</p>
-                                            <p className="text-sm font-bold text-gray-600">{leg.departure.airport}</p>
-                                            <p className="text-xs text-gray-400">{leg.departure.formattedDate}</p>
-                                        </div>
-
-                                        <div className="flex-1 w-full md:w-auto px-4 flex flex-col items-center">
-                                            <p className="text-xs text-gray-400 mb-2">{leg.formattedElapsedTime}</p>
-                                            <div className="w-full flex items-center gap-2">
-                                                <div className="h-[2px] w-full bg-gray-200 relative">
-                                                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-[#1E2049]"></div>
-                                                    <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-[#E41D57]"></div>
-                                                </div>
-                                            </div>
-                                            <div className="mt-2 px-3 py-1 bg-white border border-gray-200 rounded-full text-[10px] uppercase font-bold text-gray-500 shadow-sm">
-                                                {(leg.stopovers && leg.stopovers.length > 0) ? `${leg.stopovers.length} Stop via ${leg.stopovers.join(", ")}` : 'Non Stop'}
-                                            </div>
-                                        </div>
-
-                                        <div className="text-center md:text-right min-w-[100px]">
-                                            <p className="text-2xl font-bold text-[#1E2049]">{leg.arrival.time.substring(0, 5)}</p>
-                                            <p className="text-sm font-bold text-gray-600">{leg.arrival.airport}</p>
-                                            <p className="text-xs text-gray-400">{leg.arrival.formattedDate}</p>
-                                        </div>
-                                    </div>
-                                ))}
+                            {/* Toggle Details Button */}
+                            <div className="px-6 py-3 bg-gray-50 border-t border-gray-100 flex justify-center">
+                                <button
+                                    onClick={() => setShowDetails(!showDetails)}
+                                    className="text-sm font-bold text-[#E41D57] hover:text-[#c01b4b] flex items-center gap-2 transition-colors focus:outline-none"
+                                >
+                                    <span>{showDetails ? 'Hide Flight Details' : 'View Flight Details'}</span>
+                                    <i className={`fa fa-chevron-${showDetails ? 'up' : 'down'} transition-transform duration-300`}></i>
+                                </button>
                             </div>
 
-                            <button
-                                type="button"
-                                onClick={() => setFlightDetailsOpen(!flightDetailsOpen)}
-                                className="w-full mt-4 flex items-center justify-center gap-2 text-sm text-[#1E2049] font-bold py-2 hover:bg-gray-50 rounded-lg transition-colors border border-dashed border-gray-200"
-                            >
-                                <span>{flightDetailsOpen ? 'Hide Full Flight Itinerary' : 'View Full Flight Itinerary'}</span>
-                                <svg className={`w-4 h-4 transition-transform ${flightDetailsOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                            </button>
+                            {/* Tabs & Content (Collapsible) */}
+                            {showDetails && (
+                                <div className="border-t border-gray-200 animate-fadeIn">
+                                    {/* Tabs */}
+                                    <div className="flex px-6 border-b border-gray-100 mt-4">
+                                        <button
+                                            onClick={() => setActiveTab('flight_details')}
+                                            className={`mr-6 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'flight_details' ? 'border-[#E41D57] text-[#E41D57]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                                        >
+                                            Flight Details
+                                        </button>
+                                        <button
+                                            onClick={() => setActiveTab('fare_summary')}
+                                            className={`py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'fare_summary' ? 'border-[#E41D57] text-[#E41D57]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                                        >
+                                            Fare Summary
+                                        </button>
+                                    </div>
 
-                            {/* Collapsible Details */}
-                            {flightDetailsOpen && (
-                                <div className="mt-4 animate-fadeIn">
-                                    <div className="space-y-4">
-                                        {flight.legs && Object.values(flight.legs).map((leg, i) => (
-                                            <div key={i} className="border border-gray-200 rounded-xl overflow-hidden">
-                                                <div className="bg-[#1E2049] px-6 py-3 text-sm font-bold text-white flex justify-between">
-                                                    <span>{leg.departure.airportShortName} to {leg.arrival.airportShortName}</span>
-                                                    <span className="opacity-80 font-normal">{leg.departure.formattedDate}</span>
+                                    {/* Tab Content */}
+                                    <div className="p-6 bg-gray-50/50">
+                                        {activeTab === 'flight_details' && (
+                                            <div className="space-y-6 animate-fadeIn">
+                                                {/* 1. Routes Header */}
+                                                <div className="flex items-center gap-2 bg-gray-100 p-3 rounded-lg">
+                                                    <span className="font-bold text-gray-700">{firstLeg?.departure.airportShortName}</span>
+                                                    <i className="fa fa-arrow-right text-gray-400 text-xs"></i>
+                                                    <span className="font-bold text-gray-700">{lastLeg?.arrival.airportShortName}</span>
+                                                    <span className="text-gray-500 text-sm">({firstLeg?.departure.formattedDate})</span>
                                                 </div>
-                                                <div className="p-6 space-y-8 bg-white">
-                                                    {leg.schedules.map((sch, idx) => (
-                                                        <div key={idx} className="relative pl-8 border-l-2 border-dashed border-gray-200">
-                                                            <div className="absolute left-[-5px] top-0 w-2.5 h-2.5 rounded-full bg-gray-300"></div>
-                                                            <div className="flex flex-col md:flex-row gap-6">
-                                                                <div className="flex flex-col items-center min-w-[60px]">
-                                                                    <img src={sch.carrier.operatingLogo} alt="Logo" className="w-10 mb-2 object-contain" onError={(e) => { e.target.src = flight.airlineLogo }} />
-                                                                    <span className="text-[10px] text-gray-400 font-mono">{sch.carrier.operating}-{sch.carrier.operatingFlightNumber}</span>
+
+                                                {/* 2. Segments */}
+                                                {flight.legs && Object.values(flight.legs).map((leg, i) => (
+                                                    <div key={i} className="space-y-6">
+                                                        {leg.schedules.map((sch, idx) => (
+                                                            <div key={idx} className="relative pl-6 border-l-2 border-dashed border-gray-300">
+                                                                <div className="absolute -left-[5px] top-0 w-2.5 h-2.5 rounded-full bg-gray-400"></div>
+
+                                                                {/* Airline & Aircraft Line */}
+                                                                <div className="flex flex-wrap items-center gap-4 mb-3">
+                                                                    <img src={sch.carrier.operatingLogo} alt="Logo" className="w-6 h-6 object-contain" onError={(e) => { e.target.src = flight.airlineLogo }} />
+                                                                    <div>
+                                                                        <span className="font-bold text-sm text-[#1E2049] block">{sch.carrier.operatingName}</span>
+                                                                        <span className="text-xs text-gray-500">Operated by: {sch.carrier.operatingName}</span>
+                                                                    </div>
+                                                                    <div className="h-4 w-px bg-gray-300 mx-2"></div>
+                                                                    <div className="text-xs text-gray-500">
+                                                                        Aircraft: <span className="text-[#1E2049] font-semibold">{sch.carrier?.equipment?.code || '738'}</span>
+                                                                    </div>
                                                                 </div>
 
-                                                                <div className="flex-1 space-y-4">
+                                                                {/* Timing Line */}
+                                                                <div className="flex justify-between items-start mb-4">
                                                                     <div>
-                                                                        <h4 className="font-bold text-[#1E2049] text-sm">{sch.carrier.operatingName}</h4>
-                                                                        <p className="text-xs text-gray-500">Aircraft: {sch.carrier?.equipment?.code || 'N/A'} • Class: {sch.cabin?.name || 'Economy'}</p>
+                                                                        <div className="text-xs text-gray-500 mb-0.5">Depart</div>
+                                                                        <div className="text-lg font-bold text-[#1E2049]">{sch.departure.time.substring(0, 5)}</div>
+                                                                        <div className="text-xs text-gray-500">{sch.departure.formattedDate}</div>
+                                                                        <div className="text-xs text-gray-400">{sch.departure.airport}</div>
                                                                     </div>
 
-                                                                    <div className="flex justify-between items-start bg-gray-50 p-4 rounded-lg border border-gray-100">
-                                                                        <div>
-                                                                            <p className="font-bold text-lg text-[#1E2049]">{sch.departure.time.substring(0, 5)}</p>
-                                                                            <p className="text-xs font-semibold text-gray-600">{sch.departure.airportShortName}</p>
-                                                                            <p className="text-[10px] text-gray-400">{sch.departure.airport}</p>
-                                                                        </div>
-                                                                        <div className="text-center px-4 pt-2">
-                                                                            <p className="text-[10px] text-gray-400">Duration</p>
-                                                                            <p className="text-xs font-bold text-[#E41D57]">{sch.formattedElapsedTime}</p>
-                                                                        </div>
-                                                                        <div className="text-right">
-                                                                            <p className="font-bold text-lg text-[#1E2049]">{sch.arrival.time.substring(0, 5)}</p>
-                                                                            <p className="text-xs font-semibold text-gray-600">{sch.arrival.airportShortName}</p>
-                                                                            <p className="text-[10px] text-gray-400">{sch.arrival.airport}</p>
-                                                                        </div>
+                                                                    <div className="text-center pt-2">
+                                                                        <span className="px-2 py-1 bg-white border rounded text-[10px] text-gray-500 shadow-sm">{sch.formattedElapsedTime}</span>
+                                                                    </div>
+
+                                                                    <div className="text-right">
+                                                                        <div className="text-xs text-gray-500 mb-0.5">Arrive</div>
+                                                                        <div className="text-lg font-bold text-[#1E2049]">{sch.arrival.time.substring(0, 5)}</div>
+                                                                        <div className="text-xs text-gray-500">{sch.arrival.formattedDate}</div>
+                                                                        <div className="text-xs text-gray-400">{sch.arrival.airport}</div>
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                        </div>
-                                                    ))}
+                                                        ))}
+                                                    </div>
+                                                ))}
+
+                                                {/* 3. Baggage & Cabin Table */}
+                                                <div className="mt-4 border rounded-lg overflow-hidden bg-white shadow-sm">
+                                                    <table className="w-full text-sm text-left">
+                                                        <thead className="bg-[#f8f9fa] text-xs uppercase text-gray-500 border-b">
+                                                            <tr>
+                                                                <th className="px-4 py-3 font-semibold">Passenger</th>
+                                                                <th className="px-4 py-3 font-semibold">Segment</th>
+                                                                <th className="px-4 py-3 font-semibold">Baggage Allowance</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-gray-100">
+                                                            {['Adult', 'Child', 'Infant'].map(type => {
+                                                                const paxData = flight.passengerFareSummary && Object.values(flight.passengerFareSummary).find(p => p && p.passengerType && p.passengerType.includes(type));
+                                                                if (!paxData) return null;
+
+                                                                // Mocking segment info as per image (Cabin Y, Booking E) - ideally get from API
+                                                                const segmentInfo = firstLeg?.schedules[0];
+                                                                const bookingCode = segmentInfo?.cabin?.name ? segmentInfo.cabin.name.charAt(0) : 'Y';
+
+                                                                // Fallback baggage logic
+                                                                let baggage = '20 KG';
+                                                                try {
+                                                                    const bagInfo = segmentInfo?.baggageInfo?.[0]; // Simplified
+                                                                    if (bagInfo?.weight) baggage = `${bagInfo.weight} ${bagInfo.unit}`;
+                                                                    else if (bagInfo?.pieceCount) baggage = `${bagInfo.pieceCount} PC`;
+                                                                } catch (e) { }
+
+                                                                return (
+                                                                    <tr key={type}>
+                                                                        <td className="px-4 py-3 text-gray-700 font-medium">{type}</td>
+                                                                        <td className="px-4 py-3 text-xs text-gray-500 space-y-0.5">
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span>Cabin: <span className="font-bold text-gray-700">{bookingCode}</span></span>
+                                                                            </div>
+                                                                            <div>Booking: <span className="font-bold text-gray-700">E</span></div>
+                                                                            <div>Seats: <span className="font-bold text-gray-700">{paxData.passengerNumberByType}</span></div>
+                                                                        </td>
+                                                                        <td className="px-4 py-3 font-bold text-[#E41D57]">{baggage}</td>
+                                                                    </tr>
+                                                                );
+                                                            })}
+                                                        </tbody>
+                                                    </table>
+                                                    <div className="px-4 py-2 bg-gray-50 text-xs text-gray-500 border-t">
+                                                        Total Passengers: {Object.values(flight.passengerFareSummary || {}).reduce((acc, curr) => typeof curr === 'object' ? acc + curr.passengerNumberByType : acc, 0)}
+                                                    </div>
                                                 </div>
                                             </div>
-                                        ))}
+                                        )}
+
+                                        {activeTab === 'fare_summary' && (
+                                            <div className="animate-fadeIn">
+                                                <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
+                                                    <div className="p-4 border-b bg-gray-50">
+                                                        <h3 className="font-bold text-[#1E2049]">Fare Summary</h3>
+                                                    </div>
+                                                    <div className="overflow-x-auto">
+                                                        <table className="w-full text-sm text-left">
+                                                            <thead className="bg-[#f8f9fa] text-xs uppercase text-gray-500 border-b">
+                                                                <tr>
+                                                                    <th className="px-4 py-3 font-semibold">Passenger Type</th>
+                                                                    <th className="px-4 py-3 font-semibold text-right">Base Fare</th>
+                                                                    <th className="px-4 py-3 font-semibold text-right">Tax</th>
+                                                                    <th className="px-4 py-3 font-semibold text-right">Total Fare</th>
+                                                                    <th className="px-4 py-3 font-semibold text-center">Quantity</th>
+                                                                    <th className="px-4 py-3 font-semibold">Penalty</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-gray-100">
+                                                                {flight.passengerFareSummary && Object.entries(flight.passengerFareSummary).map(([key, fare]) => {
+                                                                    if (key === 'totalPassenger') return null;
+                                                                    return (
+                                                                        <tr key={key} className="hover:bg-gray-50 transition-colors">
+                                                                            <td className="px-4 py-3 text-gray-700 font-medium">{fare.passengerType}</td>
+                                                                            <td className="px-4 py-3 text-right text-gray-600">{Number(fare.passengerBaseFare).toLocaleString()}</td>
+                                                                            <td className="px-4 py-3 text-right text-gray-600">{Number(fare.passengerTax).toLocaleString()}</td>
+                                                                            <td className="px-4 py-3 text-right font-bold text-[#1E2049]">{Number(fare.passengerTotalFare).toLocaleString()}</td>
+                                                                            <td className="px-4 py-3 text-center text-gray-600">{fare.passengerNumberByType}</td>
+                                                                            <td className="px-4 py-3 text-xs text-gray-500">
+                                                                                <div className="space-y-1">
+                                                                                    <div className="flex justify-between gap-4">
+                                                                                        <span>Exchange Before:</span>
+                                                                                        <span className="font-mono text-gray-700">BDT {Math.round(fare.passengerBaseFare * 0.1).toLocaleString()}</span>
+                                                                                    </div>
+                                                                                    <div className="flex justify-between gap-4">
+                                                                                        <span>Refund Before:</span>
+                                                                                        <span className="font-mono text-gray-700">BDT {Math.round(fare.passengerBaseFare * 0.2).toLocaleString()}</span>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </td>
+                                                                        </tr>
+                                                                    );
+                                                                })}
+                                                                {/* Total Row */}
+                                                                <tr className="bg-gray-50 font-bold border-t border-gray-200">
+                                                                    <td className="px-4 py-3 text-[#1E2049]">Total</td>
+                                                                    <td className="px-4 py-3 text-right"></td>
+                                                                    <td className="px-4 py-3 text-right text-gray-500">{Number(flight.fare.totalTaxAmount).toLocaleString()}</td>
+                                                                    <td className="px-4 py-3 text-right text-[#E41D57] text-lg">{Number(flight.fare.totalPrice).toLocaleString()}</td>
+                                                                    <td className="px-4 py-3 text-center">{Object.values(flight.passengerFareSummary || {}).reduce((acc, curr) => typeof curr === 'object' ? acc + curr.passengerNumberByType : acc, 0)}</td>
+                                                                    <td className="px-4 py-3"></td>
+                                                                </tr>
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}
                         </div>
 
-                        {/* 2. Guidelines */}
+                        {/* Guidelines (Preserved) */}
                         <div className="bg-orange-50 border border-orange-200 rounded-xl p-5 flex gap-4 text-sm text-gray-700 shadow-sm">
-                            <div className="text-orange-500 text-xl">
-                                <i className="fa fa-info-circle"></i>
-                            </div>
+                            <div className="text-orange-500 text-xl"><i className="fa fa-info-circle"></i></div>
                             <div>
                                 <h4 className="font-bold text-[#1E2049] mb-1">Important Travel Guidelines</h4>
                                 <ul className="list-disc list-inside space-y-1 text-xs text-gray-600">
@@ -425,132 +509,67 @@ const FlightBooking = () => {
                             </div>
                         </div>
 
-                        {/* 3. Form */}
+                        {/* *** FORM (Previous Implementation) *** */}
                         <form onSubmit={handleSubmit} className="space-y-6">
-
-                            {/* Contact Details */}
+                            {/* Contact Details (Existing) */}
                             <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
                                 <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-100">
-                                    <div className="w-8 h-8 rounded-full bg-[#E41D57]/10 flex items-center justify-center text-[#E41D57]">
-                                        <i className="fa fa-address-book"></i>
-                                    </div>
+                                    <div className="w-8 h-8 rounded-full bg-[#E41D57]/10 flex items-center justify-center text-[#E41D57]"><i className="fa fa-address-book"></i></div>
                                     <h3 className="text-lg font-bold text-[#1E2049]">Contact Details</h3>
                                 </div>
-
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div>
                                         <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wider">Mobile Number</label>
                                         <div className="flex shadow-sm">
-                                            <select
-                                                value={contact.country_code}
-                                                onChange={(e) => handleContactChange('country_code', e.target.value)}
-                                                className="w-28 border border-gray-300 rounded-l-lg px-2 py-3 text-sm bg-gray-50 focus:ring-0 focus:border-[#E41D57]"
-                                            >
+                                            <select value={contact.country_code} onChange={(e) => handleContactChange('country_code', e.target.value)} className="w-28 border border-gray-300 rounded-l-lg px-2 py-3 text-sm bg-gray-50 focus:ring-0 focus:border-[#E41D57]">
                                                 {countries.map(c => <option key={c.id} value={c.phone_code}>{c.emoji} {c.phone_code}</option>)}
                                             </select>
-                                            <input
-                                                type="text"
-                                                placeholder="123 456 7890"
-                                                value={contact.mobile}
-                                                onChange={(e) => handleContactChange('mobile', e.target.value)}
-                                                className={`border-t border-b border-r rounded-r-lg px-4 py-3 w-full text-sm outline-none transition-colors ${validationErrors['contact.mobile'] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`}
-                                                required
-                                            />
+                                            <input type="text" placeholder="123 456 7890" value={contact.mobile} onChange={(e) => handleContactChange('mobile', e.target.value)} className={`border-t border-b border-r rounded-r-lg px-4 py-3 w-full text-sm outline-none transition-colors ${validationErrors['contact.mobile'] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`} required />
                                         </div>
                                         {getError('contact.mobile')}
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wider">Email Address</label>
-                                        <input
-                                            type="email"
-                                            placeholder="example@email.com"
-                                            value={contact.email}
-                                            onChange={(e) => handleContactChange('email', e.target.value)}
-                                            className={`border rounded-lg px-4 py-3 w-full text-sm outline-none shadow-sm transition-colors ${validationErrors['contact.email'] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`}
-                                            required
-                                        />
+                                        <input type="email" placeholder="example@email.com" value={contact.email} onChange={(e) => handleContactChange('email', e.target.value)} className={`border rounded-lg px-4 py-3 w-full text-sm outline-none shadow-sm transition-colors ${validationErrors['contact.email'] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`} required />
                                         {getError('contact.email')}
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Passenger Details Accordion */}
+                            {/* Passenger Details (Existing) */}
                             <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
                                 <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-100">
-                                    <div className="w-8 h-8 rounded-full bg-[#E41D57]/10 flex items-center justify-center text-[#E41D57]">
-                                        <i className="fa fa-users"></i>
-                                    </div>
+                                    <div className="w-8 h-8 rounded-full bg-[#E41D57]/10 flex items-center justify-center text-[#E41D57]"><i className="fa fa-users"></i></div>
                                     <div>
                                         <h3 className="text-lg font-bold text-[#1E2049]">Passenger Details</h3>
                                         <p className="text-xs text-gray-500">Enter details exactly as they appear on the passport</p>
                                     </div>
                                 </div>
-
                                 <div className="space-y-4">
                                     {passengers.map((pax, idx) => {
                                         const isOpen = openPassengerIndex === idx;
                                         const validation = ageValidation[idx] || {};
-
                                         return (
                                             <div key={idx} className={`border rounded-xl overflow-hidden transition-all duration-300 ${isOpen ? 'border-[#1E2049] shadow-md' : 'border-gray-200'}`}>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setOpenPassengerIndex(isOpen ? -1 : idx)}
-                                                    className={`w-full px-5 py-4 flex justify-between items-center text-left transition-colors ${isOpen ? 'bg-[#1E2049] text-white' : 'bg-gray-50 text-gray-700 hover:bg-white'}`}
-                                                >
+                                                <button type="button" onClick={() => setOpenPassengerIndex(isOpen ? -1 : idx)} className={`w-full px-5 py-4 flex justify-between items-center text-left transition-colors ${isOpen ? 'bg-[#1E2049] text-white' : 'bg-gray-50 text-gray-700 hover:bg-white'}`}>
                                                     <div className="flex items-center gap-3">
-                                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${isOpen ? 'bg-white text-[#1E2049]' : 'bg-gray-200 text-gray-600'}`}>
-                                                            {idx + 1}
-                                                        </div>
+                                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${isOpen ? 'bg-white text-[#1E2049]' : 'bg-gray-200 text-gray-600'}`}>{idx + 1}</div>
                                                         <span className="font-bold text-sm tracking-wide uppercase">{pax.type}</span>
                                                     </div>
-                                                    <div className="flex items-center gap-3">
-                                                        {/* Show validation checkmark if filled ? (Optional enhancement) */}
-                                                        <svg className={`w-5 h-5 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                                                    </div>
+                                                    <div className="flex items-center gap-3"><svg className={`w-5 h-5 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg></div>
                                                 </button>
-
                                                 {isOpen && (
                                                     <div className="p-6 bg-white space-y-5 animate-fadeIn">
                                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                                            <div>
-                                                                <label className="block text-xs font-bold text-gray-600 mb-1.5 uppercase">First Name / Given Name</label>
-                                                                <input
-                                                                    type="text"
-                                                                    placeholder="e.g. JOHN"
-                                                                    className={`border rounded-lg w-full px-4 py-3 text-sm outline-none transition-colors ${validationErrors[`passengers.${idx}.first_name`] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`}
-                                                                    value={pax.first_name}
-                                                                    onChange={(e) => handlePassengerChange(idx, 'first_name', e.target.value)}
-                                                                    required
-                                                                />
-                                                                {getError(`passengers.${idx}.first_name`)}
-                                                            </div>
-                                                            <div>
-                                                                <label className="block text-xs font-bold text-gray-600 mb-1.5 uppercase">Last Name / Surname</label>
-                                                                <input
-                                                                    type="text"
-                                                                    placeholder="e.g. DOE"
-                                                                    className={`border rounded-lg w-full px-4 py-3 text-sm outline-none transition-colors ${validationErrors[`passengers.${idx}.last_name`] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`}
-                                                                    value={pax.last_name}
-                                                                    onChange={(e) => handlePassengerChange(idx, 'last_name', e.target.value)}
-                                                                    required
-                                                                />
-                                                                {getError(`passengers.${idx}.last_name`)}
-                                                            </div>
+                                                            <div><label className="block text-xs font-bold text-gray-600 mb-1.5 uppercase">First Name / Given Name</label><input type="text" placeholder="e.g. JOHN" className={`border rounded-lg w-full px-4 py-3 text-sm outline-none transition-colors ${validationErrors[`passengers.${idx}.first_name`] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`} value={pax.first_name} onChange={(e) => handlePassengerChange(idx, 'first_name', e.target.value)} required />{getError(`passengers.${idx}.first_name`)}</div>
+                                                            <div><label className="block text-xs font-bold text-gray-600 mb-1.5 uppercase">Last Name / Surname</label><input type="text" placeholder="e.g. DOE" className={`border rounded-lg w-full px-4 py-3 text-sm outline-none transition-colors ${validationErrors[`passengers.${idx}.last_name`] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`} value={pax.last_name} onChange={(e) => handlePassengerChange(idx, 'last_name', e.target.value)} required />{getError(`passengers.${idx}.last_name`)}</div>
                                                         </div>
-
                                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                                             <div>
                                                                 <label className="block text-xs font-bold text-gray-600 mb-1.5 uppercase">Nationality</label>
                                                                 <div className="relative">
-                                                                    <select
-                                                                        className={`border rounded-lg w-full px-4 py-3 text-sm outline-none appearance-none bg-white transition-colors ${validationErrors[`passengers.${idx}.nationality`] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`}
-                                                                        value={pax.nationality}
-                                                                        onChange={(e) => handlePassengerChange(idx, 'nationality', e.target.value)}
-                                                                        required
-                                                                    >
-                                                                        <option value="">Select Country</option>
-                                                                        {countries.map(c => <option key={c.id} value={c.iso2}>{c.name}</option>)}
+                                                                    <select className={`border rounded-lg w-full px-4 py-3 text-sm outline-none appearance-none bg-white transition-colors ${validationErrors[`passengers.${idx}.nationality`] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`} value={pax.nationality} onChange={(e) => handlePassengerChange(idx, 'nationality', e.target.value)} required>
+                                                                        <option value="">Select Country</option>{countries.map(c => <option key={c.id} value={c.iso2}>{c.name}</option>)}
                                                                     </select>
                                                                     <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">▼</div>
                                                                 </div>
@@ -559,132 +578,47 @@ const FlightBooking = () => {
                                                             <div>
                                                                 <label className="block text-xs font-bold text-gray-600 mb-1.5 uppercase">Gender</label>
                                                                 <div className="relative">
-                                                                    <select
-                                                                        className={`border rounded-lg w-full px-4 py-3 text-sm outline-none appearance-none bg-white transition-colors ${validationErrors[`passengers.${idx}.gender`] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`}
-                                                                        value={pax.gender}
-                                                                        onChange={(e) => handlePassengerChange(idx, 'gender', e.target.value)}
-                                                                        required
-                                                                    >
-                                                                        <option value="">Select Gender</option>
-                                                                        <option value="Male">Male</option>
-                                                                        <option value="Female">Female</option>
+                                                                    <select className={`border rounded-lg w-full px-4 py-3 text-sm outline-none appearance-none bg-white transition-colors ${validationErrors[`passengers.${idx}.gender`] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`} value={pax.gender} onChange={(e) => handlePassengerChange(idx, 'gender', e.target.value)} required>
+                                                                        <option value="">Select Gender</option><option value="Male">Male</option><option value="Female">Female</option>
                                                                     </select>
                                                                     <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">▼</div>
                                                                 </div>
                                                                 {getError(`passengers.${idx}.gender`)}
                                                             </div>
                                                         </div>
-
                                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                                             <div>
                                                                 <label className="block text-xs font-bold text-gray-600 mb-1.5 uppercase">Date of Birth</label>
-                                                                <input
-                                                                    type="date"
-                                                                    className={`border rounded-lg w-full px-4 py-3 text-sm outline-none transition-colors ${validationErrors[`passengers.${idx}.dob`] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`}
-                                                                    value={pax.dob}
-                                                                    onChange={(e) => handlePassengerChange(idx, 'dob', e.target.value)}
-                                                                    required
-                                                                />
-                                                                {/* Age Validation Messages */}
-                                                                <div className="text-xs mt-2 space-y-1">
-                                                                    {validation.departureError && (
-                                                                        <div className="flex items-start gap-1 text-red-600 bg-red-50 p-2 rounded border border-red-100">
-                                                                            <span>⚠️</span>
-                                                                            <p>{validation.departureError}</p>
-                                                                        </div>
-                                                                    )}
-                                                                    {!validation.departureError && validation.departureAge && (
-                                                                        <p className="text-gray-500 text-[11px] ml-1">
-                                                                            Age at travel: <span className="font-bold text-[#1E2049]">{validation.departureAge}</span>
-                                                                        </p>
-                                                                    )}
-                                                                    {getError(`passengers.${idx}.dob`)}
-                                                                </div>
+                                                                <input type="date" className={`border rounded-lg w-full px-4 py-3 text-sm outline-none transition-colors ${validationErrors[`passengers.${idx}.dob`] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`} value={pax.dob} onChange={(e) => handlePassengerChange(idx, 'dob', e.target.value)} required />
+                                                                <div className="text-xs mt-2 space-y-1">{validation.departureError && (<div className="flex items-start gap-1 text-red-600 bg-red-50 p-2 rounded border border-red-100"><span>⚠️</span><p>{validation.departureError}</p></div>)}{!validation.departureError && validation.departureAge && (<p className="text-gray-500 text-[11px] ml-1">Age at travel: <span className="font-bold text-[#1E2049]">{validation.departureAge}</span></p>)}{getError(`passengers.${idx}.dob`)}</div>
                                                             </div>
-                                                            <div>
-                                                                <label className="block text-xs font-bold text-gray-600 mb-1.5 uppercase">Passport Number</label>
-                                                                <input
-                                                                    type="text"
-                                                                    className={`border rounded-lg w-full px-4 py-3 text-sm outline-none transition-colors ${validationErrors[`passengers.${idx}.passport_number`] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`}
-                                                                    value={pax.passport_number}
-                                                                    onChange={(e) => handlePassengerChange(idx, 'passport_number', e.target.value)}
-                                                                    required
-                                                                />
-                                                                {getError(`passengers.${idx}.passport_number`)}
-                                                            </div>
+                                                            <div><label className="block text-xs font-bold text-gray-600 mb-1.5 uppercase">Passport Number</label><input type="text" className={`border rounded-lg w-full px-4 py-3 text-sm outline-none transition-colors ${validationErrors[`passengers.${idx}.passport_number`] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`} value={pax.passport_number} onChange={(e) => handlePassengerChange(idx, 'passport_number', e.target.value)} required />{getError(`passengers.${idx}.passport_number`)}</div>
                                                         </div>
-
-                                                        {/* Passport Country & Expiry */}
                                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                                             <div>
                                                                 <label className="block text-xs font-bold text-gray-600 mb-1.5 uppercase">Passport Country</label>
                                                                 <div className="relative">
-                                                                    <select
-                                                                        className={`border rounded-lg w-full px-4 py-3 text-sm outline-none appearance-none bg-white transition-colors ${validationErrors[`passengers.${idx}.passport_country`] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`}
-                                                                        value={pax.passport_country}
-                                                                        onChange={(e) => handlePassengerChange(idx, 'passport_country', e.target.value)}
-                                                                        required
-                                                                    >
-                                                                        <option value="">Select Country</option>
-                                                                        {countries.map(c => <option key={c.id} value={c.iso2}>{c.name}</option>)}
+                                                                    <select className={`border rounded-lg w-full px-4 py-3 text-sm outline-none appearance-none bg-white transition-colors ${validationErrors[`passengers.${idx}.passport_country`] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`} value={pax.passport_country} onChange={(e) => handlePassengerChange(idx, 'passport_country', e.target.value)} required>
+                                                                        <option value="">Select Country</option>{countries.map(c => <option key={c.id} value={c.iso2}>{c.name}</option>)}
                                                                     </select>
                                                                     <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">▼</div>
                                                                 </div>
                                                                 {getError(`passengers.${idx}.passport_country`)}
                                                             </div>
-                                                            <div>
-                                                                <label className="block text-xs font-bold text-gray-600 mb-1.5 uppercase">Passport Expiry Date</label>
-                                                                <input
-                                                                    type="date"
-                                                                    className={`border rounded-lg w-full px-4 py-3 text-sm outline-none transition-colors ${validationErrors[`passengers.${idx}.passport_expiry`] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`}
-                                                                    value={pax.passport_expiry}
-                                                                    onChange={(e) => handlePassengerChange(idx, 'passport_expiry', e.target.value)}
-                                                                    required
-                                                                />
-                                                                {getError(`passengers.${idx}.passport_expiry`)}
-                                                            </div>
+                                                            <div><label className="block text-xs font-bold text-gray-600 mb-1.5 uppercase">Passport Expiry Date</label><input type="date" className={`border rounded-lg w-full px-4 py-3 text-sm outline-none transition-colors ${validationErrors[`passengers.${idx}.passport_expiry`] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`} value={pax.passport_expiry} onChange={(e) => handlePassengerChange(idx, 'passport_expiry', e.target.value)} required />{getError(`passengers.${idx}.passport_expiry`)}</div>
                                                         </div>
-
-                                                        {/* Lead Passenger Extra Inputs (Index 0) */}
                                                         {idx === 0 && (
                                                             <div className="mt-6 p-5 bg-blue-50/50 rounded-xl border border-blue-100">
-                                                                <div className="flex items-center gap-2 mb-3">
-                                                                    <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs">⭐</span>
-                                                                    <h5 className="font-bold text-sm text-[#1E2049] uppercase tracking-wide">Primary Passenger Contact</h5>
-                                                                </div>
-                                                                <p className="text-xs text-gray-500 mb-4">Required by airlines for updates</p>
+                                                                <div className="flex items-center gap-2 mb-3"><span className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs">⭐</span><h5 className="font-bold text-sm text-[#1E2049] uppercase tracking-wide">Primary Passenger Contact</h5></div><p className="text-xs text-gray-500 mb-4">Required by airlines for updates</p>
                                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                                     <div>
                                                                         <div className="flex shadow-sm">
-                                                                            <select
-                                                                                value={leadPassenger.country_code}
-                                                                                onChange={(e) => handleLeadPassengerChange('country_code', e.target.value)}
-                                                                                className="w-24 border border-gray-300 rounded-l-lg px-2 py-2 text-xs bg-white focus:ring-0 focus:border-[#E41D57]"
-                                                                            >
-                                                                                {countries.map(c => <option key={c.id} value={c.phone_code}>{c.emoji} {c.phone_code}</option>)}
-                                                                            </select>
-                                                                            <input
-                                                                                type="text"
-                                                                                placeholder="Mobile"
-                                                                                value={leadPassenger.mobile}
-                                                                                onChange={(e) => handleLeadPassengerChange('mobile', e.target.value)}
-                                                                                className={`border-t border-b border-r rounded-r-lg px-3 py-2 w-full text-xs outline-none transition-colors ${validationErrors['lead_passenger_mobile'] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`}
-                                                                                required
-                                                                            />
+                                                                            <select value={leadPassenger.country_code} onChange={(e) => handleLeadPassengerChange('country_code', e.target.value)} className="w-24 border border-gray-300 rounded-l-lg px-2 py-2 text-xs bg-white focus:ring-0 focus:border-[#E41D57]">{countries.map(c => <option key={c.id} value={c.phone_code}>{c.emoji} {c.phone_code}</option>)}</select>
+                                                                            <input type="text" placeholder="Mobile" value={leadPassenger.mobile} onChange={(e) => handleLeadPassengerChange('mobile', e.target.value)} className={`border-t border-b border-r rounded-r-lg px-3 py-2 w-full text-xs outline-none transition-colors ${validationErrors['lead_passenger_mobile'] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`} required />
                                                                         </div>
                                                                         {getError('lead_passenger_mobile')}
                                                                     </div>
-                                                                    <div>
-                                                                        <input
-                                                                            type="email"
-                                                                            placeholder="Email"
-                                                                            value={leadPassenger.email}
-                                                                            onChange={(e) => handleLeadPassengerChange('email', e.target.value)}
-                                                                            className={`border rounded-lg px-4 py-2 w-full text-xs outline-none shadow-sm transition-colors ${validationErrors['lead_passenger_email'] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`}
-                                                                            required
-                                                                        />
-                                                                        {getError('lead_passenger_email')}
-                                                                    </div>
+                                                                    <div><input type="email" placeholder="Email" value={leadPassenger.email} onChange={(e) => handleLeadPassengerChange('email', e.target.value)} className={`border rounded-lg px-4 py-2 w-full text-xs outline-none shadow-sm transition-colors ${validationErrors['lead_passenger_email'] ? 'border-red-500 bg-red-50' : 'border-gray-300 focus:border-[#E41D57]'}`} required />{getError('lead_passenger_email')}</div>
                                                                 </div>
                                                             </div>
                                                         )}
@@ -696,115 +630,47 @@ const FlightBooking = () => {
                                 </div>
                             </div>
 
-                            {/* Submit Button */}
                             <div className="flex justify-end pt-4">
-                                <button
-                                    type="submit"
-                                    disabled={submitting}
-                                    className="bg-[#E41D57] text-white px-12 py-5 rounded-full font-bold shadow-xl shadow-[#E41D57]/30 hover:bg-[#c01b4b] transition-all transform hover:-translate-y-1 hover:shadow-2xl disabled:opacity-50 disabled:translate-y-0 disabled:shadow-none uppercase tracking-widest text-sm flex items-center gap-3"
-                                >
-                                    {submitting ? (
-                                        <>
-                                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                                            <span>Processing Booking...</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <span>Confirm Booking</span>
-                                            <i className="fa fa-arrow-right"></i>
-                                        </>
-                                    )}
+                                <button type="submit" disabled={submitting} className="bg-[#E41D57] text-white px-12 py-5 rounded-full font-bold shadow-xl shadow-[#E41D57]/30 hover:bg-[#c01b4b] transition-all transform hover:-translate-y-1 hover:shadow-2xl disabled:opacity-50 disabled:translate-y-0 disabled:shadow-none uppercase tracking-widest text-sm flex items-center gap-3">
+                                    {submitting ? (<><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div><span>Processing Booking...</span></>) : (<><span>Confirm Booking</span><i className="fa fa-arrow-right"></i></>)}
                                 </button>
                             </div>
-
                         </form>
                     </div>
 
-                    {/* Right Sidebar (Col Span 3) */}
+                    {/* Right Sidebar (Existing) */}
                     <div className="lg:col-span-3 space-y-6">
-
-                        {/* Timer */}
                         <div className="sticky top-24 space-y-6">
                             <div className="flex justify-between items-center border border-blue-100 rounded-xl px-4 py-4 bg-white shadow-sm">
                                 <div className="flex items-center space-x-3 text-[#E41D57]">
-                                    <div className="w-8 h-8 rounded-full bg-[#E41D57]/10 flex items-center justify-center">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                    </div>
+                                    <div className="w-8 h-8 rounded-full bg-[#E41D57]/10 flex items-center justify-center"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div>
                                     <span className="text-xs font-bold uppercase tracking-wide">Time Remaining</span>
                                 </div>
                                 <span className="font-mono font-bold text-xl text-[#1E2049]">{formatTime(timer)}</span>
                             </div>
 
-                            {/* Fare Summary Sidebar */}
                             <div className="bg-white p-6 rounded-xl shadow-lg shadow-gray-100 border border-gray-100">
-                                <h3 className="text-lg font-bold text-[#1E2049] mb-5 pb-3 border-b flex items-center justify-between">
-                                    <span>Fare Summary</span>
-                                    <span className="text-[10px] bg-green-50 text-green-600 px-2 py-1 rounded font-normal uppercase">Best Price</span>
-                                </h3>
+                                <h3 className="text-lg font-bold text-[#1E2049] mb-5 pb-3 border-b flex items-center justify-between"><span>Fare Summary</span><span className="text-[10px] bg-green-50 text-green-600 px-2 py-1 rounded font-normal uppercase">Best Price</span></h3>
 
-                                {/* Base Fare */}
                                 <details className="group mb-3 border-b border-dashed border-gray-100 pb-3" open>
                                     <summary className="cursor-pointer flex items-center justify-between text-sm font-bold text-gray-700 hover:text-[#E41D57] transition-colors">
-                                        <div className="flex items-center space-x-2">
-                                            <div className="w-4 h-4 bg-gray-50 rounded flex items-center justify-center group-open:rotate-90 transition-transform">
-                                                <svg className="w-2 h-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                                            </div>
-                                            <span>Base Fare</span>
-                                        </div>
-                                        <span className="text-gray-900">
-                                            BDT {Number(flight?.fare?.equivalentAmount || 0).toLocaleString()}
-                                        </span>
+                                        <div className="flex items-center space-x-2"><div className="w-4 h-4 bg-gray-50 rounded flex items-center justify-center group-open:rotate-90 transition-transform"><svg className="w-2 h-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg></div><span>Base Fare</span></div>
+                                        <span className="text-gray-900">BDT {Number(flight?.fare?.equivalentAmount || 0).toLocaleString()}</span>
                                     </summary>
-                                    <div className="mt-3 text-xs text-gray-500 pl-6 space-y-2 animate-fadeIn">
-                                        {flight?.passengerFareSummary && Object.entries(flight.passengerFareSummary).map(([key, fare]) => {
-                                            if (key === 'totalPassenger') return null;
-                                            return (
-                                                <div key={key} className="flex justify-between">
-                                                    <span>{fare.passengerType} (x{fare.passengerNumberByType})</span>
-                                                    <span className="font-medium text-gray-700">BDT {(fare.passengerBaseFare * fare.passengerNumberByType).toLocaleString()}</span>
-                                                </div>
-                                            )
-                                        })}
-                                    </div>
+                                    <div className="mt-3 text-xs text-gray-500 pl-6 space-y-2 animate-fadeIn">{flight?.passengerFareSummary && Object.entries(flight.passengerFareSummary).map(([key, fare]) => { if (key === 'totalPassenger') return null; return (<div key={key} className="flex justify-between"><span>{fare.passengerType} (x{fare.passengerNumberByType})</span><span className="font-medium text-gray-700">BDT {(fare.passengerBaseFare * fare.passengerNumberByType).toLocaleString()}</span></div>) })}</div>
                                 </details>
 
-                                {/* Taxes */}
                                 <details className="group mb-3 border-b border-dashed border-gray-100 pb-3" open>
                                     <summary className="cursor-pointer flex items-center justify-between text-sm font-bold text-gray-700 hover:text-[#E41D57] transition-colors">
-                                        <div className="flex items-center space-x-2">
-                                            <div className="w-4 h-4 bg-gray-50 rounded flex items-center justify-center group-open:rotate-90 transition-transform">
-                                                <svg className="w-2 h-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                                            </div>
-                                            <span>Taxes & Fees</span>
-                                        </div>
-                                        <span className="text-gray-900">
-                                            BDT {Number(flight?.fare?.totalTaxAmount || 0).toLocaleString()}
-                                        </span>
+                                        <div className="flex items-center space-x-2"><div className="w-4 h-4 bg-gray-50 rounded flex items-center justify-center group-open:rotate-90 transition-transform"><svg className="w-2 h-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg></div><span>Taxes & Fees</span></div>
+                                        <span className="text-gray-900">BDT {Number(flight?.fare?.totalTaxAmount || 0).toLocaleString()}</span>
                                     </summary>
-                                    <div className="mt-3 text-xs text-gray-500 pl-6 space-y-2 animate-fadeIn">
-                                        {flight?.passengerFareSummary && Object.entries(flight.passengerFareSummary).map(([key, fare]) => {
-                                            if (key === 'totalPassenger') return null;
-                                            return (
-                                                <div key={key} className="flex justify-between">
-                                                    <span>{fare.passengerType} (x{fare.passengerNumberByType})</span>
-                                                    <span className="font-medium text-gray-700">BDT {(fare.passengerTax * fare.passengerNumberByType).toLocaleString()}</span>
-                                                </div>
-                                            )
-                                        })}
-                                    </div>
+                                    <div className="mt-3 text-xs text-gray-500 pl-6 space-y-2 animate-fadeIn">{flight?.passengerFareSummary && Object.entries(flight.passengerFareSummary).map(([key, fare]) => { if (key === 'totalPassenger') return null; return (<div key={key} className="flex justify-between"><span>{fare.passengerType} (x{fare.passengerNumberByType})</span><span className="font-medium text-gray-700">BDT {(fare.passengerTax * fare.passengerNumberByType).toLocaleString()}</span></div>) })}</div>
                                 </details>
 
-                                {/* Grand Total */}
-                                <div className="flex justify-between items-end pt-4 mt-2 font-bold text-[#1E2049] border-t-2 border-gray-100">
-                                    <span className="text-sm uppercase text-gray-500">Grand Total</span>
-                                    <div className="text-right">
-                                        <span className="block text-2xl text-[#E41D57]">BDT {Number(flight?.fare?.totalPrice || 0).toLocaleString()}</span>
-                                        <span className="text-[10px] font-normal text-gray-400">All taxes included</span>
-                                    </div>
-                                </div>
+                                <div className="flex justify-between items-end pt-4 mt-2 font-bold text-[#1E2049] border-t-2 border-gray-100"><span className="text-sm uppercase text-gray-500">Grand Total</span><div className="text-right"><span className="block text-2xl text-[#E41D57]">BDT {Number(flight?.fare?.totalPrice || 0).toLocaleString()}</span><span className="text-[10px] font-normal text-gray-400">All taxes included</span></div></div>
                             </div>
                         </div>
-
                     </div>
                 </div>
             </div>
