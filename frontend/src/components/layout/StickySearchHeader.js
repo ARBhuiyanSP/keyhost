@@ -555,6 +555,11 @@ const StickySearchHeader = ({
     <>
       <div
         ref={headerOuterRef}
+        onClick={(e) => {
+          if (searchPillRef.current?.contains(e.target) || e.target.closest('button') || e.target.closest('a') || e.target.closest('input') || e.target.closest('.react-datepicker')) return;
+          e.stopPropagation();
+          setDesktopActiveSection(null);
+        }}
         className={`fixed top-0 left-0 right-0 z-[100] bg-[#F9FAFB] border-b border-gray-200 transition-all duration-500 ease-in-out ${isVisible ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'
           }`}
       >
@@ -1005,14 +1010,14 @@ const StickySearchHeader = ({
                         onMouseEnter={() => setDesktopHoverSection('guests')}
                         onMouseLeave={() => setDesktopHoverSection(null)}
                         className="flex-1 min-w-0 px-2 py-2 rounded-full transition-all duration-300 ease-out hover:bg-gray-50 relative z-10 flex items-center gap-2 cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowDesktopExpanded(false);
+                          setDesktopActiveSection('guests');
+                          window.dispatchEvent(new CustomEvent('openMainHeaderSearch', { detail: 'guests' }));
+                        }}
                       >
                         <div
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowDesktopExpanded(false);
-                            setDesktopActiveSection('guests');
-                            window.dispatchEvent(new CustomEvent('openMainHeaderSearch', { detail: 'guests' }));
-                          }}
                           className="text-left flex-1 min-w-0 px-2"
                         >
                           <div className="text-xs font-semibold text-gray-900">Who</div>

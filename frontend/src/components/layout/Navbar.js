@@ -435,13 +435,8 @@ const Navbar = () => {
         setShowHeaderToSuggestions(false); // Added for 'To' field
         setShowGuestsDropdown(false);
         setHeaderDateOpen(false);
-      } else if (clickedInsideHeader) {
-        // If clicked inside header but not inside form/popper, we might want to close sub-dropdowns but keep search active
-        // But the existing logic below handles specific popover closing.
-        // We ensure search stays active here.
-        setIsHeaderSearchActive(true);
-      } else {
-        // Inside search form (or date popper): keep form visible
+      } else if (clickedInsideSearchForm || clickedInsideDatePopper) {
+        // Inside search form or date popper: ensure form is visible
         setIsHeaderSearchActive(true);
       }
 
@@ -575,7 +570,19 @@ const Navbar = () => {
   };
 
   return (
-    <nav ref={headerSearchRef} className="hidden md:block bg-white shadow-lg sticky top-0 z-[100] overflow-visible">
+    <nav
+      ref={headerSearchRef}
+      className="hidden md:block bg-white shadow-lg sticky top-0 z-[100] overflow-visible"
+      onClick={(e) => {
+        if (searchFormRef.current?.contains(e.target) || e.target.closest('button') || e.target.closest('a') || e.target.closest('input') || e.target.closest('.react-datepicker')) return;
+        e.stopPropagation();
+        setIsHeaderSearchActive(false);
+        setShowHeaderLocationSuggestions(false);
+        setShowHeaderToSuggestions(false);
+        setHeaderDateOpen(false);
+        setShowGuestsDropdown(false);
+      }}
+    >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 overflow-visible">
         <div className="flex justify-between items-center h-16 gap-4">
           {/* Logo */}
@@ -913,9 +920,11 @@ const Navbar = () => {
                 <div
                   ref={headerWhereRef}
                   className="flex items-center flex-1 min-w-0 h-full px-7 py-3 transition-colors duration-300 ease-out relative rounded-full cursor-pointer z-10"
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setIsHeaderSearchActive(true);
                     setShowHeaderLocationSuggestions(true);
+                    setShowHeaderToSuggestions(false);
                     setHeaderDateOpen(false);
                     setShowGuestsDropdown(false);
                   }}
@@ -1223,10 +1232,12 @@ const Navbar = () => {
                 <div
                   ref={headerDateRef}
                   className="flex items-center flex-1 min-w-0 h-full px-5 py-3 transition-colors duration-300 ease-out rounded-full cursor-pointer relative z-10"
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setIsHeaderSearchActive(true);
                     setHeaderDateOpen(true);
                     setShowHeaderLocationSuggestions(false);
+                    setShowHeaderToSuggestions(false);
                     setShowGuestsDropdown(false);
                   }}
                   onMouseEnter={() => setHeaderHoverSection('dates')}
@@ -1374,17 +1385,18 @@ const Navbar = () => {
                 <div
                   className="flex items-center flex-1 min-w-0 h-full px-4 py-3 transition-colors duration-300 ease-out relative rounded-full cursor-pointer z-10"
                   ref={guestDropdownRef}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsHeaderSearchActive(true);
+                    setShowGuestsDropdown(true);
+                    setShowHeaderLocationSuggestions(false);
+                    setShowHeaderToSuggestions(false); // Close 'To' suggestions
+                    setHeaderDateOpen(false);
+                  }}
                   onMouseEnter={() => setHeaderHoverSection('guests')}
                   onMouseLeave={() => setHeaderHoverSection(null)}
                 >
                   <div
-                    onClick={() => {
-                      setIsHeaderSearchActive(true);
-                      setShowGuestsDropdown(true);
-                      setShowHeaderLocationSuggestions(false);
-                      setShowHeaderToSuggestions(false); // Close 'To' suggestions
-                      setHeaderDateOpen(false);
-                    }}
                     className="text-left flex-1 min-w-0 px-3"
                   >
                     <div className="text-xs font-semibold text-gray-900">
