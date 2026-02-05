@@ -91,8 +91,8 @@ const FlightSearchResults = () => {
                         apiParams['destination'] = segments.map(s => extractCode(s.to));
                         apiParams['departure_date'] = segments.map(s => safeFormat(s.depart, 'dd MMM yy') || '');
                         apiParams['ADT'] = parseInt(currentParams.adults) || 1;
-                        apiParams['C07'] = (parseInt(currentParams.children) || 0) + (parseInt(currentParams.kids) || 0);
-                        apiParams['C03'] = 0;
+                        apiParams['C07'] = parseInt(currentParams.children) || 0;
+                        apiParams['C03'] = parseInt(currentParams.kids) || 0;
                         apiParams['INF'] = parseInt(currentParams.infants) || 0;
                     } catch (e) {
                         console.error('Error parsing multi-city segments:', e);
@@ -103,8 +103,8 @@ const FlightSearchResults = () => {
                     apiParams['depart_date'] = safeFormat(currentParams.depart, 'dd MMM yy') || format(new Date(), 'dd MMM yy');
                     apiParams['return_date'] = safeFormat(currentParams.return, 'dd MMM yy');
                     apiParams['ADTs'] = parseInt(currentParams.adults) || 1;
-                    apiParams['C07s'] = (parseInt(currentParams.children) || 0) + (parseInt(currentParams.kids) || 0);
-                    apiParams['C03s'] = 0;
+                    apiParams['C07s'] = parseInt(currentParams.children) || 0;
+                    apiParams['C03s'] = parseInt(currentParams.kids) || 0;
                     apiParams['INFs'] = parseInt(currentParams.infants) || 0;
                 }
 
