@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { FiChevronDown, FiSun, FiMoon, FiLoader, FiX, FiEdit2, FiSearch } from 'react-icons/fi'; // Added FiEdit2 for Modify Search
 import { useSearchParams } from 'react-router-dom';
-import { searchSabre, searchAmadeus } from '../../utils/flightApi';
+import { searchSabre, searchAmadeus, initiateSearch } from '../../utils/flightApi';
 import { format } from 'date-fns';
 import FlightSearchForm from './FlightSearchForm';
 import { DUMMY_FLIGHTS } from '../../utils/dummyFlights';
@@ -113,7 +113,16 @@ const FlightSearchResults = () => {
 
                 console.log('Initiating Search with Aerotake Params:', apiParams);
 
-                const amadeusPromise = searchAmadeus(apiParams)
+                // 1. Initiate Search to get a single folder ID
+                const initResponse = await initiateSearch(apiParams);
+                const searchId = initResponse.folder || initResponse.search_id;
+                console.log('Search Initiated. ID:', searchId);
+                setSearchId(searchId); // Store for potential polling/reference
+
+                // Add search_id to params for providers
+                const providerParams = { ...apiParams, search_id: searchId };
+
+                const amadeusPromise = searchAmadeus(providerParams)
                     .then(res => {
                         console.log('Amadeus Success:', res);
                         setRawResponses(prev => ({ ...prev, amadeus: res }));
@@ -127,7 +136,7 @@ const FlightSearchResults = () => {
                         setProvidersStatus(prev => ({ ...prev, amadeus: 'error' }));
                     });
 
-                const sabrePromise = searchSabre(apiParams)
+                const sabrePromise = searchSabre(providerParams)
                     .then(res => {
                         console.log('Sabre Success:', res);
                         setRawResponses(prev => ({ ...prev, sabre: res }));
@@ -499,15 +508,14 @@ const FlightSearchResults = () => {
                                                                         {leg.departure.time.split(':').slice(0, 2).join(':')}
                                                                     </div>
                                                                     <div className="text-[10px] text-gray-500">{leg.departure.airport}</div>
+                                                                    <div className="text-[9px] text-gray-500">Flight: {leg.carrier?.departFlight}</div>
                                                                 </div>
                                                                 <div className="flex flex-col items-center w-32">
                                                                     <div className="text-[9px] text-gray-400 mb-1">{leg.formattedElapsedTime}</div>
                                                                     <div className="w-full h-px bg-gray-300 relative flex items-center justify-center">
                                                                         <div className="w-1.5 h-1.5 rounded-full border border-gray-300 bg-white absolute left-0"></div>
                                                                         <div className="bg-white px-1 z-10 text-[8px] text-gray-400 uppercase">
-                                                                            {leg.stopovers?.length === 0 ? 'Non Stop' :
-                                                                                leg.stopovers?.length === 1 ? `1 Stop via ${leg.stopovers[0]}` :
-                                                                                    `${leg.stopovers?.length} Stops`}
+                                                                            {leg.stopovers?.length ? `${leg.stopovers.length} Stop via ${leg.stopovers.join(", ")}` : "Non Stop"}
                                                                         </div>
                                                                         <div className="w-1.5 h-1.5 rounded-full border border-blue-500 bg-white absolute right-0"></div>
                                                                     </div>
@@ -702,11 +710,11 @@ const FlightSearchResults = () => {
                                                                         />
                                                                         <div>
                                                                             <div className="text-[11px] text-gray-500 mb-0.5">
-                                                                                {schedule.carrier.marketingName} &bull; {schedule.carrier.marketing}-{schedule.carrier.flightNumber}
+                                                                                {schedule.carrier.marketingName} &bull; {schedule.carrier.marketing}-{schedule.carrier.marketingFlightNumber}
                                                                             </div>
                                                                             <div className="text-[10px] text-gray-400">
                                                                                 Operated by: {schedule.carrier.operatingName || schedule.carrier.marketingName} &bull;
-                                                                                Aircraft: {schedule.aircraft?.code || '738'}
+                                                                                Aircraft: {schedule.carrier?.equipment?.code ?? "N/A"}-{schedule.carrier?.equipment?.typeForFirstLeg ?? "N/A"}/{schedule.carrier?.equipment?.typeForLastLeg ?? "N/A"}
                                                                             </div>
                                                                         </div>
                                                                     </div>

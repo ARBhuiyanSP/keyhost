@@ -45,10 +45,25 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
     const [returnDate, setReturnDate] = useState(safeDate(searchParams.return));
 
     // Multi City State
-    const [segments, setSegments] = useState([
-        { from: searchParams.from || 'Dhaka (DAC)', to: searchParams.to || 'Dubai (DXB)', depart: safeDate(searchParams.depart, new Date(2026, 1, 15)) },
-        { from: '', to: '', depart: null }
-    ]);
+
+    const [segments, setSegments] = useState(() => {
+        if (searchParams.segments) {
+            try {
+                const parsed = JSON.parse(searchParams.segments);
+                return parsed.map(s => ({
+                    from: s.from,
+                    to: s.to,
+                    depart: safeDate(s.depart)
+                }));
+            } catch (e) {
+                console.error("Failed to parse segments", e);
+            }
+        }
+        return [
+            { from: searchParams.from || 'Dhaka (DAC)', to: searchParams.to || 'Dubai (DXB)', depart: safeDate(searchParams.depart, new Date(2026, 1, 15)) },
+            { from: '', to: '', depart: null }
+        ];
+    });
 
     // Traveler & Class State
     const [adults, setAdults] = useState(parseInt(searchParams.adults) || 1);
@@ -82,7 +97,18 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
         if (searchParams.depart) setDepartDate(safeDate(searchParams.depart));
         if (searchParams.return) setReturnDate(safeDate(searchParams.return));
         if (searchParams.adults) setAdults(parseInt(searchParams.adults));
-        // ... (other params)
+
+        if (searchParams.segments) {
+            try {
+                const parsed = JSON.parse(searchParams.segments);
+                const mapped = parsed.map(s => ({
+                    from: s.from,
+                    to: s.to,
+                    depart: safeDate(s.depart)
+                }));
+                setSegments(mapped);
+            } catch (e) { console.error(e); }
+        }
     }, [searchParams]);
 
     const getSuggestions = (input) => {
