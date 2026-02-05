@@ -411,7 +411,7 @@ const Navbar = () => {
     setHeaderDateOpen(false);
     setShowGuestsDropdown(false);
 
-    navigate(`/search?${params.toString()}`);
+    navigate(`${headerActiveType === 'flight' ? '/flight/results' : '/search'}?${params.toString()}`);
   };
 
   // Close dropdown when clicking outside

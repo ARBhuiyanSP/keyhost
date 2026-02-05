@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { FiChevronDown, FiSun, FiMoon, FiLoader, FiX, FiEdit2, FiSearch } from 'react-icons/fi'; // Added FiEdit2 for Modify Search
 import { useSearchParams } from 'react-router-dom';
-import { initiateSearch, fetchAmadeusResults, fetchSabreResults } from '../../utils/flightApi';
+import { searchSabre, searchAmadeus } from '../../utils/flightApi';
 import { format } from 'date-fns';
 import FlightSearchForm from './FlightSearchForm';
+import { DUMMY_FLIGHTS } from '../../utils/dummyFlights';
 
 const FlightSearchResults = () => {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -13,6 +14,8 @@ const FlightSearchResults = () => {
     const [searchId, setSearchId] = useState(null);
     const [error, setError] = useState(null);
     const [providersStatus, setProvidersStatus] = useState({ amadeus: 'pending', sabre: 'pending' });
+    const [rawResponses, setRawResponses] = useState({ amadeus: null, sabre: null });
+    const [searchStatus, setSearchStatus] = useState('Idle');
 
     // Collapsible Search State
     const [isSearchExpanded, setIsSearchExpanded] = useState(true);
@@ -20,6 +23,7 @@ const FlightSearchResults = () => {
     // Side Filter States
     const [selectedAirlines, setSelectedAirlines] = useState([]);
     const [selectedStops, setSelectedStops] = useState([]);
+    const [selectedDepartureTimes, setSelectedDepartureTimes] = useState([]); // Added missing state
     const [priceRange, setPriceRange] = useState([0, 100000]);
 
     // Flight Details Modal State
@@ -27,8 +31,10 @@ const FlightSearchResults = () => {
     const [activeTab, setActiveTab] = useState('flight_details');
 
     const handleSearch = (newParams) => {
-        setSearchParams(newParams);
-        setIsSearchExpanded(false); // Auto-collapse on search
+        // Ensure we stay on a flight results related path
+        const path = window.location.pathname.includes('/flight/results') ? '/flight/results' : '/search';
+        setSearchParams({ ...newParams, property_type: 'flight' });
+        setIsSearchExpanded(false);
     };
 
     useEffect(() => {
@@ -41,88 +47,111 @@ const FlightSearchResults = () => {
             return match ? match[1] : val;
         };
 
+        const safeFormat = (dateStr, fmt) => {
+            if (!dateStr || dateStr === 'null' || dateStr === 'undefined') return null;
+            try {
+                const date = new Date(dateStr);
+                if (isNaN(date.getTime())) return null;
+                return format(date, fmt);
+            } catch (e) {
+                return null;
+            }
+        };
+
         const startSearch = async () => {
-            // Only search if we have minimum required params
-            if ((!currentParams.from && !currentParams.to) && currentParams.trip_type !== 'multiCity') {
+            console.log('startSearch triggered with params:', currentParams);
+            setSearchStatus('Starting...');
+
+            // Relax parameter check to allow hitting API for debugging/error visibility
+            if (!currentParams.trip_type && !currentParams.from && !currentParams.to) {
+                console.log('Search skipped: no params provided at all');
+                setSearchStatus('Skipped: No Params');
                 setLoading(false);
                 return;
             }
 
             setLoading(true);
-            setHasSearched(true); // Mark search as started
+            setHasSearched(true);
             setError(null);
             setResults([]);
             setProvidersStatus({ amadeus: 'pending', sabre: 'pending' });
 
-            // Ensure search is collapsed if params exist (e.g. page refresh with params)
             if (Object.keys(currentParams).length > 0) setIsSearchExpanded(false);
 
             try {
-                const cabinMap = {
-                    'Economy': 'ECONOMY',
-                    'Premium Economy': 'PREMIUM_ECONOMY',
-                    'Business': 'BUSINESS',
-                    'First Class': 'FIRST'
-                };
+                const tripType = currentParams.trip_type === 'roundTrip' ? 'round_trip' :
+                    currentParams.trip_type === 'multiCity' ? 'multi_city' : 'one_way';
 
-                const apiParams = {
-                    tripType: currentParams.trip_type === 'roundTrip' ? 'round_trip' :
-                        currentParams.trip_type === 'multiCity' ? 'multi_city' : 'one_way',
-                    departure_one_round: extractCode(currentParams.from),
-                    destination_one_round: extractCode(currentParams.to),
-                    depart_date: currentParams.depart ? format(new Date(currentParams.depart), 'dd MMM yy') : format(new Date(), 'dd MMM yy'),
-                    return_date: currentParams.return ? format(new Date(currentParams.return), 'dd MMM yy') : null,
-                    ADTs: parseInt(currentParams.adults) || 1,
-                    C07s: (parseInt(currentParams.children) || 0) + (parseInt(currentParams.kids) || 0),
-                    C03s: 0,
-                    INFs: parseInt(currentParams.infants) || 0,
-                    classOfService: currentParams.class || 'Economy',
-                    cabin: cabinMap[currentParams.class] || 'ECONOMY',
-                    fare_type: 'regular'
-                };
+                let apiParams = { tripType };
 
-                // Multi-city logic handling (simplified for this context)
-                if (currentParams.segments) {
+                if (tripType === 'multi_city') {
                     try {
-                        const segments = JSON.parse(currentParams.segments);
-                        // If API supports segments directly, add them. 
-                        // For now, keyhost API might expect flat or specific structure.
-                        // apiParams.segments = segments; 
-                    } catch (e) { }
-                }
-
-                console.log('Initiating Search with:', apiParams);
-
-                const initData = await initiateSearch(apiParams);
-                if (initData.randomNumber) {
-                    setSearchId(initData.randomNumber);
-
-                    const amadeusPromise = fetchAmadeusResults(initData.randomNumber)
-                        .then(res => {
-                            if (res.data) setResults(prev => [...prev, ...res.data]);
-                            setProvidersStatus(prev => ({ ...prev, amadeus: 'success' }));
-                        })
-                        .catch(err => {
-                            setProvidersStatus(prev => ({ ...prev, amadeus: 'error' }));
-                        });
-
-                    const sabrePromise = fetchSabreResults(initData.randomNumber, apiParams.tripType)
-                        .then(res => {
-                            if (res.data) setResults(prev => [...prev, ...res.data]);
-                            setProvidersStatus(prev => ({ ...prev, sabre: 'success' }));
-                        })
-                        .catch(err => {
-                            setProvidersStatus(prev => ({ ...prev, sabre: 'error' }));
-                        });
-
-                    await Promise.allSettled([amadeusPromise, sabrePromise]);
+                        const segments = JSON.parse(currentParams.segments || '[]');
+                        apiParams['departure'] = segments.map(s => extractCode(s.from));
+                        apiParams['destination'] = segments.map(s => extractCode(s.to));
+                        apiParams['departure_date'] = segments.map(s => safeFormat(s.depart, 'dd MMM yy') || '');
+                        apiParams['ADT'] = parseInt(currentParams.adults) || 1;
+                        apiParams['C07'] = (parseInt(currentParams.children) || 0) + (parseInt(currentParams.kids) || 0);
+                        apiParams['C03'] = 0;
+                        apiParams['INF'] = parseInt(currentParams.infants) || 0;
+                    } catch (e) {
+                        console.error('Error parsing multi-city segments:', e);
+                    }
                 } else {
-                    throw new Error('Failed to initiate search ID');
+                    apiParams['departure_one_round'] = extractCode(currentParams.from);
+                    apiParams['destination_one_round'] = extractCode(currentParams.to);
+                    apiParams['depart_date'] = safeFormat(currentParams.depart, 'dd MMM yy') || format(new Date(), 'dd MMM yy');
+                    apiParams['return_date'] = safeFormat(currentParams.return, 'dd MMM yy');
+                    apiParams['ADTs'] = parseInt(currentParams.adults) || 1;
+                    apiParams['C07s'] = (parseInt(currentParams.children) || 0) + (parseInt(currentParams.kids) || 0);
+                    apiParams['C03s'] = 0;
+                    apiParams['INFs'] = parseInt(currentParams.infants) || 0;
                 }
+
+                apiParams['fare_type'] = 'Public';
+                apiParams['classOfService'] = currentParams.class || 'Economy';
+
+                console.log('Initiating Search with Aerotake Params:', apiParams);
+
+                const amadeusPromise = searchAmadeus(apiParams)
+                    .then(res => {
+                        console.log('Amadeus Success:', res);
+                        setRawResponses(prev => ({ ...prev, amadeus: res }));
+                        if (res.data) setResults(prev => [...prev, ...res.data]);
+                        setProvidersStatus(prev => ({ ...prev, amadeus: 'success' }));
+                        setLoading(false); // Hide loader as soon as we get some results
+                    })
+                    .catch(err => {
+                        console.error('Amadeus error:', err);
+                        setRawResponses(prev => ({ ...prev, amadeus: err.response?.data || err.message }));
+                        setProvidersStatus(prev => ({ ...prev, amadeus: 'error' }));
+                    });
+
+                const sabrePromise = searchSabre(apiParams)
+                    .then(res => {
+                        console.log('Sabre Success:', res);
+                        setRawResponses(prev => ({ ...prev, sabre: res }));
+                        if (res.data) setResults(prev => [...prev, ...res.data]);
+                        setProvidersStatus(prev => ({ ...prev, sabre: 'success' }));
+                        setLoading(false); // Hide loader as soon as we get some results
+                    })
+                    .catch(err => {
+                        console.error('Sabre error:', err);
+                        setRawResponses(prev => ({ ...prev, sabre: err.response?.data || err.message }));
+                        setProvidersStatus(prev => ({ ...prev, sabre: 'error' }));
+                    });
+
+                // Inform the status tracker that we are waiting for both
+                Promise.allSettled([amadeusPromise, sabrePromise]).then((results) => {
+                    console.log('All search providers settled:', results);
+                    setSearchStatus('Completed');
+                    setLoading(false); // Ensure loader is off even if both fail
+                });
+
             } catch (err) {
-                console.error('Search error:', err);
+                console.error('Search initiation error:', err);
+                setSearchStatus(`Error: ${err.message}`);
                 setError(err.message || 'Failed to start flight search');
-            } finally {
                 setLoading(false);
             }
         };
@@ -175,9 +204,23 @@ const FlightSearchResults = () => {
         const stopCount = flight.legs[firstLegKey].stopovers?.length || 0;
         const stopLabel = stopCount === 0 ? 'Non-Stop' : stopCount === 1 ? '1 Stop' : '2 Stops or more';
         const matchesStops = selectedStops.length === 0 || selectedStops.includes(stopLabel);
+
+        // Departure Time Filter Logic
+        let matchesDepartureTime = true;
+        if (selectedDepartureTimes.length > 0) {
+            const depHour = parseInt(flight.legs[firstLegKey].departure.time.split(':')[0]);
+            matchesDepartureTime = selectedDepartureTimes.some(range => {
+                if (range === '00-06') return depHour >= 0 && depHour < 6;
+                if (range === '06-12') return depHour >= 6 && depHour < 12;
+                if (range === '12-18') return depHour >= 12 && depHour < 18;
+                if (range === '18-00') return depHour >= 18 && depHour <= 23; // Adjusted for 24h
+                return false;
+            });
+        }
+
         const matchesPrice = flight.fare.totalPrice >= priceRange[0] && flight.fare.totalPrice <= priceRange[1];
-        return matchesAirline && matchesStops && matchesPrice;
-    }), [uniqueResults, selectedAirlines, selectedStops, priceRange]);
+        return matchesAirline && matchesStops && matchesDepartureTime && matchesPrice;
+    }), [uniqueResults, selectedAirlines, selectedStops, selectedDepartureTimes, priceRange]);
 
     const toggleFilter = (list, setList, item) => {
         if (list.includes(item)) setList(list.filter(i => i !== item));
@@ -207,285 +250,333 @@ const FlightSearchResults = () => {
         return `${from} to ${to}, ${date} • ${parseInt(p.adults || 1) + parseInt(p.children || 0)} Travelers`;
     }, [searchParams]);
 
+    const SkeletonLoader = () => (
+        <div className="animate-pulse space-y-4 w-full">
+            <div className="flex flex-col lg:flex-row gap-6">
+                {/* Sidebar Skeleton */}
+                <div className="hidden lg:block w-64 bg-white rounded-xl shadow-sm border border-gray-200 p-5 h-fit">
+                    <div className="h-6 bg-gray-200 rounded w-1/2 mb-6"></div>
+                    {[1, 2, 3, 4, 5].map(i => (
+                        <div key={i} className="mb-6">
+                            <div className="h-4 bg-gray-200 rounded w-3/4 mb-3"></div>
+                            <div className="space-y-2">
+                                <div className="h-3 bg-gray-100 rounded w-full"></div>
+                                <div className="h-3 bg-gray-100 rounded w-5/6"></div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Main Content Skeleton */}
+                <div className="flex-1 space-y-4">
+                    <div className="text-center py-10">
+                        <h3 className="text-[#1e2049] font-bold text-xl mb-2">Hang tight! We're finding the best flight options for you.</h3>
+                    </div>
+                    {[1, 2, 3, 4].map(i => (
+                        <div key={i} className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm flex items-center gap-6">
+                            <div className="w-12 h-12 bg-gray-200 rounded-full flex-shrink-0"></div>
+                            <div className="flex-1 space-y-3">
+                                <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                                <div className="h-3 bg-gray-100 rounded w-1/2"></div>
+                            </div>
+                            <div className="w-24 h-10 bg-gray-200 rounded-lg hidden md:block"></div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+
     return (
         <div className="bg-white min-h-screen pb-12 font-sans">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
 
                 <div className="flex flex-col lg:flex-row gap-6">
-                    {/* Sidebar Filters */}
-                    <div className="w-full lg:w-64 bg-white rounded-xl shadow-sm border border-gray-200 p-5 h-fit flex-shrink-0 sticky top-24">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="font-bold text-gray-900 text-lg">Filters</h3>
-                            <button
-                                onClick={() => { setSelectedAirlines([]); setSelectedStops([]); setPriceRange([minPrice, maxPrice]); }}
-                                className="text-xs text-[#E41D57] font-medium"
-                            >
-                                Reset
-                            </button>
-                        </div>
-
-                        {/* Airlines */}
-                        <FilterSection title="Airlines" defaultOpen={false}>
-                            <div className="space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
-                                {results.length > 0 ? (
-                                    availableAirlines.map((airline, idx) => (
-                                        <label key={idx} className="flex items-center gap-3 cursor-pointer group">
-                                            <input
-                                                type="checkbox"
-                                                className="hidden"
-                                                checked={selectedAirlines.includes(airline)}
-                                                onChange={() => toggleFilter(selectedAirlines, setSelectedAirlines, airline)}
-                                            />
-                                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedAirlines.includes(airline) ? 'bg-[#E41D57] border-[#E41D57] text-white' : 'border-gray-300 bg-white'}`}>
-                                                {selectedAirlines.includes(airline) && <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                                            </div>
-                                            <span className="text-sm text-gray-700 group-hover:text-gray-900 truncate">{airline}</span>
-                                        </label>
-                                    ))
-                                ) : (
-                                    <p className="text-xs text-gray-400 italic">No airlines found</p>
-                                )}
-                            </div>
-                        </FilterSection>
-
-                        {/* Stops (Blank if no results) */}
-                        <FilterSection title="Stops" defaultOpen={false}>
-                            <div className="space-y-2">
-                                {results.length > 0 ? (
-                                    ['Non-Stop', '1 Stop', '2 Stops or more'].map((stop, idx) => (
-                                        <label key={idx} className="flex items-center gap-3 cursor-pointer group">
-                                            <input
-                                                type="checkbox"
-                                                className="hidden"
-                                                checked={selectedStops.includes(stop)}
-                                                onChange={() => toggleFilter(selectedStops, setSelectedStops, stop)}
-                                            />
-                                            <div className={`w-4 h-4 rounded border border-gray-300 bg-white flex items-center justify-center transition-colors ${selectedStops.includes(stop) ? 'bg-[#E41D57] border-[#E41D57] text-white' : ''}`}>
-                                                {selectedStops.includes(stop) && <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                                            </div>
-                                            <span className="text-sm text-gray-700 group-hover:text-gray-900">{stop}</span>
-                                        </label>
-                                    ))
-                                ) : (
-                                    <div className="py-2 text-xs text-transparent select-none">-</div> // Blank placeholder
-                                )}
-                            </div>
-                        </FilterSection>
-
-                        {/* Price Range */}
-                        <FilterSection title="Price Range" defaultOpen={false}>
-                            {results.length > 0 ? (
-                                <>
-                                    <div className="px-2 mb-4">
-                                        <input
-                                            type="range"
-                                            min={minPrice}
-                                            max={maxPrice}
-                                            value={priceRange[1]}
-                                            onChange={(e) => setPriceRange([priceRange[0], parseInt(e.target.value)])}
-                                            className="w-full accent-[#E41D57]"
-                                        />
-                                    </div>
-                                    <div className="flex justify-between text-xs font-bold text-gray-900">
-                                        <span>BDT {priceRange[0].toLocaleString()}</span>
-                                        <span>BDT {priceRange[1].toLocaleString()}</span>
-                                    </div>
-                                </>
-                            ) : (
-                                <div className="py-2 text-xs text-gray-400 italic">no price yet</div>
-                            )}
-                        </FilterSection>
-
-                        {/* Departure Time (Keep) */}
-                        <FilterSection title="Departure Time" defaultOpen={false}>
-                            <div className="grid grid-cols-2 gap-2">
-                                <button className="p-2 border border-gray-200 rounded-lg flex flex-col items-center justify-center gap-1 hover:border-[#1e2049] hover:bg-blue-50 transition-colors">
-                                    <FiSun className="w-4 h-4 text-gray-400" />
-                                    <span className="text-[10px] text-gray-600">00-06</span>
-                                </button>
-                                <button className="p-2 border border-gray-200 rounded-lg flex flex-col items-center justify-center gap-1 hover:border-[#1e2049] hover:bg-blue-50 transition-colors">
-                                    <FiSun className="w-4 h-4 text-orange-400" />
-                                    <span className="text-[10px] text-gray-600">06-12</span>
-                                </button>
-                                <button className="p-2 border border-gray-200 rounded-lg flex flex-col items-center justify-center gap-1 hover:border-[#1e2049] hover:bg-blue-50 transition-colors">
-                                    <FiSun className="w-4 h-4 text-yellow-500" />
-                                    <span className="text-[10px] text-gray-600">12-18</span>
-                                </button>
-                                <button className="p-2 border border-gray-200 rounded-lg flex flex-col items-center justify-center gap-1 hover:border-[#1e2049] hover:bg-blue-50 transition-colors">
-                                    <FiMoon className="w-4 h-4 text-purple-600" />
-                                    <span className="text-[10px] text-gray-600">18-00</span>
-                                </button>
-                            </div>
-                        </FilterSection>
-                    </div>
-
-                    {/* Main Content */}
-                    <div className="flex-1">
-                        {/* Collapsible Search Header */}
-                        <div className="mb-8">
-                            {isSearchExpanded ? (
-                                <div className="relative bg-white rounded-3xl shadow-sm border border-gray-200 p-6">
-                                    <FlightSearchForm
-                                        searchParams={Object.fromEntries([...searchParams])}
-                                        onSearch={handleSearch}
-                                    />
-                                    {hasSearched && (
-                                        <button
-                                            onClick={() => setIsSearchExpanded(false)}
-                                            className="absolute top-4 right-4 text-xs text-gray-500 hover:text-[#E41D57] underline"
-                                        >
-                                            Hide Search
-                                        </button>
-                                    )}
+                    {loading ? (
+                        <SkeletonLoader />
+                    ) : (
+                        <>
+                            {/* Sidebar Filters */}
+                            <div className="w-full lg:w-64 bg-white rounded-xl shadow-sm border border-gray-200 p-5 h-fit flex-shrink-0 lg:sticky lg:top-24">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="font-bold text-gray-900 text-lg">Filters</h3>
+                                    <button
+                                        onClick={() => {
+                                            setSelectedAirlines([]);
+                                            setSelectedStops([]);
+                                            setSelectedDepartureTimes([]); // Clear this too
+                                            setPriceRange([minPrice, maxPrice]);
+                                        }}
+                                        className="text-xs text-[#E41D57] font-medium"
+                                    >
+                                        Reset
+                                    </button>
                                 </div>
-                            ) : (
-                                <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-between border border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => setIsSearchExpanded(true)}>
-                                    <div className="flex items-center gap-4">
-                                        <div className="bg-[#E41D57]/10 p-2 rounded-full text-[#E41D57]">
-                                            <FiSearch className="w-5 h-5 stroke-[2.5px]" />
-                                        </div>
-                                        <div>
-                                            <div className="font-bold text-[#1e2049] text-base">{searchSummary}</div>
-                                            <div className="text-xs text-gray-500">Click to modify search</div>
-                                        </div>
+
+                                {/* Airlines */}
+                                <FilterSection title="Airlines" defaultOpen={true}>
+                                    <div className="space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+                                        {results.length > 0 ? (
+                                            availableAirlines.map((airline, idx) => {
+                                                // Find flight data that matches this airline name
+                                                const matchingFlight = results.find(r => r.airlineName === airline);
+                                                const airlineLogoUrl = matchingFlight?.airlineLogo || '';
+
+                                                return (
+                                                    <label key={idx} className="flex items-center gap-3 cursor-pointer group">
+                                                        <input
+                                                            type="checkbox"
+                                                            className="hidden"
+                                                            checked={selectedAirlines.includes(airline)}
+                                                            onChange={() => toggleFilter(selectedAirlines, setSelectedAirlines, airline)}
+                                                        />
+                                                        <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedAirlines.includes(airline) ? 'bg-[#E41D57] border-[#E41D57] text-white' : 'border-gray-300 bg-white'}`}>
+                                                            {selectedAirlines.includes(airline) && <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                                                        </div>
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <img
+                                                                src={airlineLogoUrl}
+                                                                alt={airline}
+                                                                className="w-6 h-6 object-contain"
+                                                                onError={(e) => { e.target.style.display = 'none'; }}
+                                                            />
+                                                            <span className="text-sm text-gray-700 group-hover:text-gray-900 truncate">{airline}</span>
+                                                        </div>
+                                                    </label>
+                                                )
+                                            })
+                                        ) : (
+                                            <p className="text-xs text-gray-400 italic">No airlines found</p>
+                                        )}
                                     </div>
-                                    <div className="bg-white p-2 rounded-full shadow-sm">
-                                        <FiEdit2 className="w-4 h-4 text-gray-400" />
-                                    </div>
-                                </div>
-                            )}
-                        </div>
+                                </FilterSection>
 
-                        {/* NO TABS - REMOVED AS REQUESTED */}
-
-                        {/* Search Results List */}
-                        <div className="space-y-4">
-                            {loading && (
-                                <div className="flex flex-col items-center justify-center py-20 bg-white rounded-xl border border-gray-100 shadow-sm">
-                                    <FiLoader className="w-10 h-10 text-[#E41D57] animate-spin mb-4" />
-                                    <p className="text-gray-500 font-medium">Searching for best flights...</p>
-                                    <div className="flex gap-4 mt-4">
-                                        <div className={`text-xs px-3 py-1 rounded-full border ${providersStatus.amadeus === 'pending' ? 'bg-gray-50 border-gray-200' : providersStatus.amadeus === 'success' ? 'bg-green-50 border-green-200 text-green-600' : 'bg-red-50 border-red-200 text-red-600'}`}>
-                                            Amadeus: {providersStatus.amadeus}
-                                        </div>
-                                        <div className={`text-xs px-3 py-1 rounded-full border ${providersStatus.sabre === 'pending' ? 'bg-gray-50 border-gray-200' : providersStatus.sabre === 'success' ? 'bg-green-50 border-green-200 text-green-600' : 'bg-red-50 border-red-200 text-red-600'}`}>
-                                            Sabre: {providersStatus.sabre}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {!loading && hasSearched && filteredResults.length > 0 && filteredResults.map((flight, idx) => {
-                                const firstLegKey = Object.keys(flight.legs)[0];
-                                const leg = flight.legs[firstLegKey];
-                                const firstSchedule = leg.schedules[0];
-
-                                return (
-                                    <div key={idx} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
-                                        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-
-                                            {/* Airline Info */}
-                                            <div className="flex items-center gap-4 md:w-1/4">
-                                                <div className="w-12 h-12 flex items-center justify-center">
-                                                    <img
-                                                        src={flight.airlineLogo || "https://upload.wikimedia.org/wikipedia/en/thumb/3/36/Novoair_logo.svg/1200px-Novoair_logo.svg.png"}
-                                                        alt={flight.airlineName}
-                                                        className="w-full object-contain"
-                                                        onError={(e) => { e.target.src = "https://img.icons8.com/fluency/48/airplane-mode-on.png"; }}
+                                {/* Stops (Blank if no results) */}
+                                <FilterSection title="Stops" defaultOpen={true}>
+                                    <div className="space-y-2">
+                                        {results.length > 0 ? (
+                                            ['Non-Stop', '1 Stop', '2 Stops or more'].map((stop, idx) => (
+                                                <label key={idx} className="flex items-center gap-3 cursor-pointer group">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="hidden"
+                                                        checked={selectedStops.includes(stop)}
+                                                        onChange={() => toggleFilter(selectedStops, setSelectedStops, stop)}
                                                     />
+                                                    <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedStops.includes(stop) ? 'bg-[#E41D57] border-[#E41D57] text-white' : 'border-gray-300 bg-white'}`}>
+                                                        {selectedStops.includes(stop) && <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                                                    </div>
+                                                    <span className="text-sm text-gray-700 group-hover:text-gray-900">{stop}</span>
+                                                </label>
+                                            ))
+                                        ) : (
+                                            <div className="py-2 text-xs text-transparent select-none">-</div> // Blank placeholder
+                                        )}
+                                    </div>
+                                </FilterSection>
+
+                                {/* Price Range (Blank if no results) */}
+                                <FilterSection title="Price Range" defaultOpen={true}>
+                                    {results.length > 0 ? (
+                                        <>
+                                            <div className="px-2 mb-4">
+                                                <input
+                                                    type="range"
+                                                    min={minPrice}
+                                                    max={maxPrice}
+                                                    value={priceRange[1]}
+                                                    onChange={(e) => setPriceRange([priceRange[0], parseInt(e.target.value)])}
+                                                    className="w-full accent-[#E41D57]"
+                                                />
+                                            </div>
+                                            <div className="flex justify-between text-xs font-bold text-gray-900">
+                                                <span>BDT {priceRange[0].toLocaleString()}</span>
+                                                <span>BDT {priceRange[1].toLocaleString()}</span>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="py-2 text-xs text-gray-400 italic">no price yet</div>
+                                    )}
+                                </FilterSection>
+
+                                {/* Departure Time (Always shown for visual structure) */}
+                                <FilterSection title="Departure Time" defaultOpen={true}>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {['00-06', '06-12', '12-18', '18-00'].map((range, idx) => {
+                                            const isActive = selectedDepartureTimes.includes(range);
+                                            const icons = [<FiSun className="w-4 h-4 text-gray-400" />, <FiSun className="w-4 h-4 text-orange-400" />, <FiSun className="w-4 h-4 text-yellow-500" />, <FiMoon className="w-4 h-4 text-purple-600" />];
+                                            return (
+                                                <button
+                                                    key={range}
+                                                    onClick={() => toggleFilter(selectedDepartureTimes, setSelectedDepartureTimes, range)}
+                                                    className={`p-2 border rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${isActive ? 'border-[#E41D57] bg-[#E41D57]/5' : 'border-gray-200 hover:border-[#1e2049] hover:bg-blue-50'}`}
+                                                >
+                                                    {icons[idx]}
+                                                    <span className={`text-[10px] ${isActive ? 'text-[#E41D57] font-bold' : 'text-gray-600'}`}>{range}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </FilterSection>
+                            </div>
+
+                            {/* Main Content */}
+                            <div className="flex-1">
+                                {/* Collapsible Search Header */}
+                                <div className="mb-8">
+                                    {isSearchExpanded ? (
+                                        <div className="relative bg-white rounded-3xl shadow-sm border border-gray-200 p-6">
+                                            <h1 className="text-lg font-normal text-[#1e2049] mb-6 text-center">Find your perfect flight</h1>
+                                            <FlightSearchForm
+                                                searchParams={Object.fromEntries([...searchParams])}
+                                                onSearch={handleSearch}
+                                            />
+                                            {hasSearched && (
+                                                <button
+                                                    onClick={() => setIsSearchExpanded(false)}
+                                                    className="absolute top-4 right-4 text-xs text-gray-500 hover:text-[#E41D57] underline"
+                                                >
+                                                    Hide Search
+                                                </button>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-between border border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => setIsSearchExpanded(true)}>
+                                            <div className="flex items-center gap-4">
+                                                <div className="bg-[#E41D57]/10 p-2 rounded-full text-[#E41D57]">
+                                                    <FiSearch className="w-5 h-5 stroke-[2.5px]" />
                                                 </div>
                                                 <div>
-                                                    <div className="font-bold text-gray-900 text-sm">{flight.airlineName}</div>
-                                                    <div className="text-xs text-gray-400">
-                                                        {firstSchedule?.carrier?.marketing}-{firstSchedule?.carrier?.marketingFlightNumber}
-                                                    </div>
+                                                    <div className="font-bold text-[#1e2049] text-base">{searchSummary}</div>
+                                                    <div className="text-xs text-gray-500">Click to modify search</div>
                                                 </div>
                                             </div>
+                                            <div className="bg-white p-2 rounded-full shadow-sm">
+                                                <FiEdit2 className="w-4 h-4 text-gray-400" />
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
 
-                                            {/* Legs Info */}
-                                            <div className="flex-1 flex flex-col gap-4 w-full md:w-auto">
-                                                {Object.values(flight.legs).map((leg, legIdx) => (
-                                                    <div key={legIdx} className="flex items-center justify-center gap-6">
-                                                        <div className="text-right w-20">
-                                                            <div className="text-lg font-bold text-gray-900">
-                                                                {leg.departure.time.split(':').slice(0, 2).join(':')}
-                                                            </div>
-                                                            <div className="text-[10px] text-gray-500">{leg.departure.airport}</div>
+                                {/* NO TABS - REMOVED AS REQUESTED */}
+
+                                {/* Search Results List */}
+                                <div className="space-y-4">
+                                    {!loading && hasSearched && filteredResults.length > 0 && filteredResults.map((flight, idx) => {
+                                        const allLegs = Object.values(flight.legs || {});
+                                        if (allLegs.length === 0) return null;
+                                        const leg = allLegs[0];
+                                        const firstSchedule = (leg.schedules || [])[0];
+
+                                        return (
+                                            <div key={idx} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
+                                                <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+
+                                                    {/* Airline Info */}
+                                                    <div className="flex items-center gap-4 md:w-1/4">
+                                                        <div className="w-12 h-12 flex items-center justify-center">
+                                                            <img
+                                                                src={flight.airlineLogo || "https://upload.wikimedia.org/wikipedia/en/thumb/3/36/Novoair_logo.svg/1200px-Novoair_logo.svg.png"}
+                                                                alt={flight.airlineName}
+                                                                className="w-full object-contain"
+                                                                onError={(e) => { e.target.src = "https://img.icons8.com/fluency/48/airplane-mode-on.png"; }}
+                                                            />
                                                         </div>
-                                                        <div className="flex flex-col items-center w-32">
-                                                            <div className="text-[9px] text-gray-400 mb-1">{leg.formattedElapsedTime}</div>
-                                                            <div className="w-full h-px bg-gray-300 relative flex items-center justify-center">
-                                                                <div className="w-1.5 h-1.5 rounded-full border border-gray-300 bg-white absolute left-0"></div>
-                                                                <div className="bg-white px-1 z-10 text-[8px] text-gray-400 uppercase">
-                                                                    {leg.stopovers?.length === 0 ? 'Non Stop' : `${leg.stopovers?.length} Stop`}
+                                                        <div>
+                                                            <div className="font-bold text-gray-900 text-sm">{flight.airlineName}</div>
+                                                            <div className="text-xs text-gray-400">
+                                                                {firstSchedule?.carrier?.marketing}-{firstSchedule?.carrier?.marketingFlightNumber}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Legs Info */}
+                                                    <div className="flex-1 flex flex-col gap-4 w-full md:w-auto">
+                                                        {Object.values(flight.legs).map((leg, legIdx) => (
+                                                            <div key={legIdx} className="flex items-center justify-center gap-6">
+                                                                <div className="text-right w-20">
+                                                                    <div className="text-lg font-bold text-gray-900">
+                                                                        {leg.departure.time.split(':').slice(0, 2).join(':')}
+                                                                    </div>
+                                                                    <div className="text-[10px] text-gray-500">{leg.departure.airport}</div>
                                                                 </div>
-                                                                <div className="w-1.5 h-1.5 rounded-full border border-blue-500 bg-white absolute right-0"></div>
+                                                                <div className="flex flex-col items-center w-32">
+                                                                    <div className="text-[9px] text-gray-400 mb-1">{leg.formattedElapsedTime}</div>
+                                                                    <div className="w-full h-px bg-gray-300 relative flex items-center justify-center">
+                                                                        <div className="w-1.5 h-1.5 rounded-full border border-gray-300 bg-white absolute left-0"></div>
+                                                                        <div className="bg-white px-1 z-10 text-[8px] text-gray-400 uppercase">
+                                                                            {leg.stopovers?.length === 0 ? 'Non Stop' :
+                                                                                leg.stopovers?.length === 1 ? `1 Stop via ${leg.stopovers[0]}` :
+                                                                                    `${leg.stopovers?.length} Stops`}
+                                                                        </div>
+                                                                        <div className="w-1.5 h-1.5 rounded-full border border-blue-500 bg-white absolute right-0"></div>
+                                                                    </div>
+                                                                    <div className="text-[8px] text-gray-400 mt-1">{leg.departure.formattedDate}</div>
+                                                                </div>
+                                                                <div className="text-left w-20">
+                                                                    <div className="text-lg font-bold text-gray-900">
+                                                                        {leg.arrival.time.split(':').slice(0, 2).join(':')}
+                                                                    </div>
+                                                                    <div className="text-[10px] text-gray-500">{leg.arrival.airport}</div>
+                                                                </div>
                                                             </div>
-                                                            <div className="text-[8px] text-gray-400 mt-1">{leg.departure.formattedDate}</div>
-                                                        </div>
-                                                        <div className="text-left w-20">
-                                                            <div className="text-lg font-bold text-gray-900">
-                                                                {leg.arrival.time.split(':').slice(0, 2).join(':')}
-                                                            </div>
-                                                            <div className="text-[10px] text-gray-500">{leg.arrival.airport}</div>
-                                                        </div>
+                                                        ))}
                                                     </div>
-                                                ))}
-                                            </div>
 
-                                            {/* Price & Action */}
-                                            <div className="flex flex-col items-end md:w-1/4 gap-2 w-full">
-                                                <div className="text-xs text-gray-500">Starting from</div>
-                                                <div className="text-xl font-bold text-[#1e2049]">BDT {flight.fare.totalPrice.toLocaleString()}</div>
-                                                <button className="bg-[#E41D57] hover:bg-[#c01b4b] text-white font-bold py-2 px-6 rounded-full text-sm transition-colors w-full md:w-auto">
-                                                    View Fares
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        {/* Footer / Badges */}
-                                        <div className="mt-4 pt-4 border-t border-dashed border-gray-200 flex flex-wrap items-center justify-between gap-4">
-                                            <div className="flex gap-4">
-                                                <div className="flex items-center gap-1">
-                                                    <div className="w-4 h-4 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-[10px]">{flight.gds?.[0].toUpperCase()}</div>
-                                                    <span className="text-xs text-gray-600 uppercase">{flight.gds} Provider</span>
+                                                    {/* Price & Action */}
+                                                    <div className="flex flex-col items-end md:w-1/4 gap-2 w-full">
+                                                        <div className="text-xs text-gray-500">Starting from</div>
+                                                        <div className="text-xl font-bold text-[#1e2049]">BDT {flight.fare.totalPrice.toLocaleString()}</div>
+                                                        <button className="bg-[#E41D57] hover:bg-[#c01b4b] text-white font-bold py-2 px-6 rounded-full text-sm transition-colors w-full md:w-auto">
+                                                            Book Now
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                                <div className="text-xs text-green-600 font-medium">{flight.refundStatus}</div>
+
+                                                {/* Footer / Badges */}
+                                                <div className="mt-4 pt-4 border-t border-dashed border-gray-200 flex flex-wrap items-center justify-between gap-4">
+                                                    <div className="flex gap-4">
+                                                        <div className="flex items-center gap-1">
+                                                            <div className="w-4 h-4 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-[10px]">{flight.gds?.[0].toUpperCase()}</div>
+                                                            <span className="text-xs text-gray-600 uppercase">{flight.gds} Provider</span>
+                                                        </div>
+                                                        <div className="text-xs text-green-600 font-medium">{flight.refundStatus}</div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => setSelectedFlight(flight)}
+                                                        className="text-xs font-bold text-blue-600 hover:underline"
+                                                    >
+                                                        Flight Details
+                                                    </button>
+                                                </div>
                                             </div>
-                                            <button
-                                                onClick={() => setSelectedFlight(flight)}
-                                                className="text-xs font-bold text-blue-600 hover:underline"
-                                            >
-                                                Flight Details
-                                            </button>
+                                        );
+                                    })}
+
+                                    {!loading && hasSearched && filteredResults.length === 0 && (
+                                        <div className="text-center py-20 bg-white rounded-xl shadow-sm border border-gray-200">
+                                            <div className="text-6xl mb-4">✈️</div>
+                                            <h3 className="text-xl font-bold text-gray-900 mb-2">No Flights Found</h3>
+                                            <p className="text-gray-500">Try adjusting your search criteria or dates.</p>
                                         </div>
-                                    </div>
-                                );
-                            })}
+                                    )}
 
-                            {!loading && hasSearched && filteredResults.length === 0 && (
-                                <div className="text-center py-20 bg-white rounded-xl shadow-sm border border-gray-200">
-                                    <div className="text-6xl mb-4">✈️</div>
-                                    <h3 className="text-xl font-bold text-gray-900 mb-2">No Flights Found</h3>
-                                    <p className="text-gray-500">Try adjusting your search criteria or dates.</p>
+                                    {!hasSearched && (
+                                        <div className="text-center py-20">
+                                            {/* Empty State / Prompt - or just blank as requested */}
+                                            {/* <div className="text-gray-400">Search for flights to see results</div> */}
+                                        </div>
+                                    )}
                                 </div>
-                            )}
-
-                            {!loading && !hasSearched && (
-                                <div className="text-center py-20">
-                                    {/* Empty State / Prompt - or just blank as requested */}
-                                    {/* <div className="text-gray-400">Search for flights to see results</div> */}
-                                </div>
-                            )}
-                        </div>
-                    </div>
+                            </div>
+                        </>
+                    )}
                 </div>
-
             </div>
 
             {/* Flight Details Side Modal (Reused) */}
             {selectedFlight && (
-                <div className="fixed inset-0 z-[100] flex justify-end">
+                <div className="fixed inset-0 z-[1000] flex justify-end">
                     <style>{`
                         @keyframes slideInRight {
                             from { transform: translateX(100%); }
@@ -500,7 +591,7 @@ const FlightSearchResults = () => {
                         className="relative w-full max-w-2xl bg-[#F8F9FA] h-full shadow-2xl overflow-y-auto flex flex-col"
                         style={{ animation: 'slideInRight 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards' }}
                     >
-                        <div className="bg-[#E41D57] text-white px-6 py-4 flex items-center justify-between sticky top-0 z-10 shadow-md">
+                        <div className="bg-[#E41D57] text-white px-6 py-4 flex items-center justify-between sticky top-0 z-50 shadow-md">
                             <div>
                                 <h2 className="text-lg font-bold">Flight Details</h2>
                                 <div className="text-xs opacity-90">{selectedFlight.airlineName} | {selectedFlight.flightType === 'one_way' ? 'One Way' : selectedFlight.flightType === 'round_trip' ? 'Round Trip' : 'Multi City'}</div>
@@ -513,7 +604,7 @@ const FlightSearchResults = () => {
                             </button>
                         </div>
 
-                        <div className="flex bg-white border-b border-gray-200 sticky top-[72px] z-10">
+                        <div className="flex bg-white border-b border-gray-200 sticky top-[72px] z-40">
                             {['flight_details', 'fare_summary'].map((tab) => (
                                 <button
                                     key={tab}
@@ -535,114 +626,167 @@ const FlightSearchResults = () => {
                             {activeTab === 'flight_details' && (
                                 <div className="space-y-6">
                                     {Object.values(selectedFlight.legs).map((leg, legIdx) => (
-                                        <div key={legIdx} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                            <div className="flex justify-between items-center mb-4 cursor-pointer">
-                                                <h3 className="text-[#1e2049] font-bold text-lg flex items-center gap-2">
+                                        <div key={legIdx} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                                            {/* Leg Header */}
+                                            <div className="bg-gray-50 px-6 py-3 border-b border-gray-200">
+                                                <h3 className="text-[#1E2049] font-bold text-base flex items-center gap-2">
                                                     {leg.departure.airportShortName || leg.departure.airport} &rarr; {leg.arrival.airportShortName || leg.arrival.airport}
                                                     <span className="text-sm font-normal text-gray-500">({leg.departure.formattedDate})</span>
                                                 </h3>
                                             </div>
 
-                                            <div className="flex items-center gap-4 mb-6">
-                                                <img
-                                                    src={selectedFlight.airlineLogo}
-                                                    alt={selectedFlight.airlineName}
-                                                    className="w-8 h-8 object-contain"
-                                                />
-                                                <div>
-                                                    <div className="font-bold text-[#1e2049]">{selectedFlight.airlineName}</div>
-                                                    <div className="text-xs text-gray-500">
-                                                        Operated by: {leg.schedules[0]?.carrier?.operating || selectedFlight.airlineName} <br />
-                                                        Aircraft: {leg.schedules[0]?.aircraft?.code || '738'}
-                                                    </div>
-                                                </div>
+                                            <div className="p-6 space-y-8">
+                                                {leg.schedules.map((schedule, sIdx) => {
+                                                    // Calculate layover if not the first segment
+                                                    let layoverText = null;
+                                                    if (sIdx > 0) {
+                                                        const prevSchedule = leg.schedules[sIdx - 1];
+                                                        try {
+                                                            // Robust date parsing with fallbacks
+                                                            const parseDate = (dObj) => {
+                                                                if (dObj.dateTime) return new Date(dObj.dateTime.replace(' ', 'T'));
+                                                                if (dObj.date && dObj.time) return new Date(`${dObj.date}T${dObj.time}`);
+                                                                return null;
+                                                            };
+
+                                                            const arrival = parseDate(prevSchedule.arrival);
+                                                            const departure = parseDate(schedule.departure);
+
+                                                            if (arrival && departure && !isNaN(arrival.getTime()) && !isNaN(departure.getTime())) {
+                                                                const diffMs = departure - arrival;
+                                                                const diffHrs = Math.floor(diffMs / 3600000);
+                                                                const diffMins = Math.round((diffMs % 3600000) / 60000);
+
+                                                                if (diffMs > 0) {
+                                                                    layoverText = `Transit at ${prevSchedule.arrival.airportShortName || prevSchedule.arrival.airport} — Duration: ${diffHrs}h ${diffMins}m`;
+                                                                }
+                                                            } else {
+                                                                // Fallback for visual debugging if dates fail
+                                                                console.warn("Date parsing failed for transit:", prevSchedule.arrival, schedule.departure);
+                                                            }
+                                                        } catch (e) {
+                                                            console.error("Layover calculation error:", e);
+                                                        }
+                                                    }
+
+                                                    return (
+                                                        <React.Fragment key={sIdx}>
+                                                            {layoverText && (
+                                                                <div className="flex items-center justify-center py-1 relative z-10">
+                                                                    <div className="bg-orange-50 text-orange-600 px-6 py-1 rounded-full text-[11px] font-bold border border-orange-100 shadow-sm flex items-center gap-2.5">
+                                                                        <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></span>
+                                                                        {layoverText}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+
+                                                            <div className="relative pl-8 border-l-2 border-dashed border-gray-200 py-3">
+                                                                {/* Segment Header */}
+                                                                <div className="mb-6 flex items-center gap-2">
+                                                                    <div className="w-2 h-2 rounded-full bg-gray-300 -ml-[33px] relative z-10"></div>
+                                                                    <h4 className="font-bold text-[#1E2049] text-sm">
+                                                                        {schedule.departure.airportShortName || schedule.departure.airport} &rarr; {schedule.arrival.airportShortName || schedule.arrival.airport}
+                                                                        <span className="ml-2 font-normal text-gray-500 text-xs">({schedule.departure.formattedDate})</span>
+                                                                    </h4>
+                                                                </div>
+
+                                                                {/* Segment Content */}
+                                                                <div className="flex flex-col gap-4 mb-4">
+                                                                    {/* Airline & Aircraft Info */}
+                                                                    <div className="flex items-center gap-4">
+                                                                        <img
+                                                                            src={`http://127.0.0.1:8000/images/airline-logo/${schedule.carrier.marketing}.png`}
+                                                                            alt={schedule.carrier.marketingName}
+                                                                            className="w-10 h-10 object-contain"
+                                                                            onError={(e) => { e.target.src = selectedFlight.airlineLogo }}
+                                                                        />
+                                                                        <div>
+                                                                            <div className="text-[11px] text-gray-500 mb-0.5">
+                                                                                {schedule.carrier.marketingName} &bull; {schedule.carrier.marketing}-{schedule.carrier.flightNumber}
+                                                                            </div>
+                                                                            <div className="text-[10px] text-gray-400">
+                                                                                Operated by: {schedule.carrier.operatingName || schedule.carrier.marketingName} &bull;
+                                                                                Aircraft: {schedule.aircraft?.code || '738'}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Timing & Route Info - Full Width */}
+                                                                    <div className="bg-gray-50/50 rounded-xl p-4 flex items-center justify-between border border-gray-100">
+                                                                        <div className="text-left">
+                                                                            <div className="text-xl font-bold text-[#1e2049]">{schedule.departure.time.split(':').slice(0, 2).join(':')}</div>
+                                                                            <div className="text-[10px] text-gray-500 mt-1">{schedule.departure.formattedDate}</div>
+                                                                            <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wide mt-1">{schedule.departure.airportShortName || schedule.departure.airport}</div>
+                                                                        </div>
+
+                                                                        <div className="flex flex-col items-center flex-1 max-w-[200px] px-8">
+                                                                            <div className="text-[10px] text-gray-400 mb-2">{schedule.formattedElapsedTime}</div>
+                                                                            <div className="w-full h-px bg-gray-300 relative flex items-center justify-center">
+                                                                                <div className="absolute right-0 -top-1 w-2 h-2 border-r-2 border-t-2 border-gray-300 rotate-45"></div>
+                                                                            </div>
+                                                                        </div>
+
+                                                                        <div className="text-right">
+                                                                            <div className="text-xl font-bold text-[#1e2049]">{schedule.arrival.time.split(':').slice(0, 2).join(':')}</div>
+                                                                            <div className="text-[10px] text-gray-500 mt-1">{schedule.arrival.formattedDate}</div>
+                                                                            <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wide mt-1">{schedule.arrival.airportShortName || schedule.arrival.airport}</div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+
+                                                                <details className="group">
+                                                                    <summary className="flex items-center justify-center p-2 text-blue-600 font-bold text-xs cursor-pointer hover:bg-blue-50 rounded-lg select-none list-none border border-blue-100 border-dashed">
+                                                                        <span className="group-open:hidden flex items-center gap-1">Show Baggage and Cabin <FiChevronDown /></span>
+                                                                        <span className="hidden group-open:flex items-center gap-1">Hide Baggage and Cabin <FiChevronDown className="rotate-180" /></span>
+                                                                    </summary>
+
+                                                                    <div className="mt-4 bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+                                                                        <table className="w-full text-xs text-left">
+                                                                            <thead className="bg-gray-100 text-[10px] font-bold text-gray-500 uppercase">
+                                                                                <tr>
+                                                                                    <th className="px-4 py-2">Passenger</th>
+                                                                                    <th className="px-4 py-2">Segment</th>
+                                                                                    <th className="px-4 py-2">Baggage Allowance</th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody className="divide-y divide-gray-200 bg-white">
+                                                                                {(() => {
+                                                                                    const summary = selectedFlight.passengerFareSummary || {};
+                                                                                    const passengers = Object.keys(summary).filter(k => k !== 'totalPassenger');
+
+                                                                                    return passengers.map((key, pIdx) => {
+                                                                                        const pax = summary[key];
+                                                                                        // Baggage for this specific segment
+                                                                                        let baggageText = '30 KG';
+                                                                                        try {
+                                                                                            const baggage = schedule.baggageInfo?.[pIdx]?.quantity || schedule.baggageInfo?.[0]?.quantity;
+                                                                                            if (baggage) {
+                                                                                                if (baggage.pieceCount) baggageText = `${baggage.pieceCount} PC`;
+                                                                                                else if (baggage.weight) baggageText = `${baggage.weight} ${(baggage.unit || 'KG')}`;
+                                                                                            }
+                                                                                        } catch (e) { }
+
+                                                                                        const cabin = schedule.cabinBookings?.[pIdx] || schedule.cabinBookings?.[0] || {};
+                                                                                        return (
+                                                                                            <tr key={pIdx}>
+                                                                                                <td className="px-4 py-2 font-medium">{pax.passengerType || 'Adult'}</td>
+                                                                                                <td className="px-4 py-2 text-gray-500">
+                                                                                                    Cabin: {cabin.cabinCode || 'Y'} • Class: {cabin.bookingCode || 'K'}
+                                                                                                </td>
+                                                                                                <td className="px-4 py-2 font-bold text-[#E41D57]">{baggageText}</td>
+                                                                                            </tr>
+                                                                                        );
+                                                                                    });
+                                                                                })()}
+                                                                            </tbody>
+                                                                        </table>
+                                                                    </div>
+                                                                </details>
+                                                            </div>
+                                                        </React.Fragment>
+                                                    );
+                                                })}
                                             </div>
-
-                                            <div className="flex justify-between items-center mb-6">
-                                                <div>
-                                                    <div className="text-lg font-bold text-[#1e2049]">{leg.departure.time.split(':').slice(0, 2).join(':')}</div>
-                                                    <div className="text-xs text-gray-500">{leg.departure.formattedDate}</div>
-                                                    <div className="text-sm font-medium">{leg.departure.airportShortName || leg.departure.airport}</div>
-                                                </div>
-
-                                                <div className="flex flex-col items-center">
-                                                    <div className="text-xs text-orange-500 font-medium mb-1">{leg.formattedElapsedTime}</div>
-                                                    <div className="w-24 h-px bg-gray-300 relative">
-                                                        <div className="absolute right-0 -top-1 w-2 h-2 border-r-2 border-t-2 border-gray-300 rotate-45"></div>
-                                                    </div>
-                                                    <div className="text-[10px] text-gray-400 mt-1">
-                                                        {leg.stopovers?.length === 0 ? 'Non Stop' : `${leg.stopovers?.length} Stop`}
-                                                    </div>
-                                                </div>
-
-                                                <div className="text-right">
-                                                    <div className="text-lg font-bold text-[#1e2049]">{leg.arrival.time.split(':').slice(0, 2).join(':')}</div>
-                                                    <div className="text-xs text-gray-500">{leg.arrival.formattedDate}</div>
-                                                    <div className="text-sm font-medium">{leg.arrival.airportShortName || leg.arrival.airport}</div>
-                                                </div>
-                                            </div>
-
-                                            <details className="group" open>
-                                                <summary className="flex items-center justify-center p-2 text-blue-600 font-bold text-sm cursor-pointer hover:bg-blue-50 rounded-lg select-none list-none mb-4">
-                                                    <span className="group-open:hidden flex items-center gap-1">Show More Details <FiChevronDown /></span>
-                                                    <span className="hidden group-open:flex items-center gap-1">Hide More Details <FiChevronDown className="rotate-180" /></span>
-                                                </summary>
-
-                                                <div className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
-                                                    <table className="w-full text-sm text-left">
-                                                        <thead className="bg-gray-100 text-xs font-bold text-gray-500 uppercase">
-                                                            <tr>
-                                                                <th className="px-4 py-2">Passenger</th>
-                                                                <th className="px-4 py-2">Segment</th>
-                                                                <th className="px-4 py-2">Baggage Allowance</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="divide-y divide-gray-200 bg-white">
-                                                            {(() => {
-                                                                const passengerFareSummary = selectedFlight.passengerFareSummary || {};
-                                                                const passengers = Object.keys(passengerFareSummary)
-                                                                    .filter(key => key !== 'totalPassenger')
-                                                                    .map(key => passengerFareSummary[key]);
-
-                                                                const renderRow = (pax, pIdx) => {
-                                                                    const schedule = leg.schedules[0];
-                                                                    // Baggage
-                                                                    let baggageText = '30 KG';
-                                                                    try {
-                                                                        const baggage = schedule?.baggageInfo?.[pIdx]?.quantity || schedule?.baggageInfo?.[0]?.quantity;
-                                                                        if (baggage) {
-                                                                            if (baggage.pieceCount) baggageText = `${baggage.pieceCount} PC`;
-                                                                            else if (baggage.weight) baggageText = `${baggage.weight} ${(baggage.unit || 'KG').toUpperCase()}`;
-                                                                        }
-                                                                    } catch (e) { }
-
-                                                                    const cabin = schedule?.cabinBookings?.[pIdx] || schedule?.cabinBookings?.[0] || {};
-                                                                    const cabinCode = cabin.cabinCode || 'Y';
-                                                                    const bookingCode = cabin.bookingCode || cabin.rbd || 'K';
-                                                                    const seats = cabin.seatsAvailable || cabin.availableSeats || '9';
-
-                                                                    return (
-                                                                        <tr key={pIdx}>
-                                                                            <td className="px-4 py-3 text-gray-900">{pax ? (pax.passengerType || 'Adult') : 'Adult'}</td>
-                                                                            <td className="px-4 py-3 text-gray-600 text-xs">
-                                                                                <div className="flex flex-col gap-0.5">
-                                                                                    <span>Cabin: {cabinCode}</span>
-                                                                                    <span>Booking: {bookingCode}</span>
-                                                                                    <span>Seats: {seats}</span>
-                                                                                </div>
-                                                                            </td>
-                                                                            <td className="px-4 py-3 text-gray-600 font-medium">{baggageText}</td>
-                                                                        </tr>
-                                                                    );
-                                                                };
-
-                                                                if (passengers.length > 0) return passengers.map(renderRow);
-                                                                return renderRow(null, 0);
-                                                            })()}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </details>
                                         </div>
                                     ))}
                                 </div>
@@ -650,27 +794,68 @@ const FlightSearchResults = () => {
 
                             {activeTab === 'fare_summary' && (
                                 <div className="space-y-4">
-                                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                                        <h3 className="font-bold text-gray-900 mb-4">Fare Breakdown</h3>
-                                        <div className="space-y-2 text-sm">
-                                            <div className="flex justify-between">
-                                                <span className="text-gray-500">Base Fare</span>
-                                                <span className="font-medium">BDT {(selectedFlight.fare.baseFare || 0).toLocaleString()}</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-gray-500">Taxes & Fees</span>
-                                                <span className="font-medium">BDT {(selectedFlight.fare.tax || 0).toLocaleString()}</span>
-                                            </div>
-                                            {selectedFlight.fare.otherCharges > 0 && (
-                                                <div className="flex justify-between">
-                                                    <span className="text-gray-500">Other Charges</span>
-                                                    <span className="font-medium">BDT {selectedFlight.fare.otherCharges.toLocaleString()}</span>
-                                                </div>
-                                            )}
-                                            <div className="border-t border-gray-100 my-2 pt-2 flex justify-between font-bold text-lg text-[#1e2049]">
-                                                <span>Total</span>
-                                                <span>BDT {selectedFlight.fare.totalPrice.toLocaleString()}</span>
-                                            </div>
+                                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                                        <div className="p-4 border-b border-gray-100 bg-gray-50/50">
+                                            <h3 className="font-bold text-gray-900">Fare Summary</h3>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-sm text-left">
+                                                <thead className="bg-[#F8F9FA] text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                                                    <tr>
+                                                        <th className="px-4 py-3">Passenger Type</th>
+                                                        <th className="px-4 py-3">Base Fare</th>
+                                                        <th className="px-4 py-3">Tax</th>
+                                                        <th className="px-4 py-3">Total Fare</th>
+                                                        <th className="px-4 py-3">Quantity</th>
+                                                        <th className="px-4 py-3">Penalty</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-100 text-gray-700">
+                                                    {(() => {
+                                                        const summary = selectedFlight.passengerFareSummary || {};
+                                                        const rawPenalties = selectedFlight.penaltyInfos || [];
+
+                                                        return Object.keys(summary)
+                                                            .filter(key => key !== 'totalPassenger')
+                                                            .map((key, idx) => {
+                                                                const pax = summary[key];
+                                                                const penalties = (rawPenalties[idx]?.penalties || []).map(pen => {
+                                                                    const amountStr = pen.amount ? ` BDT ${pen.amount.toLocaleString()}` : ' Free';
+                                                                    return `${pen.type} ${pen.applicability}: ${amountStr}`;
+                                                                });
+
+                                                                return (
+                                                                    <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
+                                                                        <td className="px-4 py-4 font-medium text-gray-900">{pax.passengerType || 'Adult'}</td>
+                                                                        <td className="px-4 py-4">{(pax.passengerBaseFare || 0).toLocaleString()}</td>
+                                                                        <td className="px-4 py-4">{(pax.passengerTax || 0).toLocaleString()}</td>
+                                                                        <td className="px-4 py-4 font-bold">{(pax.passengerTotalFare || 0).toLocaleString()}</td>
+                                                                        <td className="px-4 py-4">{pax.passengerNumberByType || 1}</td>
+                                                                        <td className="px-4 py-4 text-[10px] leading-relaxed text-gray-500">
+                                                                            {penalties.length > 0 ? (
+                                                                                <div className="flex flex-col gap-1">
+                                                                                    {penalties.map((p, i) => <span key={i}>{p}</span>)}
+                                                                                </div>
+                                                                            ) : 'N/A'}
+                                                                        </td>
+                                                                    </tr>
+                                                                );
+                                                            });
+                                                    })()}
+                                                </tbody>
+                                                <tfoot className="bg-gray-50 font-bold border-t-2 border-gray-100">
+                                                    <tr>
+                                                        <td className="px-4 py-3 text-gray-900">Total</td>
+                                                        <td className="px-4 py-3"></td>
+                                                        <td className="px-4 py-3"></td>
+                                                        <td className="px-4 py-3 text-[#1e2049] font-black text-base">
+                                                            {selectedFlight.fare.totalPrice.toLocaleString()}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-gray-900">{selectedFlight.passengerFareSummary?.totalPassenger}</td>
+                                                        <td className="px-4 py-3"></td>
+                                                    </tr>
+                                                </tfoot>
+                                            </table>
                                         </div>
                                     </div>
                                 </div>
@@ -679,6 +864,36 @@ const FlightSearchResults = () => {
                     </div>
                 </div>
             )}
+
+            {/* RAW DATA DEBUG SECTION */}
+            <div className="mt-12 p-6 bg-gray-900 rounded-xl overflow-hidden">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-white font-bold flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full animate-pulse ${searchStatus === 'Completed' ? 'bg-green-500' : 'bg-yellow-500'}`}></span>
+                        Raw API Responses (Debug)
+                    </h3>
+                    <div className="text-xs text-gray-400 font-mono">Status: <span className="text-white">{searchStatus}</span></div>
+                </div>
+
+                <div className="mb-4 p-3 bg-black/30 rounded border border-gray-800 font-mono text-[10px] text-gray-300">
+                    URL Params: {JSON.stringify(Object.fromEntries([...searchParams]), null, 2)}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-2">
+                        <div className="text-xs font-bold text-gray-400 uppercase">Amadeus Response</div>
+                        <pre className="bg-black/50 p-4 rounded-lg text-green-400 text-[10px] overflow-auto max-h-[400px] border border-gray-800">
+                            {rawResponses.amadeus ? JSON.stringify(rawResponses.amadeus, null, 2) : '// Waiting for search...'}
+                        </pre>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                        <div className="text-xs font-bold text-gray-400 uppercase">Sabre Response</div>
+                        <pre className="bg-black/50 p-4 rounded-lg text-blue-400 text-[10px] overflow-auto max-h-[400px] border border-gray-800">
+                            {rawResponses.sabre ? JSON.stringify(rawResponses.sabre, null, 2) : '// Waiting for search...'}
+                        </pre>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 };
