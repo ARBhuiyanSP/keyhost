@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { FiChevronDown, FiSun, FiMoon, FiLoader, FiX, FiEdit2, FiSearch } from 'react-icons/fi'; // Added FiEdit2 for Modify Search
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { searchSabre, searchAmadeus, initiateSearch } from '../../utils/flightApi';
 import { format } from 'date-fns';
 import FlightSearchForm from './FlightSearchForm';
@@ -8,6 +8,7 @@ import { DUMMY_FLIGHTS } from '../../utils/dummyFlights';
 
 const FlightSearchResults = () => {
     const [searchParams, setSearchParams] = useSearchParams();
+    const navigate = useNavigate();
     const [loading, setLoading] = useState(false); // Initially false to hide "No Flights" message
     const [hasSearched, setHasSearched] = useState(false); // Track if a search has been performed
     const [results, setResults] = useState([]);
@@ -535,7 +536,13 @@ const FlightSearchResults = () => {
                                                     <div className="flex flex-col items-end md:w-1/4 gap-2 w-full">
                                                         <div className="text-xs text-gray-500">Starting from</div>
                                                         <div className="text-xl font-bold text-[#1e2049]">BDT {flight.fare.totalPrice.toLocaleString()}</div>
-                                                        <button className="bg-[#E41D57] hover:bg-[#c01b4b] text-white font-bold py-2 px-6 rounded-full text-sm transition-colors w-full md:w-auto">
+                                                        <button
+                                                            onClick={() => {
+                                                                localStorage.setItem('bookingFlight', JSON.stringify(flight));
+                                                                navigate('/booking');
+                                                            }}
+                                                            className="bg-[#E41D57] hover:bg-[#c01b4b] text-white font-bold py-2 px-6 rounded-full text-sm transition-colors w-full md:w-auto"
+                                                        >
                                                             Book Now
                                                         </button>
                                                     </div>

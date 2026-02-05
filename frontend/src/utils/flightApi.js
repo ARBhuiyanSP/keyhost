@@ -60,4 +60,39 @@ export const fetchSabreResults = async (folder, flightType) => {
     }
 };
 
+export const revalidateFlight = async (flightData) => {
+    try {
+        const response = await flightApi.post('/flight-revalidate', flightData);
+        return response.data;
+    } catch (error) {
+        console.error("Revalidation Error:", error);
+        throw error;
+    }
+};
+
+export const bookFlight = async (bookingData) => {
+    try {
+        // Ensure flightData is a string as backend controller expects
+        if (typeof bookingData.flightData === 'object') {
+            bookingData.flightData = JSON.stringify(bookingData.flightData);
+        }
+
+        const response = await flightApi.post('/book-flight', bookingData);
+        return response.data;
+    } catch (error) {
+        console.error("Booking Error:", error);
+        throw error;
+    }
+};
+
+export const fetchCountries = async () => {
+    try {
+        const response = await flightApi.get('/countries');
+        return response.data;
+    } catch (error) {
+        console.error("Fetch Countries Error:", error);
+        throw error; // Return empty array or throw?
+    }
+};
+
 export default flightApi;
