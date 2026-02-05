@@ -236,7 +236,7 @@ const FlightBooking = () => {
     const lastLeg = flight.legs ? Object.values(flight.legs)[Object.values(flight.legs).length - 1] : null;
 
     return (
-        <div className="bg-[#f3f4f6] min-h-screen py-8 font-sans text-gray-800">
+        <div className="bg-white min-h-screen py-8 font-sans text-gray-800">
             <div className="container mx-auto px-4 max-w-7xl">
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">

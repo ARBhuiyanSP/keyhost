@@ -880,35 +880,7 @@ const FlightSearchResults = () => {
                 </div>
             )}
 
-            {/* RAW DATA DEBUG SECTION */}
-            <div className="mt-12 p-6 bg-gray-900 rounded-xl overflow-hidden">
-                <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-white font-bold flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full animate-pulse ${searchStatus === 'Completed' ? 'bg-green-500' : 'bg-yellow-500'}`}></span>
-                        Raw API Responses (Debug)
-                    </h3>
-                    <div className="text-xs text-gray-400 font-mono">Status: <span className="text-white">{searchStatus}</span></div>
-                </div>
 
-                <div className="mb-4 p-3 bg-black/30 rounded border border-gray-800 font-mono text-[10px] text-gray-300">
-                    URL Params: {JSON.stringify(Object.fromEntries([...searchParams]), null, 2)}
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-2">
-                        <div className="text-xs font-bold text-gray-400 uppercase">Amadeus Response</div>
-                        <pre className="bg-black/50 p-4 rounded-lg text-green-400 text-[10px] overflow-auto max-h-[400px] border border-gray-800">
-                            {rawResponses.amadeus ? JSON.stringify(rawResponses.amadeus, null, 2) : '// Waiting for search...'}
-                        </pre>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                        <div className="text-xs font-bold text-gray-400 uppercase">Sabre Response</div>
-                        <pre className="bg-black/50 p-4 rounded-lg text-blue-400 text-[10px] overflow-auto max-h-[400px] border border-gray-800">
-                            {rawResponses.sabre ? JSON.stringify(rawResponses.sabre, null, 2) : '// Waiting for search...'}
-                        </pre>
-                    </div>
-                </div>
-            </div>
         </div>
     );
 };

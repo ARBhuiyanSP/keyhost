@@ -613,7 +613,7 @@ const Navbar = () => {
 
           {/* Desktop Navigation / Home tabs */}
           <div className="hidden md:flex items-center flex-1 justify-center">
-            {(isHome || isSearchPage || isPropertyDetail) && propertyTypes && propertyTypes.length > 0 ? (
+            {(isHome || isSearchPage || isPropertyDetail || location.pathname.startsWith('/flight') || location.pathname === '/booking') && propertyTypes && propertyTypes.length > 0 ? (
               <div className="flex items-center gap-10 flex-wrap justify-center">
                 {propertyTypes.map((type) => {
                   const isActiveTab = headerActiveType === (type.name || '').toLowerCase();
