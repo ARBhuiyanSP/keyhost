@@ -469,6 +469,32 @@ const Home = () => {
 
   const [searchData, setSearchData] = useState(loadSearchState);
   const [activePropertyType, setActivePropertyType] = useState('');
+  const [airportList, setAirportList] = useState([]);
+
+  // Fetch airport list for mobile flight search
+  useEffect(() => {
+    fetch('/data/airportlist.json')
+      .then(res => res.json())
+      .then(data => {
+        setAirportList(Object.values(data));
+      })
+      .catch(err => console.error('Failed to load airports:', err));
+  }, []);
+
+  const getAirportSuggestions = (input) => {
+    if (!input || typeof input !== 'string' || input.length < 2) return [];
+    const lower = input.toLowerCase();
+    return airportList.filter(a => {
+      if (!a) return false;
+      const combined = `${a.shortName} (${a.code})`.toLowerCase();
+      return (
+        (a.code && a.code.toLowerCase().includes(lower)) ||
+        (a.name && a.name.toLowerCase().includes(lower)) ||
+        (a.shortName && a.shortName.toLowerCase().includes(lower)) ||
+        combined.includes(lower)
+      );
+    }).slice(0, 10);
+  };
 
   // Fetch featured properties
   const { data: featuredProperties, isLoading } = useQuery(
@@ -567,23 +593,37 @@ const Home = () => {
   const handleHomeSearch = (e) => {
     e.preventDefault();
     const params = new URLSearchParams();
-    if (searchData.location) params.append('city', searchData.location);
-    if (searchData.checkIn) params.append('check_in_date', formatDateLocal(searchData.checkIn));
-    if (searchData.checkOut) params.append('check_out_date', formatDateLocal(searchData.checkOut));
-    if (searchData.guests) params.append('min_guests', searchData.guests);
+
+    if (activePropertyType === 'flight') {
+      if (searchData.tripType) params.append('trip_type', searchData.tripType);
+      if (searchData.from) params.append('from', searchData.fromCode || searchData.from);
+      if (searchData.to) params.append('to', searchData.toCode || searchData.to);
+      if (searchData.departDate) params.append('depart', formatDateLocal(searchData.departDate));
+      if (searchData.returnDate) params.append('return', formatDateLocal(searchData.returnDate));
+      params.append('travelers', searchData.guests || 1);
+      if (searchData.flightClass) params.append('class', searchData.flightClass);
+    } else {
+      if (searchData.location) params.append('city', searchData.location);
+      if (searchData.checkIn) params.append('check_in_date', formatDateLocal(searchData.checkIn));
+      if (searchData.checkOut) params.append('check_out_date', formatDateLocal(searchData.checkOut));
+      if (searchData.guests) params.append('min_guests', searchData.guests);
+    }
+
     if (activePropertyType) params.append('property_type', activePropertyType);
 
     // Save search state to localStorage for persistence
     const searchState = {
+      ...searchData,
       location: searchData.location,
       checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
       checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
       guests: searchData.guests,
-      propertyType: activePropertyType
+      propertyType: activePropertyType,
+      tripType: searchData.tripType
     };
     localStorage.setItem('searchState', JSON.stringify(searchState));
 
-    navigate(`/search?${params.toString()}`);
+    navigate(`${activePropertyType === 'flight' ? '/flight/results' : '/search'}?${params.toString()}`);
   };
 
   const getTypeIcon = (typeName, isActive = false) => {
@@ -955,71 +995,185 @@ const Home = () => {
 
           {/* Scrollable Content */}
           <div className="flex-1 overflow-y-auto px-4 pt-4 pb-20 space-y-4">
-            {/* Where Card */}
+            {/* Where / From-To Card */}
             <div
               className={`bg-white rounded-2xl transition-all duration-300 overflow-hidden ${mobileSearchStep === 'location' ? 'p-6 shadow-xl border-transparent' : 'p-4 shadow-sm'}`}
               onClick={() => setMobileSearchStep('location')}
             >
-              {mobileSearchStep === 'location' ? (
-                <div className="animate-fadeIn">
-                  <h3 className="text-2xl font-bold text-black mb-4">Where to?</h3>
-                  <div className="bg-white border rounded-xl p-3 flex items-center gap-3 shadow-sm mb-4">
-                    <FiSearch className="text-black w-5 h-5 font-bold" />
-                    <input
-                      autoFocus
-                      className="flex-1 outline-none text-base placeholder-gray-500 font-semibold bg-transparent text-black"
-                      placeholder="Search destinations"
-                      value={searchData.location || ''}
-                      onChange={(e) => {
-                        handleInputChange('location', e.target.value);
-                        setShowLocationSuggestions(e.target.value.length > 0);
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    {(searchData.location) && (
-                      <button onClick={(e) => { e.stopPropagation(); handleInputChange('location', ''); }} className="p-1 bg-gray-200 rounded-full"><FiX className="w-3 h-3 block" /></button>
+              {activePropertyType === 'flight' ? (
+                // Flight Mobile Autocomplete
+                mobileSearchStep === 'location' ? (
+                  <div className="animate-fadeIn">
+                    <h3 className="text-2xl font-bold text-black mb-4">Fly from?</h3>
+                    <div className="bg-white border rounded-xl p-3 flex items-center gap-3 shadow-sm mb-4">
+                      <FiSearch className="text-black w-5 h-5 font-bold" />
+                      <input
+                        autoFocus
+                        className="flex-1 outline-none text-base placeholder-gray-500 font-semibold bg-transparent text-black"
+                        placeholder="Departure City or Airport"
+                        value={searchData.from || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSearchData(prev => ({ ...prev, from: val }));
+                        }}
+                      />
+                      {searchData.from && (
+                        <button onClick={(e) => { e.stopPropagation(); setSearchData(prev => ({ ...prev, from: '' })); }} className="p-1 bg-gray-200 rounded-full"><FiX className="w-3 h-3 block" /></button>
+                      )}
+                    </div>
+                    {/* From Suggestions */}
+                    <div className="space-y-4 max-h-64 overflow-y-auto">
+                      {getAirportSuggestions(searchData.from).map((a, idx) => (
+                        <button
+                          key={idx}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSearchData(prev => ({ ...prev, from: `${a.shortName} (${a.code})`, fromCode: a.code }));
+                            // Change step to destination
+                            setMobileSearchStep('destination');
+                          }}
+                          className="flex items-center gap-4 w-full text-left p-2 hover:bg-gray-50 rounded-lg"
+                        >
+                          <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <FiMapPin className="w-5 h-5 text-gray-500" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-gray-900 truncate">{a.shortName}</div>
+                            <div className="text-sm text-gray-500 truncate">{a.name}</div>
+                          </div>
+                          <div className="text-xs font-bold text-[#E41D57]">{a.code}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-gray-500 font-semibold">From</span>
+                    <span className="text-black font-bold">{searchData.from || 'Select origin'}</span>
+                  </div>
+                )
+              ) : (
+                // Standard Stay Search
+                mobileSearchStep === 'location' ? (
+                  <div className="animate-fadeIn">
+                    <h3 className="text-2xl font-bold text-black mb-4">Where to?</h3>
+                    {/* ... (Existing Where card content) ... */}
+                    <div className="bg-white border rounded-xl p-3 flex items-center gap-3 shadow-sm mb-4">
+                      <FiSearch className="text-black w-5 h-5 font-bold" />
+                      <input
+                        autoFocus
+                        className="flex-1 outline-none text-base placeholder-gray-500 font-semibold bg-transparent text-black"
+                        placeholder="Search destinations"
+                        value={searchData.location || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSearchData(prev => ({ ...prev, location: val }));
+                          setShowLocationSuggestions(val.length > 0);
+                        }}
+                      />
+                      {(searchData.location) && (
+                        <button onClick={(e) => { e.stopPropagation(); setSearchData(prev => ({ ...prev, location: '' })); }} className="p-1 bg-gray-200 rounded-full"><FiX className="w-3 h-3 block" /></button>
+                      )}
+                    </div>
+
+                    {/* Suggestions */}
+                    {locationSuggestionsData && locationSuggestionsData.length > 0 && (
+                      <div className="mt-2 pl-2">
+                        <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Suggested destinations</div>
+                        <div className="space-y-4">
+                          <button className="flex items-center gap-4 w-full text-left" onClick={(e) => { e.stopPropagation(); setSearchData(prev => ({ ...prev, location: 'Nearby' })); setMobileSearchStep('dates'); }}>
+                            <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center"><FiMapPin className="w-5 h-5" /></div>
+                            <div className="font-semibold text-gray-700">Nearby</div>
+                          </button>
+                          {locationSuggestionsData.slice(0, 5).map((loc, idx) => (
+                            <button
+                              key={idx}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSearchData(prev => ({ ...prev, location: loc.city }));
+                                setMobileSearchStep('dates');
+                              }}
+                              className="flex items-center gap-4 w-full text-left"
+                            >
+                              <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <FiMapPin className="w-5 h-5 text-gray-500" />
+                              </div>
+                              <div>
+                                <div className="font-semibold text-gray-900">{loc.city}</div>
+                                <div className="text-sm text-gray-500">{loc.country}</div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
-
-                  {/* Suggestions */}
-                  {locationSuggestionsData && locationSuggestionsData.length > 0 && (
-                    <div className="mt-2 pl-2">
-                      <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Suggested destinations</div>
-                      <div className="space-y-4">
-                        <button className="flex items-center gap-4 w-full text-left" onClick={(e) => { e.stopPropagation(); handleInputChange('location', 'Nearby'); setMobileSearchStep('dates'); }}>
-                          <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center"><FiMapPin className="w-5 h-5" /></div>
-                          <div className="font-semibold text-gray-700">Nearby</div>
-                        </button>
-                        {locationSuggestionsData.slice(0, 5).map((loc, idx) => (
-                          <button
-                            key={idx}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleInputChange('location', loc.city);
-                              setMobileSearchStep('dates');
-                            }}
-                            className="flex items-center gap-4 w-full text-left"
-                          >
-                            <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                              <FiMapPin className="w-5 h-5 text-gray-500" />
-                            </div>
-                            <div>
-                              <div className="font-semibold text-gray-900">{loc.city}</div>
-                              <div className="text-sm text-gray-500">{loc.country}</div>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-500 font-semibold text-sm">Where</span>
-                  <span className="text-black font-bold text-sm">{searchData.location || 'I\'m flexible'}</span>
-                </div>
+                ) : (
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-gray-500 font-semibold">Where</span>
+                    <span className="text-black font-bold">{searchData.location || 'I\'m flexible'}</span>
+                  </div>
+                )
               )}
             </div>
+
+            {/* Destination Card (Flight Only) */}
+            {activePropertyType === 'flight' && (
+              <div
+                className={`bg-white rounded-2xl transition-all duration-300 overflow-hidden ${mobileSearchStep === 'destination' ? 'p-6 shadow-xl border-transparent' : 'p-4 shadow-sm'}`}
+                onClick={() => setMobileSearchStep('destination')}
+              >
+                {mobileSearchStep === 'destination' ? (
+                  <div className="animate-fadeIn">
+                    <h3 className="text-2xl font-bold text-black mb-4">Fly to?</h3>
+                    <div className="bg-white border rounded-xl p-3 flex items-center gap-3 shadow-sm mb-4">
+                      <FiSearch className="text-black w-5 h-5 font-bold" />
+                      <input
+                        autoFocus
+                        className="flex-1 outline-none text-base placeholder-gray-500 font-semibold bg-transparent text-black"
+                        placeholder="Arrival City or Airport"
+                        value={searchData.to || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSearchData(prev => ({ ...prev, to: val }));
+                        }}
+                      />
+                      {searchData.to && (
+                        <button onClick={(e) => { e.stopPropagation(); setSearchData(prev => ({ ...prev, to: '' })); }} className="p-1 bg-gray-200 rounded-full"><FiX className="w-3 h-3 block" /></button>
+                      )}
+                    </div>
+                    {/* To Suggestions */}
+                    <div className="space-y-4 max-h-64 overflow-y-auto">
+                      {getAirportSuggestions(searchData.to).map((a, idx) => (
+                        <button
+                          key={idx}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSearchData(prev => ({ ...prev, to: `${a.shortName} (${a.code})`, toCode: a.code }));
+                            setMobileSearchStep('dates');
+                          }}
+                          className="flex items-center gap-4 w-full text-left p-2 hover:bg-gray-50 rounded-lg"
+                        >
+                          <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <FiMapPin className="w-5 h-5 text-gray-500" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-gray-900 truncate">{a.shortName}</div>
+                            <div className="text-sm text-gray-500 truncate">{a.name}</div>
+                          </div>
+                          <div className="text-xs font-bold text-[#E41D57]">{a.code}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-gray-500 font-semibold">To</span>
+                    <span className="text-black font-bold">{searchData.to || 'Select destination'}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* When Card */}
             <div

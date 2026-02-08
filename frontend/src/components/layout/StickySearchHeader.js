@@ -7,6 +7,7 @@ import { useQuery } from 'react-query';
 import useSettingsStore from '../../store/settingsStore';
 import useAuthStore from '../../store/authStore';
 import api from '../../utils/api';
+import FlightSearchForm from '../search/FlightSearchForm';
 
 const StickySearchHeader = ({
   alwaysSticky = false,
@@ -84,6 +85,10 @@ const StickySearchHeader = ({
       departDate: new Date('2026-02-12'),
       returnDate: null,
       travelers: 1,
+      adults: 1,
+      children: 0,
+      kids: 0,
+      infants: 0,
       flightClass: 'Economy',
       tripType: urlTripType || 'oneWay',
       legs: [
@@ -93,6 +98,34 @@ const StickySearchHeader = ({
     };
   });
   const [flightActiveSection, setFlightActiveSection] = useState(null); // 'from', 'to', 'depart', 'return', 'travelers'
+  const [airportList, setAirportList] = useState([]);
+
+  // Fetch airport list from public directory
+  useEffect(() => {
+    fetch('/data/airportlist.json')
+      .then(res => res.json())
+      .then(data => {
+        setAirportList(Object.values(data));
+      })
+      .catch(err => console.error('Failed to load airports:', err));
+  }, []);
+
+  const getAirportSuggestions = (input) => {
+    if (!input || typeof input !== 'string' || input.length < 2) return [];
+    const lower = input.toLowerCase();
+
+    // Also handle matching the "City (CODE)" format
+    return airportList.filter(a => {
+      if (!a) return false;
+      const combined = `${a.shortName} (${a.code})`.toLowerCase();
+      return (
+        (a.code && a.code.toLowerCase().includes(lower)) ||
+        (a.name && a.name.toLowerCase().includes(lower)) ||
+        (a.shortName && a.shortName.toLowerCase().includes(lower)) ||
+        combined.includes(lower)
+      );
+    }).slice(0, 10);
+  };
 
   // Fetch distinct property locations for suggestions (cached globally)
   const { data: locationSuggestionsData } = useQuery(
@@ -126,7 +159,6 @@ const StickySearchHeader = ({
 
     if (normalized.includes('apartment') || normalized.includes('villa') || normalized.includes('house') || normalized.includes('home')) {
       imgSrc = '/images/nav-icon-apartment.png';
-    } else if (normalized.includes('hotel')) {
     } else if (normalized.includes('hotel')) {
       imgSrc = '/images/nav-icon-hotel.png';
     } else if (normalized.includes('flight')) {
@@ -287,10 +319,26 @@ const StickySearchHeader = ({
     e.preventDefault();
     const params = new URLSearchParams();
 
-    if (searchData.location) params.append('city', searchData.location);
-    if (searchData.checkIn) params.append('check_in_date', formatDateLocal(searchData.checkIn));
-    if (searchData.checkOut) params.append('check_out_date', formatDateLocal(searchData.checkOut));
-    if (searchData.guests) params.append('min_guests', searchData.guests);
+    const extractCode = (val) => {
+      if (!val) return '';
+      const match = val.match(/\((.*?)\)/);
+      return match ? match[1] : val;
+    };
+
+    if (activePropertyType === 'flight') {
+      if (flightSearchData.tripType) params.append('trip_type', flightSearchData.tripType);
+      if (flightSearchData.from) params.append('from', extractCode(flightSearchData.from));
+      if (flightSearchData.to) params.append('to', extractCode(flightSearchData.to));
+      if (searchData.checkIn) params.append('depart', formatDateLocal(searchData.checkIn));
+      if (searchData.checkOut) params.append('return', formatDateLocal(searchData.checkOut));
+      params.append('travelers', searchData.guests || 1);
+      if (flightSearchData.flightClass) params.append('class', flightSearchData.flightClass);
+    } else {
+      if (searchData.location) params.append('city', searchData.location);
+      if (searchData.checkIn) params.append('check_in_date', formatDateLocal(searchData.checkIn));
+      if (searchData.checkOut) params.append('check_out_date', formatDateLocal(searchData.checkOut));
+      if (searchData.guests) params.append('min_guests', searchData.guests);
+    }
 
     if (activePropertyType) params.append('property_type', activePropertyType);
 
@@ -300,11 +348,13 @@ const StickySearchHeader = ({
       checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
       checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
       guests: searchData.guests,
-      propertyType: activePropertyType
+      propertyType: activePropertyType,
+      flightSearchData: flightSearchData,
+      tripType: flightSearchData.tripType
     };
     localStorage.setItem('searchState', JSON.stringify(searchState));
 
-    navigate(`/search?${params.toString()}`);
+    navigate(`${activePropertyType === 'flight' ? '/flight/results' : '/search'}?${params.toString()}`);
   };
 
   const handleInputChange = (field, value) => {
@@ -518,13 +568,18 @@ const StickySearchHeader = ({
     };
     localStorage.setItem('searchState', JSON.stringify(searchState));
 
-    navigate(`/search?${params.toString()}`);
+    navigate(`${activePropertyType === 'flight' ? '/flight/results' : '/search'}?${params.toString()}`);
   };
 
   return (
     <>
       <div
         ref={headerOuterRef}
+        onClick={(e) => {
+          if (searchPillRef.current?.contains(e.target) || e.target.closest('button') || e.target.closest('a') || e.target.closest('input') || e.target.closest('.react-datepicker')) return;
+          e.stopPropagation();
+          setDesktopActiveSection(null);
+        }}
         className={`fixed top-0 left-0 right-0 z-[100] bg-[#F9FAFB] border-b border-gray-200 transition-all duration-500 ease-in-out ${isVisible ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'
           }`}
       >
@@ -599,64 +654,162 @@ const StickySearchHeader = ({
                 >
                   {mobileSearchStep === 'location' ? (
                     <div className="animate-fadeIn">
-                      <h3 className="text-2xl font-bold text-black mb-4">Where to?</h3>
+                      <h3 className="text-2xl font-bold text-black mb-4">
+                        {activePropertyType === 'flight' ? 'Fly from?' : 'Where to?'}
+                      </h3>
                       <div className="bg-white border rounded-xl p-3 flex items-center gap-3 shadow-sm mb-4">
                         <FiSearch className="text-black w-5 h-5 font-bold" />
                         <input
                           autoFocus
                           className="flex-1 outline-none text-base placeholder-gray-500 font-semibold bg-transparent text-black"
-                          placeholder="Search destinations"
-                          value={searchData.location}
+                          placeholder={activePropertyType === 'flight' ? 'Departure City or Airport' : 'Search destinations'}
+                          value={activePropertyType === 'flight' ? (flightSearchData.from || '') : searchData.location}
                           onChange={(e) => {
-                            handleInputChange('location', e.target.value);
-                            setShowLocationSuggestions(e.target.value.length > 0);
+                            const val = e.target.value;
+                            if (activePropertyType === 'flight') {
+                              setFlightSearchData(prev => ({ ...prev, from: val }));
+                            } else {
+                              handleInputChange('location', val);
+                              setShowLocationSuggestions(val.length > 0);
+                            }
                           }}
                         />
-                        {searchData.location && (
-                          <button onClick={(e) => { e.stopPropagation(); handleInputChange('location', ''); }} className="p-1 bg-gray-200 rounded-full"><FiX className="w-3 h-3 block" /></button>
+                        {(activePropertyType === 'flight' ? flightSearchData.from : searchData.location) && (
+                          <button onClick={(e) => {
+                            e.stopPropagation();
+                            if (activePropertyType === 'flight') {
+                              setFlightSearchData(prev => ({ ...prev, from: '' }));
+                            } else {
+                              handleInputChange('location', '');
+                            }
+                          }} className="p-1 bg-gray-200 rounded-full"><FiX className="w-3 h-3 block" /></button>
                         )}
                       </div>
 
                       {/* Suggestions */}
-                      {locationSuggestionsData && locationSuggestionsData.length > 0 && (
-                        <div className="mt-2 pl-2">
-                          <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Suggested destinations</div>
-                          <div className="space-y-4">
-                            {/* Nearby mock */}
-                            <button className="flex items-center gap-4 w-full text-left" onClick={() => handleInputChange('location', 'Nearby')}>
-                              <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center"><FiMapPin className="w-5 h-5" /></div>
-                              <div className="font-semibold text-gray-700">Nearby</div>
-                            </button>
-                            {locationSuggestionsData.slice(0, 5).map((loc, idx) => (
+                      <div className="mt-2 pl-2">
+                        {activePropertyType === 'flight' ? (
+                          <div className="space-y-4 max-h-64 overflow-y-auto">
+                            {getAirportSuggestions(flightSearchData.from).map((a, idx) => (
                               <button
                                 key={idx}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleInputChange('location', loc.city);
-                                  setMobileSearchStep('dates');
+                                  setFlightSearchData(prev => ({ ...prev, from: `${a.shortName} (${a.code})`, fromCode: a.code }));
+                                  setMobileSearchStep('destination');
                                 }}
-                                className="flex items-center gap-4 w-full text-left"
+                                className="flex items-center gap-4 w-full text-left p-2 hover:bg-gray-50 rounded-lg"
                               >
                                 <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
                                   <FiMapPin className="w-5 h-5 text-gray-500" />
                                 </div>
-                                <div>
-                                  <div className="font-semibold text-gray-900">{loc.city}</div>
-                                  <div className="text-sm text-gray-500">{loc.country}</div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-semibold text-gray-900 truncate">{a.shortName}</div>
+                                  <div className="text-sm text-gray-500 truncate">{a.name}</div>
                                 </div>
+                                <div className="text-xs font-bold text-[#E41D57]">{a.code}</div>
                               </button>
                             ))}
                           </div>
-                        </div>
-                      )}
+                        ) : (
+                          locationSuggestionsData && locationSuggestionsData.length > 0 && (
+                            <>
+                              <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Suggested destinations</div>
+                              <div className="space-y-4">
+                                <button className="flex items-center gap-4 w-full text-left" onClick={() => handleInputChange('location', 'Nearby')}>
+                                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center"><FiMapPin className="w-5 h-5" /></div>
+                                  <div className="font-semibold text-gray-700">Nearby</div>
+                                </button>
+                                {locationSuggestionsData.slice(0, 5).map((loc, idx) => (
+                                  <button
+                                    key={idx}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleInputChange('location', loc.city);
+                                      setMobileSearchStep('dates');
+                                    }}
+                                    className="flex items-center gap-4 w-full text-left"
+                                  >
+                                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                      <FiMapPin className="w-5 h-5 text-gray-500" />
+                                    </div>
+                                    <div>
+                                      <div className="font-semibold text-gray-900">{loc.city}</div>
+                                      <div className="text-sm text-gray-500">{loc.country}</div>
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            </>
+                          )
+                        )}
+                      </div>
                     </div>
                   ) : (
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-500 font-semibold text-sm">Where</span>
-                      <span className="text-black font-bold text-sm">{searchData.location || 'I\'m flexible'}</span>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-500 font-semibold">{activePropertyType === 'flight' ? 'From' : 'Where'}</span>
+                      <span className="text-black font-bold">{(activePropertyType === 'flight' ? flightSearchData.from : searchData.location) || (activePropertyType === 'flight' ? 'Select origin' : "I'm flexible")}</span>
                     </div>
                   )}
                 </div>
+
+                {/* Destination Card (Flight Only) */}
+                {activePropertyType === 'flight' && (
+                  <div
+                    className={`bg-white rounded-2xl transition-all duration-300 overflow-hidden ${mobileSearchStep === 'destination' ? 'p-6 shadow-xl border-transparent' : 'p-4 shadow-sm'}`}
+                    onClick={() => setMobileSearchStep('destination')}
+                  >
+                    {mobileSearchStep === 'destination' ? (
+                      <div className="animate-fadeIn">
+                        <h3 className="text-2xl font-bold text-black mb-4">Fly to?</h3>
+                        <div className="bg-white border rounded-xl p-3 flex items-center gap-3 shadow-sm mb-4">
+                          <FiSearch className="text-black w-5 h-5 font-bold" />
+                          <input
+                            autoFocus
+                            className="flex-1 outline-none text-base placeholder-gray-500 font-semibold bg-transparent text-black"
+                            placeholder="Arrival City or Airport"
+                            value={flightSearchData.to || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setFlightSearchData(prev => ({ ...prev, to: val }));
+                            }}
+                          />
+                          {flightSearchData.to && (
+                            <button onClick={(e) => { e.stopPropagation(); setFlightSearchData(prev => ({ ...prev, to: '' })); }} className="p-1 bg-gray-200 rounded-full"><FiX className="w-3 h-3 block" /></button>
+                          )}
+                        </div>
+                        {/* To Suggestions */}
+                        <div className="space-y-4 max-h-64 overflow-y-auto">
+                          {getAirportSuggestions(flightSearchData.to).map((a, idx) => (
+                            <button
+                              key={idx}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setFlightSearchData(prev => ({ ...prev, to: `${a.shortName} (${a.code})`, toCode: a.code }));
+                                setMobileSearchStep('dates');
+                              }}
+                              className="flex items-center gap-4 w-full text-left p-2 hover:bg-gray-50 rounded-lg"
+                            >
+                              <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <FiMapPin className="w-5 h-5 text-gray-500" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="font-semibold text-gray-900 truncate">{a.shortName}</div>
+                                <div className="text-sm text-gray-500 truncate">{a.name}</div>
+                              </div>
+                              <div className="text-xs font-bold text-[#E41D57]">{a.code}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-500 font-semibold">To</span>
+                        <span className="text-black font-bold">{flightSearchData.to || 'Select destination'}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* When Card */}
                 <div
@@ -814,7 +967,10 @@ const StickySearchHeader = ({
             <div className="hidden md:flex flex-1 justify-center mx-4 min-w-0">
               {(() => {
                 // *** FLIGHT SEARCH FORM ***
+                // *** FLIGHT SEARCH FORM ***
+                // *** FLIGHT SEARCH FORM ***
                 if (activePropertyType === 'flight') {
+<<<<<<< HEAD
                   return (
                     <div ref={searchPillRef} className="flex flex-col w-full max-w-[1240px] animate-fadeIn mx-auto relative z-[90]">
                       {/* Trip Type Selection */}
@@ -1476,14 +1632,14 @@ const StickySearchHeader = ({
                         onMouseEnter={() => setDesktopHoverSection('guests')}
                         onMouseLeave={() => setDesktopHoverSection(null)}
                         className="flex-1 min-w-0 px-2 py-2 rounded-full transition-all duration-300 ease-out hover:bg-gray-50 relative z-10 flex items-center gap-2 cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowDesktopExpanded(false);
+                          setDesktopActiveSection('guests');
+                          window.dispatchEvent(new CustomEvent('openMainHeaderSearch', { detail: 'guests' }));
+                        }}
                       >
                         <div
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowDesktopExpanded(false);
-                            setDesktopActiveSection('guests');
-                            window.dispatchEvent(new CustomEvent('openMainHeaderSearch', { detail: 'guests' }));
-                          }}
                           className="text-left flex-1 min-w-0 px-2"
                         >
                           <div className="text-xs font-semibold text-gray-900">Who</div>

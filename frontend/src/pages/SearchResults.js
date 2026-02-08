@@ -33,7 +33,15 @@ const SearchResults = () => {
     sort_by: searchParams.get('sort_by') || 'created_at',
     sort_order: searchParams.get('sort_order') || 'DESC',
     page: searchParams.get('page') || '1',
-    limit: searchParams.get('limit') || '12'
+    limit: searchParams.get('limit') || '12',
+    // Flight specific
+    trip_type: searchParams.get('trip_type') || '',
+    from: searchParams.get('from') || '',
+    to: searchParams.get('to') || '',
+    depart: searchParams.get('depart') || '',
+    return: searchParams.get('return') || '',
+    travelers: searchParams.get('travelers') || '',
+    class: searchParams.get('class') || ''
   });
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [activePropertyType, setActivePropertyType] = useState('');
@@ -52,7 +60,15 @@ const SearchResults = () => {
       sort_by: searchParams.get('sort_by') || 'created_at',
       sort_order: searchParams.get('sort_order') || 'DESC',
       page: searchParams.get('page') || '1',
-      limit: searchParams.get('limit') || '12'
+      limit: searchParams.get('limit') || '12',
+      // Flight specific
+      trip_type: searchParams.get('trip_type') || '',
+      from: searchParams.get('from') || '',
+      to: searchParams.get('to') || '',
+      depart: searchParams.get('depart') || '',
+      return: searchParams.get('return') || '',
+      travelers: searchParams.get('travelers') || '',
+      class: searchParams.get('class') || ''
     });
   }, [searchParams]);
 

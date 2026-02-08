@@ -152,7 +152,7 @@ router.get('/', optionalAuth, validatePagination, async (req, res) => {
     const total = countResult[0].total;
 
     // Get properties with owner info
-    const [properties] = await pool.execute(`
+    const [properties] = await pool.query(`
       SELECT 
         p.*,
         u.first_name as owner_first_name,
@@ -167,7 +167,7 @@ router.get('/', optionalAuth, validatePagination, async (req, res) => {
       ${whereClause}
       ORDER BY p.${sort_by} ${sort_order}
       LIMIT ? OFFSET ?
-    `, [...queryParams, parseInt(limit), offset]);
+    `, [...queryParams, parseInt(limit), parseInt(offset)]);
 
     // Get amenities for each property
     for (let property of properties) {
