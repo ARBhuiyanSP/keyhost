@@ -26,7 +26,7 @@ const FlightBooking = () => {
     const [error, setError] = useState(null);
     const [activeTab, setActiveTab] = useState('flight_details'); // flight_details | fare_summary
     const [validationErrors, setValidationErrors] = useState({});
-    const [openPassengerIndex, setOpenPassengerIndex] = useState(0);
+    const [openPassengerIndices, setOpenPassengerIndices] = useState([0]);
     const [ageValidation, setAgeValidation] = useState({});
     const [timer, setTimer] = useState(1200);
     const [showDetails, setShowDetails] = useState(false);
@@ -196,6 +196,26 @@ const FlightBooking = () => {
         if (Object.keys(errors).length > 0) {
             setValidationErrors(errors);
             setSubmitting(false);
+
+            // Auto-expand sections with errors
+            const errorIndices = new Set();
+            Object.keys(errors).forEach(key => {
+                if (key.startsWith('passengers.')) {
+                    const parts = key.split('.');
+                    if (parts.length >= 2) {
+                        const idx = parseInt(parts[1], 10);
+                        if (!isNaN(idx)) errorIndices.add(idx);
+                    }
+                }
+            });
+
+            if (errorIndices.size > 0) {
+                setOpenPassengerIndices(prev => {
+                    const next = new Set([...prev, ...errorIndices]);
+                    return Array.from(next);
+                });
+            }
+
             window.scrollTo({ top: 0, behavior: 'smooth' });
             return;
         }
@@ -547,14 +567,35 @@ const FlightBooking = () => {
                                 </div>
                                 <div className="space-y-4">
                                     {passengers.map((pax, idx) => {
-                                        const isOpen = openPassengerIndex === idx;
+                                        const isOpen = openPassengerIndices.includes(idx);
                                         const validation = ageValidation[idx] || {};
+
+                                        // Determine display label with age range
+                                        let typeLabel = pax.type;
+                                        if (pax.type === 'Adult') typeLabel = 'ADULT (12+ yrs)';
+                                        else if (pax.type === 'Children') typeLabel = 'CHILDREN (5-11 yrs)';
+                                        else if (pax.type === 'Kid') typeLabel = 'KID (2-5 yrs)';
+                                        else if (pax.type === 'Infant') typeLabel = 'INFANT (< 2 yrs)';
+
+                                        const toggleAccordion = () => {
+                                            setOpenPassengerIndices(prev => {
+                                                if (prev.includes(idx)) {
+                                                    return prev.filter(i => i !== idx);
+                                                } else {
+                                                    return [...prev, idx];
+                                                }
+                                            });
+                                        };
+
+                                        const hasError = Object.keys(validationErrors).some(key => key.startsWith(`passengers.${idx}.`));
+
                                         return (
-                                            <div key={idx} className={`border rounded-xl overflow-hidden transition-all duration-300 ${isOpen ? 'border-[#1E2049] shadow-md' : 'border-gray-200'}`}>
-                                                <button type="button" onClick={() => setOpenPassengerIndex(isOpen ? -1 : idx)} className={`w-full px-5 py-4 flex justify-between items-center text-left transition-colors ${isOpen ? 'bg-[#1E2049] text-white' : 'bg-gray-50 text-gray-700 hover:bg-white'}`}>
+                                            <div key={idx} className={`border rounded-xl overflow-hidden transition-all duration-300 ${isOpen ? 'border-[#1E2049] shadow-md' : (hasError ? 'border-red-500 bg-red-50' : 'border-gray-200')}`}>
+                                                <button type="button" onClick={toggleAccordion} className={`w-full px-5 py-4 flex justify-between items-center text-left transition-colors ${isOpen ? 'bg-[#1E2049] text-white' : (hasError ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-gray-50 text-gray-700 hover:bg-white')}`}>
                                                     <div className="flex items-center gap-3">
-                                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${isOpen ? 'bg-white text-[#1E2049]' : 'bg-gray-200 text-gray-600'}`}>{idx + 1}</div>
-                                                        <span className="font-bold text-sm tracking-wide uppercase">{pax.type}</span>
+                                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${isOpen ? 'bg-white text-[#1E2049]' : (hasError ? 'bg-red-100 text-red-600' : 'bg-gray-200 text-gray-600')}`}>{idx + 1}</div>
+                                                        <span className="font-bold text-sm tracking-wide uppercase">{typeLabel}</span>
+                                                        {hasError && !isOpen && <span className="text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-bold ml-2">ERROR</span>}
                                                     </div>
                                                     <div className="flex items-center gap-3"><svg className={`w-5 h-5 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg></div>
                                                 </button>
