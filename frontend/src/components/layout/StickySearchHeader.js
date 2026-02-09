@@ -309,9 +309,12 @@ const StickySearchHeader = ({
       if (flightSearchData.tripType) params.append('trip_type', flightSearchData.tripType);
       if (flightSearchData.from) params.append('from', extractCode(flightSearchData.from));
       if (flightSearchData.to) params.append('to', extractCode(flightSearchData.to));
-      if (searchData.checkIn) params.append('depart', formatDateLocal(searchData.checkIn));
-      if (searchData.checkOut) params.append('return', formatDateLocal(searchData.checkOut));
-      params.append('travelers', searchData.guests || 1);
+      if (flightSearchData.departDate) params.append('depart', formatDateLocal(flightSearchData.departDate));
+      if (flightSearchData.returnDate) params.append('return', formatDateLocal(flightSearchData.returnDate));
+
+      const totalTravelers = (flightSearchData.adults || 0) + (flightSearchData.children || 0) + (flightSearchData.kids || 0) + (flightSearchData.infants || 0);
+      params.append('travelers', totalTravelers || 1);
+
       if (flightSearchData.flightClass) params.append('class', flightSearchData.flightClass);
     } else {
       if (searchData.location) params.append('city', searchData.location);
@@ -603,7 +606,7 @@ const StickySearchHeader = ({
                   <FiX className="w-4 h-4 text-black" />
                 </button>
                 <div className="flex items-center justify-center gap-6 overflow-x-auto scrollbar-hide px-10 w-full">
-                  {propertyTypes && propertyTypes.map((type) => {
+                  {(propertyTypes?.length ? propertyTypes : [{ id: 'def-stays', name: 'Stays' }, { id: 'def-flight', name: 'Flight' }]).map((type) => {
                     const isActive = activePropertyType === (type.name || '').toLowerCase();
                     return (
                       <button
@@ -800,19 +803,45 @@ const StickySearchHeader = ({
                     <div className="animate-fadeIn">
                       <h3 className="text-2xl font-bold text-black mb-4">When's your trip?</h3>
 
+                      {activePropertyType === 'flight' && (
+                        <div className="flex bg-gray-100 p-1 rounded-lg mb-4">
+                          {['oneWay', 'roundTrip'].map(type => (
+                            <button
+                              key={type}
+                              type="button"
+                              className={`flex-1 py-1.5 text-sm font-semibold rounded-md transition-all ${flightSearchData.tripType === type ? 'bg-white shadow text-black' : 'text-gray-500 hover:bg-gray-200'}`}
+                              onClick={(e) => { e.stopPropagation(); setFlightSearchData(prev => ({ ...prev, tripType: type })); }}
+                            >
+                              {type === 'oneWay' ? 'One Way' : 'Round Trip'}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
                       <DatePicker
-                        selected={searchData.checkIn}
+                        selected={activePropertyType === 'flight' ? flightSearchData.departDate : searchData.checkIn}
                         onChange={(dates) => {
-                          const [start, end] = dates;
-                          handleInputChange('checkIn', start);
-                          handleInputChange('checkOut', end);
-                          if (end) {
-                            setTimeout(() => setMobileSearchStep('guests'), 300);
+                          if (activePropertyType === 'flight') {
+                            if (flightSearchData.tripType === 'roundTrip') {
+                              const [start, end] = dates;
+                              setFlightSearchData(prev => ({ ...prev, departDate: start, returnDate: end }));
+                              if (end) setTimeout(() => setMobileSearchStep('guests'), 300);
+                            } else {
+                              setFlightSearchData(prev => ({ ...prev, departDate: dates, returnDate: null }));
+                              setTimeout(() => setMobileSearchStep('guests'), 300);
+                            }
+                          } else {
+                            const [start, end] = dates;
+                            handleInputChange('checkIn', start);
+                            handleInputChange('checkOut', end);
+                            if (end) {
+                              setTimeout(() => setMobileSearchStep('guests'), 300);
+                            }
                           }
                         }}
-                        startDate={searchData.checkIn}
-                        endDate={searchData.checkOut}
-                        selectsRange
+                        startDate={activePropertyType === 'flight' ? flightSearchData.departDate : searchData.checkIn}
+                        endDate={activePropertyType === 'flight' ? flightSearchData.returnDate : searchData.checkOut}
+                        selectsRange={activePropertyType === 'flight' ? flightSearchData.tripType === 'roundTrip' : true}
                         minDate={new Date()}
                         inline
                         monthsShown={1}
@@ -822,7 +851,11 @@ const StickySearchHeader = ({
                   ) : (
                     <div className="flex justify-between items-center">
                       <span className="text-gray-500 font-semibold text-sm">When</span>
-                      <span className="text-black font-bold text-sm">{getDateRangeDisplay() || 'Add dates'}</span>
+                      <span className="text-black font-bold text-sm">
+                        {activePropertyType === 'flight'
+                          ? (flightSearchData.departDate ? `${formatDateDisplay(flightSearchData.departDate)}${flightSearchData.returnDate ? ' - ' + formatDateDisplay(flightSearchData.returnDate) : ''}` : 'Add dates')
+                          : (getDateRangeDisplay() || 'Add dates')}
+                      </span>
                     </div>
                   )}
                 </div>
@@ -834,16 +867,42 @@ const StickySearchHeader = ({
                 >
                   {mobileSearchStep === 'guests' ? (
                     <div className="animate-fadeIn">
-                      <h3 className="text-2xl font-bold text-black mb-6">Who's coming?</h3>
+                      <h3 className="text-2xl font-bold text-black mb-6">{activePropertyType === 'flight' ? 'Travelers & Class' : "Who's coming?"}</h3>
+
+                      {activePropertyType === 'flight' && (
+                        <div className="mb-6">
+                          <div className="text-sm font-semibold text-gray-900 mb-3">Cabin Class</div>
+                          <div className="grid grid-cols-3 gap-2">
+                            {['Economy', 'Business', 'First'].map(cls => (
+                              <button
+                                key={cls}
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setFlightSearchData(prev => ({ ...prev, flightClass: cls })); }}
+                                className={`px-2 py-2 rounded-lg text-xs font-medium border transition-all ${flightSearchData.flightClass === cls ? 'border-black bg-black text-white' : 'border-gray-200 text-gray-700 hover:border-black'}`}
+                              >
+                                {cls}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       <div className="space-y-6">
-                        {[
-                          { key: 'adults', label: 'Adults', subtitle: 'Ages 13 or above', min: 1 },
-                          { key: 'children', label: 'Children', subtitle: 'Ages 2 – 12', min: 0 },
-                          { key: 'infants', label: 'Infants', subtitle: 'Under 2', min: 0 },
-                          { key: 'pets', label: 'Pets', subtitle: 'Bringing a service animal?', min: 0 },
-                        ].map((item) => {
-                          const currentValue = item.key === 'adults' ? Math.max(1, searchData.guests) : 0; // Simplified for this view, assumes guests field matches adults mostly or handle logic
-                          // Note: Original code mapped single 'guests' to adults counter somewhat. I'll stick to 'guests' state for adults.
+                        {(activePropertyType === 'flight'
+                          ? [
+                            { key: 'adults', label: 'Adults', subtitle: '12 years & above', min: 1 },
+                            { key: 'children', label: 'Children', subtitle: '5 to 11 years', min: 0 },
+                            { key: 'kids', label: 'Kids', subtitle: '2 to 4 years', min: 0 },
+                            { key: 'infants', label: 'Infants', subtitle: 'Below 2 years', min: 0 },
+                          ]
+                          : [
+                            { key: 'adults', label: 'Adults', subtitle: 'Ages 13 or above', min: 1 },
+                            { key: 'children', label: 'Children', subtitle: 'Ages 2 – 12', min: 0 },
+                            { key: 'infants', label: 'Infants', subtitle: 'Under 2', min: 0 },
+                            { key: 'pets', label: 'Pets', subtitle: 'Bringing a service animal?', min: 0 },
+                          ]
+                        ).map((item) => {
+                          const currentValue = activePropertyType === 'flight' ? (flightSearchData[item.key] || 0) : (item.key === 'adults' ? Math.max(1, searchData.guests) : 0);
                           return (
                             <div key={item.key} className="flex items-center justify-between">
                               <div>
@@ -854,7 +913,9 @@ const StickySearchHeader = ({
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    if (item.key === 'adults') {
+                                    if (activePropertyType === 'flight') {
+                                      setFlightSearchData(prev => ({ ...prev, [item.key]: Math.max(item.min || 0, (prev[item.key] || 0) - 1) }));
+                                    } else if (item.key === 'adults') {
                                       handleInputChange('guests', Math.max(1, (searchData.guests || 1) - 1));
                                     }
                                   }}
@@ -867,7 +928,9 @@ const StickySearchHeader = ({
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    if (item.key === 'adults') {
+                                    if (activePropertyType === 'flight') {
+                                      setFlightSearchData(prev => ({ ...prev, [item.key]: (prev[item.key] || 0) + 1 }));
+                                    } else if (item.key === 'adults') {
                                       handleInputChange('guests', (searchData.guests || 1) + 1);
                                     }
                                   }}
@@ -884,7 +947,11 @@ const StickySearchHeader = ({
                   ) : (
                     <div className="flex justify-between items-center">
                       <span className="text-gray-500 font-semibold text-sm">Who</span>
-                      <span className="text-black font-bold text-sm">{getGuestsDisplay()}</span>
+                      <span className="text-black font-bold text-sm">
+                        {activePropertyType === 'flight'
+                          ? `${(flightSearchData.adults || 0) + (flightSearchData.children || 0) + (flightSearchData.kids || 0) + (flightSearchData.infants || 0)} travelers`
+                          : getGuestsDisplay()}
+                      </span>
                     </div>
                   )}
                 </div>
