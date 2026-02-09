@@ -970,7 +970,7 @@ const StickySearchHeader = ({
                 // *** FLIGHT SEARCH FORM ***
                 // *** FLIGHT SEARCH FORM ***
                 if (activePropertyType === 'flight') {
-<<<<<<< HEAD
+
                   return (
                     <div ref={searchPillRef} className="flex flex-col w-full max-w-[1240px] animate-fadeIn mx-auto relative z-[90]">
                       {/* Trip Type Selection */}
