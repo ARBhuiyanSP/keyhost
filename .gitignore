@@ -63,6 +63,7 @@ coverage/
 backend/config/database.js
 backend/.env
 frontend/src/utils/api.js
+frontend/src/utils/flightApi.js
 
 
 
