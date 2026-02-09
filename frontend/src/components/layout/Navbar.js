@@ -1246,229 +1246,229 @@ const Navbar = () => {
                     style={{ transform: `translateX(${headerActivePillStyle.x}px)`, width: headerActivePillStyle.w }}
                   />
 
-  <div
-    ref={headerWhereRef}
-    className="flex items-center flex-1 min-w-0 h-full px-7 py-3 transition-colors duration-300 ease-out relative rounded-full cursor-pointer z-10"
-    onClick={() => {
-      setIsHeaderSearchActive(true);
-      setShowHeaderLocationSuggestions(true);
-      setHeaderDateOpen(false);
-      setShowGuestsDropdown(false);
-    }}
-    onMouseEnter={() => setHeaderHoverSection('location')}
-    onMouseLeave={() => setHeaderHoverSection(null)}
-  >
-    <div className="w-full">
-      <div className="text-xs font-semibold text-gray-900">
-        {headerActiveType === 'flight' ? 'From' : 'Where'}
-      </div>
-      <input
-        type="text"
-        value={searchData.location}
-        onChange={(e) => setSearchData(prev => ({ ...prev, location: e.target.value }))}
-        placeholder="Search destinations"
-        ref={headerLocationInputRef}
-        onFocus={() => {
-          setIsHeaderSearchActive(true);
-          setShowHeaderLocationSuggestions(true);
-          setHeaderDateOpen(false);
-          setShowGuestsDropdown(false);
-        }}
-        className={`w-full bg-transparent text-sm text-gray-900 placeholder-gray-400 focus:outline-none cursor-pointer ${effectiveHeaderSection === 'location' && hasLocation ? 'pr-8' : ''}`}
-      />
-      {showHeaderLocationSuggestions && (
-        <div
-          ref={headerLocationSuggestionsRef}
-          className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-xl border border-gray-100 max-h-96 overflow-y-auto z-[9999]"
-        >
-          <div className="px-4 pt-4 pb-2">
-            <h3 className="text-sm font-semibold text-gray-900">Search results</h3>
-          </div>
-          {locationSuggestionsData && locationSuggestionsData.length > 0 ? (
-            locationSuggestionsData
-              .filter(loc => {
-                const query = (searchData.location || '').toLowerCase();
-                const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ').toLowerCase();
-                return !query || label.includes(query);
-              })
-              .slice(0, 8)
-              .map((loc, idx) => {
-                const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ');
-                return (
-                  <button
-                    key={`${label}-${idx}`}
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const newLocation = loc.city || label;
-                      setSearchData(prev => ({ ...prev, location: newLocation }));
-                      // Save to localStorage for persistence
-                      const searchState = {
-                        location: newLocation,
-                        locationTo: searchData.locationTo, // Added for 'To' field
-                        checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
-                        checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
-                        guests: searchData.guests,
-                        flightClass: searchData.flightClass // Added for Flight Class
-                      };
-                      localStorage.setItem('searchState', JSON.stringify(searchState));
-                      window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
-
-                      setShowHeaderLocationSuggestions(false);
-
-                      if (headerActiveType === 'flight') {
-                        // Flight mode: Auto-open 'Where to' suggestions
-                        setShowHeaderToSuggestions(true);
-                        setTimeout(() => {
-                          headerToInputRef.current?.focus();
-                        }, 100);
-                      } else {
-                        // Standard mode: Auto-open calendar
-                        setTimeout(() => {
-                          setHeaderDateOpen(true);
+                  <div
+                    ref={headerWhereRef}
+                    className="flex items-center flex-1 min-w-0 h-full px-7 py-3 transition-colors duration-300 ease-out relative rounded-full cursor-pointer z-10"
+                    onClick={() => {
+                      setIsHeaderSearchActive(true);
+                      setShowHeaderLocationSuggestions(true);
+                      setHeaderDateOpen(false);
+                      setShowGuestsDropdown(false);
+                    }}
+                    onMouseEnter={() => setHeaderHoverSection('location')}
+                    onMouseLeave={() => setHeaderHoverSection(null)}
+                  >
+                    <div className="w-full">
+                      <div className="text-xs font-semibold text-gray-900">
+                        {headerActiveType === 'flight' ? 'From' : 'Where'}
+                      </div>
+                      <input
+                        type="text"
+                        value={searchData.location}
+                        onChange={(e) => setSearchData(prev => ({ ...prev, location: e.target.value }))}
+                        placeholder="Search destinations"
+                        ref={headerLocationInputRef}
+                        onFocus={() => {
+                          setIsHeaderSearchActive(true);
+                          setShowHeaderLocationSuggestions(true);
+                          setHeaderDateOpen(false);
                           setShowGuestsDropdown(false);
-                        }, 100);
-                      }
-                    }}
-                    className="w-full text-left px-4 py-3 hover:bg-pink-50 active:bg-pink-50 transition-colors flex items-start gap-3"
-                  >
-                    <FiMapPin className="w-5 h-5 text-[#E41D57] mt-0.5 flex-shrink-0" />
-                    <div className="flex flex-col">
-                      <span className="text-sm font-semibold text-gray-900">{loc.city}</span>
-                      <span className="text-xs text-gray-500">{[loc.state, loc.country].filter(Boolean).join(', ')}</span>
+                        }}
+                        className={`w-full bg-transparent text-sm text-gray-900 placeholder-gray-400 focus:outline-none cursor-pointer ${effectiveHeaderSection === 'location' && hasLocation ? 'pr-8' : ''}`}
+                      />
+                      {showHeaderLocationSuggestions && (
+                        <div
+                          ref={headerLocationSuggestionsRef}
+                          className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-xl border border-gray-100 max-h-96 overflow-y-auto z-[9999]"
+                        >
+                          <div className="px-4 pt-4 pb-2">
+                            <h3 className="text-sm font-semibold text-gray-900">Search results</h3>
+                          </div>
+                          {locationSuggestionsData && locationSuggestionsData.length > 0 ? (
+                            locationSuggestionsData
+                              .filter(loc => {
+                                const query = (searchData.location || '').toLowerCase();
+                                const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ').toLowerCase();
+                                return !query || label.includes(query);
+                              })
+                              .slice(0, 8)
+                              .map((loc, idx) => {
+                                const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ');
+                                return (
+                                  <button
+                                    key={`${label}-${idx}`}
+                                    type="button"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const newLocation = loc.city || label;
+                                      setSearchData(prev => ({ ...prev, location: newLocation }));
+                                      // Save to localStorage for persistence
+                                      const searchState = {
+                                        location: newLocation,
+                                        locationTo: searchData.locationTo, // Added for 'To' field
+                                        checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
+                                        checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
+                                        guests: searchData.guests,
+                                        flightClass: searchData.flightClass // Added for Flight Class
+                                      };
+                                      localStorage.setItem('searchState', JSON.stringify(searchState));
+                                      window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
+
+                                      setShowHeaderLocationSuggestions(false);
+
+                                      if (headerActiveType === 'flight') {
+                                        // Flight mode: Auto-open 'Where to' suggestions
+                                        setShowHeaderToSuggestions(true);
+                                        setTimeout(() => {
+                                          headerToInputRef.current?.focus();
+                                        }, 100);
+                                      } else {
+                                        // Standard mode: Auto-open calendar
+                                        setTimeout(() => {
+                                          setHeaderDateOpen(true);
+                                          setShowGuestsDropdown(false);
+                                        }, 100);
+                                      }
+                                    }}
+                                    className="w-full text-left px-4 py-3 hover:bg-pink-50 active:bg-pink-50 transition-colors flex items-start gap-3"
+                                  >
+                                    <FiMapPin className="w-5 h-5 text-[#E41D57] mt-0.5 flex-shrink-0" />
+                                    <div className="flex flex-col">
+                                      <span className="text-sm font-semibold text-gray-900">{loc.city}</span>
+                                      <span className="text-xs text-gray-500">{[loc.state, loc.country].filter(Boolean).join(', ')}</span>
+                                    </div>
+                                  </button>
+                                );
+                              })
+                          ) : (
+                            <div className="px-4 py-3 text-sm text-gray-500">No locations found</div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  </button>
-                );
-              })
-          ) : (
-            <div className="px-4 py-3 text-sm text-gray-500">No locations found</div>
-          )}
-        </div>
-      )}
-    </div>
 
-    {effectiveHeaderSection === 'location' && hasLocation && (
-      <button
-        type="button"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setIsHeaderSearchActive(true);
-          setSearchData((prev) => ({ ...prev, location: '' }));
-          persistSearchState({
-            location: '',
-            locationTo: searchData.locationTo, // Added for 'To' field
-            checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
-            checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
-            guests: searchData.guests || 1,
-            flightClass: searchData.flightClass // Added for Flight Class
-          });
-          setShowHeaderLocationSuggestions(true);
-          setHeaderDateOpen(false);
-          setShowGuestsDropdown(false);
-          if (headerLocationInputRef.current) {
-            headerLocationInputRef.current.focus({ preventScroll: true });
-          }
-        }}
-        className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 flex items-center justify-center"
-        aria-label="Clear location"
-      >
-        <FiX className="w-4 h-4" />
-      </button>
-    )}
+                    {effectiveHeaderSection === 'location' && hasLocation && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setIsHeaderSearchActive(true);
+                          setSearchData((prev) => ({ ...prev, location: '' }));
+                          persistSearchState({
+                            location: '',
+                            locationTo: searchData.locationTo, // Added for 'To' field
+                            checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
+                            checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
+                            guests: searchData.guests || 1,
+                            flightClass: searchData.flightClass // Added for Flight Class
+                          });
+                          setShowHeaderLocationSuggestions(true);
+                          setHeaderDateOpen(false);
+                          setShowGuestsDropdown(false);
+                          if (headerLocationInputRef.current) {
+                            headerLocationInputRef.current.focus({ preventScroll: true });
+                          }
+                        }}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 flex items-center justify-center"
+                        aria-label="Clear location"
+                      >
+                        <FiX className="w-4 h-4" />
+                      </button>
+                    )}
 
-  </div>
+                  </div>
 
-  {/* TO Field (Flight Only) */ }
-  {
-    headerActiveType === 'flight' && (
-      <>
-        <div className={`h-8 w-px bg-gray-200 transition-opacity duration-300 ease-out`} />
-        <div
-          ref={headerToRef}
-          className="flex items-center flex-1 min-w-0 h-full px-7 py-3 transition-colors duration-300 ease-out relative rounded-full cursor-pointer z-10"
-          onClick={() => {
-            setIsHeaderSearchActive(true);
-            setShowHeaderToSuggestions(true);
-            setShowHeaderLocationSuggestions(false);
-            setHeaderDateOpen(false);
-            setShowGuestsDropdown(false);
-          }}
-          onMouseEnter={() => setHeaderHoverSection('to')}
-          onMouseLeave={() => setHeaderHoverSection(null)}
-        >
-          <div className="w-full">
-            <div className="text-xs font-semibold text-gray-900">To</div>
-            <input
-              type="text"
-              value={searchData.locationTo || ''}
-              onChange={(e) => setSearchData(prev => ({ ...prev, locationTo: e.target.value }))}
-              placeholder="Search destinations"
-              ref={headerToInputRef}
-              onFocus={() => {
-                setIsHeaderSearchActive(true);
-                setShowHeaderToSuggestions(true);
-                setShowHeaderLocationSuggestions(false);
-                setHeaderDateOpen(false);
-                setShowGuestsDropdown(false);
-              }}
-              className={`w-full bg-transparent text-sm text-gray-900 placeholder-gray-400 focus:outline-none cursor-pointer`}
-            />
-            {showHeaderToSuggestions && (
-              <div
-                ref={headerToSuggestionsRef}
-                className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-xl border border-gray-100 max-h-96 overflow-y-auto z-[9999]"
-              >
-                <div className="px-4 pt-4 pb-2">
-                  <h3 className="text-sm font-semibold text-gray-900">Suggested</h3>
-                </div>
-                {locationSuggestionsData?.filter(loc => {
-                  const query = (searchData.locationTo || '').toLowerCase();
-                  const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ').toLowerCase();
-                  return !query || label.includes(query);
-                }).slice(0, 8).map((loc, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const newLocation = loc.city || [loc.city, loc.state, loc.country].filter(Boolean).join(', ');
-                      setSearchData(prev => ({ ...prev, locationTo: newLocation }));
-                      setShowHeaderToSuggestions(false);
-                      setTimeout(() => setHeaderDateOpen(true), 100);
-                    }}
-                    className="w-full text-left px-4 py-3 hover:bg-pink-50 active:bg-pink-50 transition-colors flex items-start gap-3"
-                  >
-                    <FiMapPin className="w-5 h-5 text-[#E41D57] mt-0.5" />
-                    <div className="flex flex-col">
-                      <span className="text-sm font-semibold text-gray-900">{loc.city}</span>
-                      <span className="text-xs text-gray-500">{[loc.state, loc.country].filter(Boolean).join(', ')}</span>
-                    </div>
-                  </button>
-                )) || <div className="px-4 py-3 text-sm text-gray-500">No locations found</div>}
-              </div>
-            )}
-          </div>
-          {/* Clear Button */}
-          {searchData.locationTo && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setSearchData(prev => ({ ...prev, locationTo: '' }));
-                headerToInputRef.current?.focus();
-              }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 flex items-center justify-center"
-            >
-              <FiX className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      </>
-    )
-  }
+                  {/* TO Field (Flight Only) */}
+                  {
+                    headerActiveType === 'flight' && (
+                      <>
+                        <div className={`h-8 w-px bg-gray-200 transition-opacity duration-300 ease-out`} />
+                        <div
+                          ref={headerToRef}
+                          className="flex items-center flex-1 min-w-0 h-full px-7 py-3 transition-colors duration-300 ease-out relative rounded-full cursor-pointer z-10"
+                          onClick={() => {
+                            setIsHeaderSearchActive(true);
+                            setShowHeaderToSuggestions(true);
+                            setShowHeaderLocationSuggestions(false);
+                            setHeaderDateOpen(false);
+                            setShowGuestsDropdown(false);
+                          }}
+                          onMouseEnter={() => setHeaderHoverSection('to')}
+                          onMouseLeave={() => setHeaderHoverSection(null)}
+                        >
+                          <div className="w-full">
+                            <div className="text-xs font-semibold text-gray-900">To</div>
+                            <input
+                              type="text"
+                              value={searchData.locationTo || ''}
+                              onChange={(e) => setSearchData(prev => ({ ...prev, locationTo: e.target.value }))}
+                              placeholder="Search destinations"
+                              ref={headerToInputRef}
+                              onFocus={() => {
+                                setIsHeaderSearchActive(true);
+                                setShowHeaderToSuggestions(true);
+                                setShowHeaderLocationSuggestions(false);
+                                setHeaderDateOpen(false);
+                                setShowGuestsDropdown(false);
+                              }}
+                              className={`w-full bg-transparent text-sm text-gray-900 placeholder-gray-400 focus:outline-none cursor-pointer`}
+                            />
+                            {showHeaderToSuggestions && (
+                              <div
+                                ref={headerToSuggestionsRef}
+                                className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-xl border border-gray-100 max-h-96 overflow-y-auto z-[9999]"
+                              >
+                                <div className="px-4 pt-4 pb-2">
+                                  <h3 className="text-sm font-semibold text-gray-900">Suggested</h3>
+                                </div>
+                                {locationSuggestionsData?.filter(loc => {
+                                  const query = (searchData.locationTo || '').toLowerCase();
+                                  const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ').toLowerCase();
+                                  return !query || label.includes(query);
+                                }).slice(0, 8).map((loc, idx) => (
+                                  <button
+                                    key={idx}
+                                    type="button"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const newLocation = loc.city || [loc.city, loc.state, loc.country].filter(Boolean).join(', ');
+                                      setSearchData(prev => ({ ...prev, locationTo: newLocation }));
+                                      setShowHeaderToSuggestions(false);
+                                      setTimeout(() => setHeaderDateOpen(true), 100);
+                                    }}
+                                    className="w-full text-left px-4 py-3 hover:bg-pink-50 active:bg-pink-50 transition-colors flex items-start gap-3"
+                                  >
+                                    <FiMapPin className="w-5 h-5 text-[#E41D57] mt-0.5" />
+                                    <div className="flex flex-col">
+                                      <span className="text-sm font-semibold text-gray-900">{loc.city}</span>
+                                      <span className="text-xs text-gray-500">{[loc.state, loc.country].filter(Boolean).join(', ')}</span>
+                                    </div>
+                                  </button>
+                                )) || <div className="px-4 py-3 text-sm text-gray-500">No locations found</div>}
+                              </div>
+                            )}
+                          </div>
+                          {/* Clear Button */}
+                          {searchData.locationTo && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSearchData(prev => ({ ...prev, locationTo: '' }));
+                                headerToInputRef.current?.focus();
+                              }}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 flex items-center justify-center"
+                            >
+                              <FiX className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </>
+                    )
+                  }
 
                   <div className={`h-8 w-px bg-gray-200 transition-opacity duration-300 ease-out`} />
 
@@ -1698,39 +1698,38 @@ const Navbar = () => {
                         {headerActiveType === 'flight' ? (
                           <>
                             {/* Flight specific travelers */}
+                            {/* Flight specific travelers */}
                             {[
-                          {/* Flight specific travelers */}
-                          {[
-                            { key: 'adults', label: 'Adults', subtitle: '12 years & above' },
-                            { key: 'children', label: 'Children', subtitle: '5 to 11 years' },
-                            { key: 'kids', label: 'Kids', subtitle: '2 to 4 years' },
-                            { key: 'infants', label: 'Infants', subtitle: 'Below 2 years' }
-                          ].map((item) => (
-                            <div key={item.key} className="flex items-center justify-between">
-                              <div>
-                                <div className="text-base font-semibold text-gray-900">{item.label}</div>
-                                <div className="text-sm text-gray-500">{item.subtitle}</div>
+                              { key: 'adults', label: 'Adults', subtitle: '12 years & above' },
+                              { key: 'children', label: 'Children', subtitle: '5 to 11 years' },
+                              { key: 'kids', label: 'Kids', subtitle: '2 to 4 years' },
+                              { key: 'infants', label: 'Infants', subtitle: 'Below 2 years' }
+                            ].map((item) => (
+                              <div key={item.key} className="flex items-center justify-between">
+                                <div>
+                                  <div className="text-base font-semibold text-gray-900">{item.label}</div>
+                                  <div className="text-sm text-gray-500">{item.subtitle}</div>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                  <button
+                                    type="button"
+                                    onClick={() => updateGuests(item.key, -1)}
+                                    className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${guestCounts[item.key] > (item.key === 'adults' ? 1 : 0) ? 'bg-[#10B981] text-white hover:bg-[#059669]' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+                                    disabled={guestCounts[item.key] <= (item.key === 'adults' ? 1 : 0)}
+                                  >
+                                    <FiMinus className="w-4 h-4" />
+                                  </button>
+                                  <span className="min-w-[24px] text-center text-base font-medium text-gray-900">{guestCounts[item.key]}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => updateGuests(item.key, 1)}
+                                    className="w-9 h-9 rounded-full bg-[#10B981] text-white hover:bg-[#059669] flex items-center justify-center transition-all"
+                                  >
+                                    <FiPlus className="w-4 h-4" />
+                                  </button>
+                                </div>
                               </div>
-                              <div className="flex items-center gap-4">
-                                <button
-                                  type="button"
-                                  onClick={() => updateGuests(item.key, -1)}
-                                  className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${guestCounts[item.key] > (item.key === 'adults' ? 1 : 0) ? 'bg-[#10B981] text-white hover:bg-[#059669]' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
-                                  disabled={guestCounts[item.key] <= (item.key === 'adults' ? 1 : 0)}
-                                >
-                                  <FiMinus className="w-4 h-4" />
-                                </button>
-                                <span className="min-w-[24px] text-center text-base font-medium text-gray-900">{guestCounts[item.key]}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => updateGuests(item.key, 1)}
-                                  className="w-9 h-9 rounded-full bg-[#10B981] text-white hover:bg-[#059669] flex items-center justify-center transition-all"
-                                >
-                                  <FiPlus className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
+                            ))}
 
                             <div className="border-t border-gray-200 my-4 pt-4">
                               <div className="text-base font-semibold text-gray-900 mb-3">Cabin Class</div>
@@ -1792,89 +1791,89 @@ const Navbar = () => {
           </div >
         )}
 
-{/* Mobile Navigation */ }
-{
-  isMenuOpen && (
-    <div className="md:hidden">
-      <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 bg-white border-t">
-        {/* Public Navigation */}
-        {navLinks.map((link) => (
-          <Link
-            key={link.name}
-            to={link.path}
-            className={`block px-3 py-2 text-base font-medium transition-colors duration-200 ${isActive(link.path)
-              ? 'text-primary-600 bg-primary-50'
-              : 'text-gray-700 hover:text-primary-600 hover:bg-gray-50'
-              }`}
-            onClick={() => setIsMenuOpen(false)}
-          >
-            {link.name}
-          </Link>
-        ))}
+        {/* Mobile Navigation */}
+        {
+          isMenuOpen && (
+            <div className="md:hidden">
+              <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 bg-white border-t">
+                {/* Public Navigation */}
+                {navLinks.map((link) => (
+                  <Link
+                    key={link.name}
+                    to={link.path}
+                    className={`block px-3 py-2 text-base font-medium transition-colors duration-200 ${isActive(link.path)
+                      ? 'text-primary-600 bg-primary-50'
+                      : 'text-gray-700 hover:text-primary-600 hover:bg-gray-50'
+                      }`}
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    {link.name}
+                  </Link>
+                ))}
 
-        {/* User Role-based menu for mobile */}
-        {isAuthenticated && (
-          <>
-            <div className="border-t border-gray-200 my-2"></div>
-            <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              {isAdmin() ? 'Admin Panel' : isPropertyOwner() ? 'Property Owner' : 'My Account'}
-            </div>
-            {getRoleBasedMenu().map((item) => (
-              <Link
-                key={item.name}
-                to={item.path}
-                className={`block px-3 py-2 text-base font-medium transition-colors duration-200 ${isActive(item.path)
-                  ? 'text-primary-600 bg-primary-50'
-                  : 'text-gray-700 hover:text-primary-600 hover:bg-gray-50'
-                  }`}
-                onClick={() => setIsMenuOpen(false)}
-              >
-                {item.name}
-              </Link>
-            ))}
-          </>
-        )}
+                {/* User Role-based menu for mobile */}
+                {isAuthenticated && (
+                  <>
+                    <div className="border-t border-gray-200 my-2"></div>
+                    <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      {isAdmin() ? 'Admin Panel' : isPropertyOwner() ? 'Property Owner' : 'My Account'}
+                    </div>
+                    {getRoleBasedMenu().map((item) => (
+                      <Link
+                        key={item.name}
+                        to={item.path}
+                        className={`block px-3 py-2 text-base font-medium transition-colors duration-200 ${isActive(item.path)
+                          ? 'text-primary-600 bg-primary-50'
+                          : 'text-gray-700 hover:text-primary-600 hover:bg-gray-50'
+                          }`}
+                        onClick={() => setIsMenuOpen(false)}
+                      >
+                        {item.name}
+                      </Link>
+                    ))}
+                  </>
+                )}
 
-        {/* Mobile Auth Section */}
-        <div className="pt-4 border-t border-gray-200">
-          {isAuthenticated ? (
-            <div className="space-y-2">
-              <div className="px-3 py-2 text-sm text-gray-500">
-                {user?.email}
+                {/* Mobile Auth Section */}
+                <div className="pt-4 border-t border-gray-200">
+                  {isAuthenticated ? (
+                    <div className="space-y-2">
+                      <div className="px-3 py-2 text-sm text-gray-500">
+                        {user?.email}
+                      </div>
+                      <button
+                        onClick={handleLogout}
+                        className="flex items-center w-full px-3 py-2 text-base font-medium text-gray-700 hover:text-primary-600 hover:bg-gray-50"
+                      >
+                        <FiLogOut className="w-4 h-4 mr-2" />
+                        Logout
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Link
+                        to="/login"
+                        className="block px-3 py-2 text-base font-medium text-gray-700 hover:text-primary-600 hover:bg-gray-50"
+                        onClick={() => setIsMenuOpen(false)}
+                      >
+                        Login
+                      </Link>
+                      {settings?.registration_enabled !== false && (
+                        <Link
+                          to="/register"
+                          className="block px-3 py-2 text-base font-medium bg-primary-600 text-white rounded-md hover:bg-primary-700"
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          Sign Up
+                        </Link>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-              <button
-                onClick={handleLogout}
-                className="flex items-center w-full px-3 py-2 text-base font-medium text-gray-700 hover:text-primary-600 hover:bg-gray-50"
-              >
-                <FiLogOut className="w-4 h-4 mr-2" />
-                Logout
-              </button>
             </div>
-          ) : (
-            <div className="space-y-2">
-              <Link
-                to="/login"
-                className="block px-3 py-2 text-base font-medium text-gray-700 hover:text-primary-600 hover:bg-gray-50"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                Login
-              </Link>
-              {settings?.registration_enabled !== false && (
-                <Link
-                  to="/register"
-                  className="block px-3 py-2 text-base font-medium bg-primary-600 text-white rounded-md hover:bg-primary-700"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Sign Up
-                </Link>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
+          )
+        }
       </div >
     </nav >
   );
