@@ -170,7 +170,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
     // STYLING CONSTANTS
     const pillContainerClass = "w-full bg-white rounded-full shadow-[0_6px_16px_rgba(0,0,0,0.08)] border border-gray-200 flex items-center pr-2 p-1 gap-0.5 min-h-[66px] relative z-[500] overflow-visible";
     const pillSectionBase = "group relative flex flex-1 flex-col justify-center px-6 py-3 cursor-pointer rounded-full transition-colors hover:bg-[#EBEBEB]";
-    const labelClass = "text-[10px] font-bold text-black uppercase tracking-wider mb-0.5";
+    const labelClass = "text-[10px] font-bold text-[#E41D57] uppercase tracking-wider mb-0.5";
     const dividerClass = "w-px h-8 bg-gray-200 flex-shrink-0";
 
     return (
@@ -276,7 +276,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                                         setReturnOpen(false);
                                     }}
                                 >
-                                    <div className="text-[10px] font-bold text-black uppercase tracking-wider mb-0.5">Depart</div>
+                                    <div className="text-[10px] font-bold text-[#E41D57] uppercase tracking-wider mb-0.5">Depart</div>
                                     <div className={`text-[13px] font-bold leading-tight ${departDate && !isNaN(departDate.getTime()) ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
                                         {departDate && !isNaN(departDate.getTime()) ? format(departDate, "dd MMM") : 'Select Date'}
                                     </div>
@@ -333,7 +333,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                                         }
                                     }}
                                 >
-                                    <div className="text-[10px] font-bold text-black uppercase tracking-wider mb-0.5">Return</div>
+                                    <div className="text-[10px] font-bold text-[#E41D57] uppercase tracking-wider mb-0.5">Return</div>
                                     {tripType === 'oneWay' ? (
                                         <div className="text-[13px] text-gray-400 font-normal leading-tight hover:text-[#E41D57]">Add return</div>
                                     ) : (
@@ -471,7 +471,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                                             setMultiCityDatesOpen(prev => ({ ...prev, [idx]: true }));
                                         }}
                                     >
-                                        <div className="text-[10px] font-bold text-black uppercase tracking-wider mb-0.5">Depart</div>
+                                        <div className="text-[10px] font-bold text-[#E41D57] uppercase tracking-wider mb-0.5">Depart</div>
                                         <div className={`text-[13px] font-bold leading-tight ${segment.depart ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
                                             {segment.depart ? format(segment.depart, "dd MMM") : 'Select Date'}
                                         </div>

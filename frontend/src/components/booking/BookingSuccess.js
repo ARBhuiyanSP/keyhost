@@ -1,74 +1,176 @@
-import React from 'react';
-import { useLocation, Link, useNavigate } from 'react-router-dom';
+
+import React, { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { FaCheckCircle, FaPlane, FaFilePdf, FaHome, FaUser, FaInfoCircle } from 'react-icons/fa';
 
 const BookingSuccess = () => {
     const location = useLocation();
     const navigate = useNavigate();
-    const bookingResponse = location.state?.booking;
+    const [booking, setBooking] = useState(null);
 
-    if (!bookingResponse) {
+    useEffect(() => {
+        if (location.state && location.state.booking) {
+            setBooking(location.state.booking);
+        } else {
+            // Fallback or redirect if no state
+            // navigate('/'); 
+        }
+    }, [location, navigate]);
+
+    if (!booking) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen bg-[#f3f4f6]">
-                <div className="bg-white p-8 rounded-xl shadow-sm md:w-96 text-center border border-gray-100">
-                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 text-gray-400 text-2xl">?</div>
-                    <h2 className="text-xl font-bold text-[#1E2049] mb-2">No Booking Found</h2>
-                    <p className="text-gray-500 mb-6 text-sm">We couldn't find the booking details you were looking for.</p>
-                    <button onClick={() => navigate('/')} className="w-full bg-[#1E2049] text-white py-3 rounded-lg font-bold hover:bg-[#151736]">Go Home</button>
-                </div>
+            <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#E41D57] mb-4"></div>
+                <p className="text-gray-500">Loading booking details...</p>
+                <button onClick={() => navigate('/')} className="mt-4 text-[#E41D57] underline">Go Home</button>
             </div>
         );
     }
 
+    const { booking_details, booking_id } = booking;
+    // The API now returns `customBookingResponse` as `booking_details`.
+    // We can map these fields directly.
+
+    const {
+        leadPassenger,
+        leadPassengerEmail,
+        leadPassengerMobile,
+        bookingId: pnr,
+        totalAmount,
+        currency,
+        firstFlightDateTime,
+        airlineName,
+        routeSummary,
+        passengerSummary,
+        ticketingLimit
+    } = booking_details || {};
+
     return (
-        <div className="bg-[#f3f4f6] min-h-screen py-10 flex items-center justify-center">
-            <div className="container px-4 max-w-lg">
-                <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
-                    {/* Header */}
-                    <div className="bg-green-500 p-8 text-center relative overflow-hidden">
-                        <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
-                        <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg animate-bounce">
-                            <svg className="w-10 h-10 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                        </div>
-                        <h1 className="text-3xl font-bold text-white mb-2">Booking Confirmed!</h1>
-                        <p className="text-green-100">Your trip is all set.</p>
+        <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8 font-sans">
+            <div className="max-w-4xl mx-auto space-y-8">
+
+                {/* Success Header */}
+                <div className="bg-white rounded-2xl shadow-sm border border-green-100 p-8 text-center relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-2 bg-green-500"></div>
+                    <div className="mx-auto flex items-center justify-center h-20 w-20 rounded-full bg-green-100 mb-6">
+                        <FaCheckCircle className="h-10 w-10 text-green-600" />
                     </div>
-
-                    {/* Content */}
-                    <div className="p-8 space-y-6">
-
-                        <div className="bg-gray-50 rounded-xl p-5 border border-gray-100 space-y-3">
-                            <div className="flex justify-between items-center pb-3 border-b border-dashed border-gray-200">
-                                <span className="text-sm text-gray-500 font-medium">Booking ID</span>
-                                <span className="font-mono text-xl font-bold text-[#1E2049]">{bookingResponse.booking_id}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-sm text-gray-500 font-medium">Status</span>
-                                <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold uppercase tracking-wide">Confirmed</span>
-                            </div>
-                        </div>
-
-                        <div className="text-center space-y-3">
-                            <p className="text-sm text-gray-500">
-                                A confirmation email has been sent to your email address.
-                            </p>
-                        </div>
-
-                        <div className="space-y-3 pt-2">
-                            <Link
-                                to="/"
-                                className="block w-full bg-[#1E2049] text-white text-center py-4 rounded-xl font-bold shadow-lg shadow-blue-900/10 hover:bg-[#151736] transition-transform hover:-translate-y-0.5"
-                            >
-                                Back to Home
-                            </Link>
-                        </div>
-
-                    </div>
-
-                    {/* Footer Decoration */}
-                    <div className="bg-gray-50 p-4 text-center border-t border-gray-100">
-                        <p className="text-xs text-gray-400">Need help? Contact support</p>
+                    <h1 className="text-3xl font-extrabold text-gray-900 mb-2">Booking Confirmed!</h1>
+                    <p className="text-gray-500 max-w-lg mx-auto">
+                        Your flight has been successfully booked.
+                        {leadPassengerEmail && <span> A confirmation email has been sent to <strong>{leadPassengerEmail}</strong>.</span>}
+                    </p>
+                    <div className="mt-6 inline-flex items-center px-4 py-2 rounded-full bg-gray-100 text-gray-800 font-mono text-sm border border-gray-200">
+                        <span className="text-gray-500 mr-2">Booking Ref (PNR):</span>
+                        <span className="font-bold tracking-wider text-xl text-[#E41D57]">{pnr || booking_id}</span>
                     </div>
                 </div>
+
+                {/* Main Content Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+
+                    {/* Left Column: Flight Info */}
+                    <div className="md:col-span-2 space-y-6">
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                            <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                                <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                                    <FaPlane className="text-[#E41D57]" /> Flight Summary
+                                </h3>
+                            </div>
+                            <div className="p-6 space-y-4">
+                                <div className="flex justify-between border-b pb-2">
+                                    <span className="text-gray-600">Airline</span>
+                                    <span className="font-medium text-gray-900">{airlineName}</span>
+                                </div>
+                                <div className="flex justify-between border-b pb-2">
+                                    <span className="text-gray-600">Route</span>
+                                    <span className="font-medium text-gray-900">{routeSummary}</span>
+                                </div>
+                                <div className="flex justify-between border-b pb-2">
+                                    <span className="text-gray-600">Date & Time</span>
+                                    <span className="font-medium text-gray-900">{firstFlightDateTime}</span>
+                                </div>
+                                <div className="flex justify-between border-b pb-2">
+                                    <span className="text-gray-600">Passengers</span>
+                                    <span className="font-medium text-gray-900">{passengerSummary}</span>
+                                </div>
+                                {ticketingLimit && (
+                                    <div className="flex justify-between border-b pb-2">
+                                        <span className="text-red-600 font-semibold">Ticketing Time Limit</span>
+                                        <span className="font-bold text-red-600">{ticketingLimit}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Passenger Details */}
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                            <div className="bg-gray-50 px-6 py-4 border-b border-gray-200">
+                                <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                                    <FaUser className="text-[#E41D57]" /> Lead Passenger
+                                </h3>
+                            </div>
+                            <div className="p-6">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs text-gray-500">Name</label>
+                                        <div className="font-medium">{leadPassenger}</div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-500">Email</label>
+                                        <div className="font-medium">{leadPassengerEmail}</div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-500">Mobile</label>
+                                        <div className="font-medium">{leadPassengerMobile}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Right Column: Actions & Summary */}
+                    <div className="space-y-6">
+
+                        {/* Fare Summary */}
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <h3 className="font-bold text-gray-800 mb-4">Total Fare</h3>
+                            <div className="flex justify-between items-center">
+                                <span className="text-gray-600 text-sm">Total Amount</span>
+                                <span className="text-2xl font-bold text-[#E41D57]">{currency} {totalAmount}</span>
+                            </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4">
+                            <h3 className="font-bold text-gray-800 mb-2">Actions</h3>
+                            <button
+                                onClick={() => window.location.href = `http://127.0.0.1:8000/react/ticket-issue?booking_id=${pnr || booking_id}`}
+                                className="w-full flex justify-center items-center gap-2 bg-[#E41D57] hover:bg-[#c01b4b] text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-md transform hover:-translate-y-0.5"
+                            >
+                                <FaFilePdf /> View / Issue Ticket
+                            </button>
+
+                            <button
+                                onClick={() => navigate('/')}
+                                className="w-full flex justify-center items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded-lg transition-colors border border-gray-300"
+                            >
+                                <FaHome /> Return Home
+                            </button>
+                        </div>
+
+                        <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+                            <div className="flex gap-3">
+                                <FaInfoCircle className="text-blue-500 shrink-0 mt-0.5" />
+                                <p className="text-xs text-blue-700">
+                                    Please issue your ticket before the time limit to avoid cancellation.
+                                </p>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
             </div>
         </div>
     );
