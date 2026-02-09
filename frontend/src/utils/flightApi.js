@@ -9,6 +9,27 @@ const flightApi = axios.create({
     },
 });
 
+// Request interceptor to add auth token
+flightApi.interceptors.request.use(
+    (config) => {
+        const token = localStorage.getItem('auth-storage');
+        if (token) {
+            try {
+                const authData = JSON.parse(token);
+                if (authData.state?.token) {
+                    config.headers.Authorization = `Bearer ${authData.state.token}`;
+                }
+            } catch (error) {
+                console.error('Error parsing auth token for flightApi:', error);
+            }
+        }
+        return config;
+    },
+    (error) => {
+        return Promise.reject(error);
+    }
+);
+
 // Aerotake Search Hub (New)
 export const searchSabre = async (params) => {
     try {

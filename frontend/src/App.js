@@ -21,6 +21,7 @@ import FlightResultsPage from './pages/FlightResultsPage';
 import CarBooking from './pages/CarBooking';
 import FlightBooking from './components/booking/FlightBooking';
 import BookingSuccess from './components/booking/BookingSuccess';
+import TicketIssuePage from './components/booking/TicketIssuePage';
 import Help from './pages/Help';
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
@@ -123,6 +124,7 @@ function App() {
           <Route path="/flight/results" element={<FlightResultsPage />} />
           <Route path="/booking" element={<FlightBooking />} />
           <Route path="/booking-success" element={<BookingSuccess />} />
+          <Route path="/ticket-issue" element={<TicketIssuePage />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />

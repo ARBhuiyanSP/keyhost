@@ -125,10 +125,11 @@ const FlightBooking = () => {
         let departureError = '';
         const pType = (pax.type || '').toLowerCase();
 
-        if (pType.includes('adult') && dep.totalYears < 12) departureError = 'Adult must be 12 years or above at departure';
-        else if (pType.includes('kid') && !(dep.totalYears > 2 && dep.totalYears < 5)) departureError = `Kid must be 2 to below 5 years at departure`;
-        else if (pType.includes('child') && !(dep.totalYears > 5 && dep.totalYears < 12)) departureError = `Child must be 5 to below 12 years at departure`;
-        else if (pType.includes('infant') && dep.totalYears >= 2) departureError = `Infant must be below 24 months at departure`;
+        // Exact match or prefix match logic consistent with handleSubmit
+        if ((pType === 'adult' || pType === 'adt') && dep.totalYears < 12) departureError = 'Adult must be 12 years or above at departure';
+        else if ((pType === 'kid' || pType === 'c03') && !(dep.totalYears >= 2 && dep.totalYears < 5)) departureError = `Kid must be 2 to below 5 years at departure`;
+        else if ((pType === 'children' || pType.startsWith('c')) && !(dep.totalYears >= 5 && dep.totalYears < 12) && pType !== 'c03' && pType !== 'kid') departureError = `Child must be 5 to below 12 years at departure`;
+        else if ((pType === 'infant' || pType.startsWith('i')) && dep.totalYears >= 2) departureError = `Infant must be below 24 months at departure`;
 
         setAgeValidation(prev => ({
             ...prev,
@@ -166,8 +167,19 @@ const FlightBooking = () => {
         setValidationErrors({});
 
         const errors = {};
-        if (!contact.mobile) errors['contact.mobile'] = ['Mobile is required'];
-        if (!contact.email) errors['contact.email'] = ['Email is required'];
+        const errorIndices = new Set(); // Track indices to auto-expand
+
+        if (!contact.mobile) {
+            errors['contact.mobile'] = ['Mobile is required'];
+        } else if (!/^[0-9]{7,15}$/.test(contact.mobile)) {
+            errors['contact.mobile'] = ['Mobile must be a valid number (7-15 digits)'];
+        }
+
+        if (!contact.email) {
+            errors['contact.email'] = ['Email is required'];
+        } else if (!/\S+@\S+\.\S+/.test(contact.email)) {
+            errors['contact.email'] = ['Email must be valid'];
+        }
 
         passengers.forEach((pax, index) => {
             if (!pax.first_name) errors[`passengers.${index}.first_name`] = ['First Name is required.'];
@@ -178,6 +190,7 @@ const FlightBooking = () => {
             if (!pax.passport_number) errors[`passengers.${index}.passport_number`] = ['Passport Number is required.'];
             if (!pax.passport_country) errors[`passengers.${index}.passport_country`] = ['Passport Country is required.'];
 
+            // Passport Expiry Validation
             if (!pax.passport_expiry) {
                 errors[`passengers.${index}.passport_expiry`] = ['Passport Expiry is required.'];
             } else {
@@ -191,6 +204,51 @@ const FlightBooking = () => {
                     }
                 }
             }
+
+            // --- Age Validation (Strictly Block Submit) ---
+            const pType = pax.type ? pax.type.toLowerCase() : '';
+            if (pax.dob && pType) {
+                const birthDate = new Date(pax.dob);
+                const now = new Date();
+
+                let departureDateStr = null;
+                if (flight && flight.legs) {
+                    const firstLegKey = Object.keys(flight.legs)[0];
+                    departureDateStr = flight.legs[firstLegKey].departure.date;
+                }
+                const flightDate = departureDateStr ? new Date(departureDateStr) : new Date();
+
+                const cur = calculateExactAge(birthDate, now);
+                const dep = calculateExactAge(birthDate, flightDate);
+
+                // Validate based on CURRENT age (or Departure age as per business rule - assume Check both or just Departure?)
+                // Legacy / PnrShow matches:
+                // Adult: 12+
+                // Kid: 2-5
+                // Child: 5-12
+                // Infant: < 2 (24 months)
+
+                // Using Cur Age for consistency with PnrShowPage logic ported earlier
+                if ((pType === 'adult' || pType === 'adt') && cur.totalYears < 12) {
+                    errors[`passengers.${index}.dob`] = ['Adult must be 12 years or above'];
+                    errorIndices.add(index);
+                } else if ((pType === 'kid' || pType === 'c03') && !(cur.totalYears > 2 && cur.totalYears < 5)) {
+                    errors[`passengers.${index}.dob`] = ['Kid must be 2 to below 5 years'];
+                    errorIndices.add(index);
+                } else if ((pType === 'children' || pType.startsWith('c')) && !(cur.totalYears > 5 && cur.totalYears < 12) && pType !== 'c03' && pType !== 'kid') {
+                    errors[`passengers.${index}.dob`] = ['Child must be 5 to below 12 years'];
+                    errorIndices.add(index);
+                } else if ((pType === 'infant' || pType.startsWith('i')) && cur.totalYears >= 2) {
+                    errors[`passengers.${index}.dob`] = ['Infant must be below 24 months'];
+                    errorIndices.add(index);
+                }
+
+                // Also check Departure Age to be safe? (Optional but recommended)
+                if ((pType === 'infant' || pType.startsWith('i')) && dep.totalYears >= 2) {
+                    errors[`passengers.${index}.dob`] = ['Infant must be below 24 months at departure'];
+                    errorIndices.add(index);
+                }
+            }
         });
 
         if (Object.keys(errors).length > 0) {
@@ -198,7 +256,6 @@ const FlightBooking = () => {
             setSubmitting(false);
 
             // Auto-expand sections with errors
-            const errorIndices = new Set();
             Object.keys(errors).forEach(key => {
                 if (key.startsWith('passengers.')) {
                     const parts = key.split('.');
@@ -217,12 +274,53 @@ const FlightBooking = () => {
             }
 
             window.scrollTo({ top: 0, behavior: 'smooth' });
+            return; // STOP SUBMISSION
+        }
+
+        // --- CONSTRUCT PAYLOAD (Dynamic Calculation) ---
+        // Identify Source (Sabre vs Amadeus) check
+        const isAmadeus = flight.source === 'Amadeus';
+        if (isAmadeus) {
+            alert("Amadeus booking not implemented in this demo.");
+            setSubmitting(false);
             return;
         }
 
+        const calculatedPassengers = passengers.map((p, i) => {
+            const birthDate = new Date(p.dob);
+            const now = new Date(); // Use current date for age calculation for Type? Or Flight Date?
+            // Legacy blade uses current age for Type code generation mostly.
+            const cur = calculateExactAge(birthDate, now);
+
+            let calculatedType = p.code || p.type;
+            let calculatedAge = Math.floor(cur.totalYears);
+            const pType = p.type ? p.type.toLowerCase() : '';
+
+            if (pType === 'adult' || pType === 'adt') {
+                calculatedType = 'ADT';
+                calculatedAge = Math.floor(cur.totalYears);
+            } else if (pType === 'children' || pType === 'kid' || pType.startsWith('c')) {
+                // C + two digit age
+                calculatedType = 'C' + Math.floor(cur.totalYears).toString().padStart(2, '0');
+                calculatedAge = Math.floor(cur.totalYears);
+            } else if (pType === 'infant' || pType === 'inf' || pType.startsWith('i')) {
+                // I + two digit MONTHS
+                const totalMonths = Math.floor(cur.totalYears * 12);
+                calculatedType = 'I' + totalMonths.toString().padStart(2, '0');
+                calculatedAge = totalMonths;
+            }
+
+            return {
+                ...p,
+                type: calculatedType, // Send the calculated Sabre Code (e.g. C07, I08)
+                NameNumber: `${i + 1}.1`,
+                age: calculatedAge.toString()
+            };
+        });
+
         const payload = {
             flightData: flight,
-            passengers: passengers,
+            passengers: calculatedPassengers, // Send processed passengers
             contact: contact,
             lead_passenger_country_code: leadPassenger.country_code,
             lead_passenger_mobile: leadPassenger.mobile,
