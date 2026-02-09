@@ -31,7 +31,7 @@ const CarBooking = () => {
       if (searchData.pickupDate) params.append('pickup_date', searchData.pickupDate.toISOString().split('T')[0]);
       if (filters.carType) params.append('car_type', filters.carType);
       if (filters.priceRange) params.append('price_range', filters.priceRange);
-      
+
       return api.get(`/cars?${params.toString()}`);
     },
     {
@@ -249,7 +249,7 @@ const CarBooking = () => {
                     BDT {car.hourly_rate}/hour
                   </div>
                 </div>
-                
+
                 <div className="space-y-2">
                   <h3 className="text-xl font-semibold text-gray-900">
                     {car.brand} {car.model}

@@ -258,6 +258,22 @@ const FlightBooking = () => {
     return (
         <div className="bg-white min-h-screen py-8 font-sans text-gray-800">
             <div className="container mx-auto px-4 max-w-7xl">
+                {/* Back Button */}
+                <button
+                    onClick={() => navigate(-1)}
+                    className="flex items-center gap-2 mb-6 text-gray-600 hover:text-[#E41D57] transition-colors group"
+                >
+                    <svg
+                        className="w-5 h-5 transform group-hover:-translate-x-1 transition-transform"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                    >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    <span className="font-semibold">Back</span>
+                </button>
+
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                     {/* Main Content (Left) */}

@@ -118,12 +118,24 @@
   }
 
   @media (max-width: 768px) {
+    .fresh-datepicker-popper {
+      position: absolute !important;
+      left: 50vw !important;
+      transform: translateX(-50%) !important;
+      top: 117vh !important;
+      bottom: auto !important;
+      max-width: 90vw !important;
+      margin-top: 0 !important;
+    }
+
     .fresh-datepicker-popper .react-datepicker {
       flex-direction: column !important;
       padding: 16px !important;
       gap: 16px;
     }
   }
+
+
 
   .fresh-datepicker-popper .react-datepicker__header {
     background-color: white !important;

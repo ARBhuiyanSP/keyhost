@@ -301,8 +301,13 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                                     selectsRange={tripType === 'roundTrip'}
                                     open={departOpen}
                                     onClickOutside={() => setDepartOpen(false)}
-                                    // Portal to LOCAL container for correct positioning
-                                    popperContainer={({ children }) => departContainerRef.current ? createPortal(children, departContainerRef.current) : null}
+                                    // Portal to body on mobile, local container on desktop
+                                    popperContainer={({ children }) => {
+                                        if (window.innerWidth < 768) {
+                                            return createPortal(children, document.body);
+                                        }
+                                        return departContainerRef.current ? createPortal(children, departContainerRef.current) : null;
+                                    }}
                                     dateFormat="dd MMM"
                                     className="hidden" // Hides default input
                                     popperClassName="fresh-datepicker-popper"
@@ -356,8 +361,13 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                                         selectsEnd
                                         open={returnOpen}
                                         onClickOutside={() => setReturnOpen(false)}
-                                        // Portal to LOCAL container
-                                        popperContainer={({ children }) => returnContainerRef.current ? createPortal(children, returnContainerRef.current) : null}
+                                        // Portal to body on mobile, local container on desktop
+                                        popperContainer={({ children }) => {
+                                            if (window.innerWidth < 768) {
+                                                return createPortal(children, document.body);
+                                            }
+                                            return returnContainerRef.current ? createPortal(children, returnContainerRef.current) : null;
+                                        }}
                                         dateFormat="dd MMM"
                                         className="hidden"
                                         popperClassName="fresh-datepicker-popper"
@@ -490,8 +500,13 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                                         }}
                                         open={multiCityDatesOpen[idx] || false}
                                         onClickOutside={() => setMultiCityDatesOpen(prev => ({ ...prev, [idx]: false }))}
-                                        // Portal to LOCAL container
-                                        popperContainer={({ children }) => multiCityContainerRefs.current[idx] ? createPortal(children, multiCityContainerRefs.current[idx]) : null}
+                                        // Portal to body on mobile, local container on desktop
+                                        popperContainer={({ children }) => {
+                                            if (window.innerWidth < 768) {
+                                                return createPortal(children, document.body);
+                                            }
+                                            return multiCityContainerRefs.current[idx] ? createPortal(children, multiCityContainerRefs.current[idx]) : null;
+                                        }}
                                         className="hidden"
                                         popperClassName="fresh-datepicker-popper"
                                         monthsShown={1}
