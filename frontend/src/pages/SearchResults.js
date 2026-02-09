@@ -281,6 +281,17 @@ const SearchResults = () => {
   if ((filters.property_type || '').toLowerCase() === 'flight') {
     return (
       <div className="min-h-screen bg-[#F4F6F9]">
+        {/* Mobile Header with Back Button */}
+        <div className="bg-white pt-4 pb-2 px-4 md:hidden sticky top-0 z-50 shadow-sm border-b border-gray-100 flex items-center">
+          <button
+            onClick={() => navigate('/')}
+            className="p-2 -ml-2 bg-transparent text-gray-700 rounded-full hover:bg-gray-100 transition-colors"
+            aria-label="Back to home"
+          >
+            <FiArrowLeft className="w-5 h-5" />
+          </button>
+          <span className="ml-2 font-semibold text-gray-900">Flight Search</span>
+        </div>
         <FlightSearchResults searchParams={filters} />
       </div>
     );

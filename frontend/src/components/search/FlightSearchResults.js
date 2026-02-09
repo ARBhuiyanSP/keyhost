@@ -503,30 +503,30 @@ const FlightSearchResults = () => {
                                                     {/* Legs Info */}
                                                     <div className="flex-1 flex flex-col gap-4 w-full md:w-auto">
                                                         {Object.values(flight.legs).map((leg, legIdx) => (
-                                                            <div key={legIdx} className="flex items-center justify-center gap-6">
-                                                                <div className="text-right w-20">
+                                                            <div key={legIdx} className="flex items-center justify-center gap-2 md:gap-6 w-full">
+                                                                <div className="text-right w-16 md:w-20">
                                                                     <div className="text-lg font-bold text-gray-900">
                                                                         {leg.departure.time.split(':').slice(0, 2).join(':')}
                                                                     </div>
-                                                                    <div className="text-[10px] text-gray-500">{leg.departure.airport}</div>
-                                                                    <div className="text-[9px] text-gray-500">Flight: {leg.carrier?.departFlight}</div>
+                                                                    <div className="text-[10px] text-gray-500 truncate">{leg.departure.airport}</div>
+                                                                    <div className="text-[9px] text-gray-500 truncate">Flight: {leg.carrier?.departFlight}</div>
                                                                 </div>
-                                                                <div className="flex flex-col items-center w-32">
+                                                                <div className="flex flex-col items-center w-24 md:w-32">
                                                                     <div className="text-[9px] text-gray-400 mb-1">{leg.formattedElapsedTime}</div>
                                                                     <div className="w-full h-px bg-gray-300 relative flex items-center justify-center">
                                                                         <div className="w-1.5 h-1.5 rounded-full border border-gray-300 bg-white absolute left-0"></div>
-                                                                        <div className="bg-white px-1 z-10 text-[8px] text-gray-400 uppercase">
-                                                                            {leg.stopovers?.length ? `${leg.stopovers.length} Stop via ${leg.stopovers.join(", ")}` : "Non Stop"}
+                                                                        <div className="bg-white px-1 z-10 text-[8px] text-gray-400 uppercase truncate max-w-full">
+                                                                            {leg.stopovers?.length ? `${leg.stopovers.length} Stop` : "Non Stop"}
                                                                         </div>
                                                                         <div className="w-1.5 h-1.5 rounded-full border border-blue-500 bg-white absolute right-0"></div>
                                                                     </div>
                                                                     <div className="text-[8px] text-gray-400 mt-1">{leg.departure.formattedDate}</div>
                                                                 </div>
-                                                                <div className="text-left w-20">
+                                                                <div className="text-left w-16 md:w-20">
                                                                     <div className="text-lg font-bold text-gray-900">
                                                                         {leg.arrival.time.split(':').slice(0, 2).join(':')}
                                                                     </div>
-                                                                    <div className="text-[10px] text-gray-500">{leg.arrival.airport}</div>
+                                                                    <div className="text-[10px] text-gray-500 truncate">{leg.arrival.airport}</div>
                                                                 </div>
                                                             </div>
                                                         ))}

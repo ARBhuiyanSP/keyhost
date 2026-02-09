@@ -6,7 +6,7 @@ import {
   FiTv, FiHome, FiDroplet, FiSun, FiEye, FiUser, FiLogOut, FiSettings, FiHeart, FiBookOpen,
   FiChevronDown, FiDollarSign, FiChevronLeft, FiChevronRight, FiWind, FiThermometer,
   FiMonitor, FiLock, FiKey, FiClock, FiPackage, FiArrowUp, FiZap, FiRadio, FiMusic,
-  FiVideo, FiX, FiBriefcase, FiGrid, FiCheck, FiMinus, FiPlus
+  FiVideo, FiX, FiBriefcase, FiGrid, FiCheck, FiMinus, FiPlus, FiSend
 } from 'react-icons/fi';
 import DatePicker from 'react-datepicker';
 
@@ -635,6 +635,10 @@ const Home = () => {
       imgSrc = '/images/nav-icon-apartment.png';
     } else if (normalized.includes('hotel')) {
       imgSrc = '/images/nav-icon-hotel.png';
+    } else if (normalized.includes('flight')) {
+      return (
+        <span className="text-2xl">✈️</span>
+      );
     }
 
     return (
@@ -930,6 +934,18 @@ const Home = () => {
             </button>
           </div>
           <div className="px-4 pb-2 flex items-center justify-center gap-2 overflow-x-auto scrollbar-hide">
+            {/* Manual Flight Tab */}
+            <button
+              onClick={() => navigate('/search?property_type=flight')}
+              className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-500 hover:text-gray-800"
+            >
+              <div className="flex flex-col items-center px-2">
+                <span className="text-2xl">✈️</span>
+                <span className="text-base font-medium whitespace-nowrap mt-1.5">Flight</span>
+                <span className="mt-1.5 h-[2px] w-full bg-transparent" />
+              </div>
+            </button>
+
             {propertyTypes.map((type) => {
               const isActive = activePropertyType === (type.name || '').toLowerCase();
               return (
@@ -972,6 +988,22 @@ const Home = () => {
 
             {/* Property Type Tabs */}
             <div className="flex items-center justify-center gap-6 overflow-x-auto scrollbar-hide px-10 w-full">
+              {/* Manual Flight Tab inside Modal */}
+              <button
+                onClick={() => {
+                  setShowMobileSearch(false);
+                  navigate('/search?property_type=flight');
+                }}
+                className="flex flex-col items-center gap-2 min-w-[64px] flex-shrink-0 group cursor-pointer"
+              >
+                <div className="transition-opacity duration-200 opacity-60 group-hover:opacity-100 text-gray-600">
+                  <span className="text-2xl">✈️</span>
+                </div>
+                <span className="text-xs font-semibold whitespace-nowrap pb-2 border-b-2 transition-all duration-200 text-gray-500 border-transparent group-hover:text-gray-900 group-hover:border-gray-300">
+                  Flight
+                </span>
+              </button>
+
               {propertyTypes.map((type) => {
                 const isActive = activePropertyType === (type.name || '').toLowerCase();
                 return (

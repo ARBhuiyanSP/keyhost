@@ -168,10 +168,11 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
     };
 
     // STYLING CONSTANTS
-    const pillContainerClass = "w-full bg-white rounded-full shadow-[0_6px_16px_rgba(0,0,0,0.08)] border border-gray-200 flex items-center pr-2 p-1 gap-0.5 min-h-[66px] relative z-[500] overflow-visible";
-    const pillSectionBase = "group relative flex flex-1 flex-col justify-center px-6 py-3 cursor-pointer rounded-full transition-colors hover:bg-[#EBEBEB]";
+    // STYLING CONSTANTS
+    const pillContainerClass = "w-full bg-white rounded-3xl md:rounded-full shadow-[0_6px_16px_rgba(0,0,0,0.08)] border border-gray-200 flex flex-col md:flex-row items-stretch md:items-center pr-2 p-2 md:p-1 gap-1 md:gap-0.5 min-h-auto md:min-h-[66px] relative z-[500] overflow-visible";
+    const pillSectionBase = "group relative flex flex-1 flex-col justify-center px-4 py-3 md:px-6 md:py-3 cursor-pointer rounded-xl md:rounded-full transition-colors hover:bg-[#EBEBEB] border-b border-gray-100 md:border-b-0 last:border-0";
     const labelClass = "text-[10px] font-bold text-[#E41D57] uppercase tracking-wider mb-0.5";
-    const dividerClass = "w-px h-8 bg-gray-200 flex-shrink-0";
+    const dividerClass = "hidden md:block w-px h-8 bg-gray-200 flex-shrink-0";
 
     return (
         <div ref={formRef} className="w-full max-w-5xl mx-auto flex flex-col items-center">
@@ -264,7 +265,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                     <div className={dividerClass} />
 
                     {/* DATES */}
-                    <div className={`${pillSectionBase} basis-[30%] z-[53] flex items-center`}>
+                    <div className={`${pillSectionBase} w-full md:basis-[30%] z-[53] flex items-center`}>
                         <div className="flex w-full h-full">
                             <div className="flex-1 relative h-full flex flex-col justify-center" ref={departContainerRef}>
                                 <div
@@ -382,7 +383,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                             {adults + children + kids + infants} Guests, {cabinClass === 'Economy' ? 'Eco' : cabinClass === 'Business' ? 'Bus' : '1st'}
                         </div>
                         {showTravelerModal && (
-                            <div className="absolute top-full right-0 mt-4 w-[340px] z-[70]" onClick={e => e.stopPropagation()}>
+                            <div className="absolute top-full right-0 mt-4 w-[85vw] md:w-[340px] z-[70]" onClick={e => e.stopPropagation()}>
                                 <TravelerModalContent
                                     adults={adults} setAdults={setAdults}
                                     children={children} setChildren={setChildren}
@@ -396,9 +397,10 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                     </div>
 
                     {/* SEARCH BUTTON */}
-                    <div className="pl-2">
-                        <button onClick={handleSubmit} className="w-12 h-12 bg-[#E41D57] hover:bg-[#D41B50] rounded-full shadow-lg flex items-center justify-center transition-all transform active:scale-95">
+                    <div className="p-2 md:pl-2 w-full md:w-auto mt-2 md:mt-0">
+                        <button onClick={handleSubmit} className="w-full md:w-12 h-12 bg-[#E41D57] hover:bg-[#D41B50] rounded-xl md:rounded-full shadow-lg flex items-center justify-center transition-all transform active:scale-95 gap-2">
                             <FiSearch className="text-white w-5 h-5 stroke-[3px]" />
+                            <span className="md:hidden text-white font-bold">Search</span>
                         </button>
                     </div>
                 </div>
@@ -410,9 +412,9 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                 tripType === 'multiCity' && (
                     <div className="w-full flex flex-col gap-3 pb-8 relative">
                         {segments.map((segment, idx) => (
-                            <div key={idx} className={pillContainerClass + " !min-h-[66px] !overflow-visible"} style={{ zIndex: (segments.length - idx) * 10 }}>
+                            <div key={idx} className={pillContainerClass + " !min-h-auto md:!min-h-[66px] !overflow-visible"} style={{ zIndex: (segments.length - idx) * 10 }}>
                                 {/* FROM */}
-                                <div className={`${pillSectionBase} !flex-none w-[22%]`} onClick={() => setActiveSuggestion(`segment_${idx}_from`)}>
+                                <div className={`${pillSectionBase} !flex-none w-full md:w-[22%]`} onClick={() => setActiveSuggestion(`segment_${idx}_from`)}>
                                     {/* Display Component */}
                                     <div className="w-full">
                                         <div className={labelClass}>From</div>
@@ -437,7 +439,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                                 <div className={dividerClass} />
 
                                 {/* TO */}
-                                <div className={`${pillSectionBase} !flex-none w-[22%]`} onClick={() => setActiveSuggestion(`segment_${idx}_to`)}>
+                                <div className={`${pillSectionBase} !flex-none w-full md:w-[22%]`} onClick={() => setActiveSuggestion(`segment_${idx}_to`)}>
                                     {/* Display Component */}
                                     <div className="w-full">
                                         <div className={labelClass}>To</div>
@@ -507,13 +509,13 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                                 {idx === 0 ? (
                                     <>
                                         <div className={dividerClass} />
-                                        <div className={`${pillSectionBase} !flex-none w-[25%]`} onClick={() => setShowTravelerModal(!showTravelerModal)}>
+                                        <div className={`${pillSectionBase} !flex-none w-full md:w-[25%]`} onClick={() => setShowTravelerModal(!showTravelerModal)}>
                                             <div className={labelClass}>Travelers</div>
                                             <div className="text-[15px] font-bold text-[#1e2049] truncate leading-tight">
                                                 {adults + children + kids + infants} Guests
                                             </div>
                                             {showTravelerModal && (
-                                                <div className="absolute top-full right-0 mt-4 w-[340px] z-[70]" onClick={e => e.stopPropagation()}>
+                                                <div className="absolute top-full right-0 mt-4 w-[85vw] md:w-[340px] z-[70]" onClick={e => e.stopPropagation()}>
                                                     <TravelerModalContent
                                                         adults={adults} setAdults={setAdults}
                                                         children={children} setChildren={setChildren}
@@ -527,7 +529,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                                         </div>
                                     </>
                                 ) : (
-                                    <div className="flex items-center pl-4 pr-2 w-[25%] justify-end">
+                                    <div className="flex items-center pl-4 pr-2 w-full md:w-[25%] justify-end p-2 md:p-0">
                                         <button
                                             onClick={() => {
                                                 const newSegments = segments.filter((_, i) => i !== idx);
@@ -548,17 +550,17 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                         ))}
 
                         {/* ACTIONS BOTTOM */}
-                        <div className="flex justify-between items-center px-4 mt-2">
+                        <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center px-0 md:px-4 mt-2 gap-3 md:gap-0">
                             <button
                                 onClick={() => setSegments([...segments, { from: '', to: '', depart: null }])}
-                                className="bg-white border border-gray-200 text-[#1e2049] hover:bg-gray-50 px-5 py-2.5 rounded-full text-sm font-bold flex items-center gap-2 shadow-sm transition-colors"
+                                className="bg-white border border-gray-200 text-[#1e2049] hover:bg-gray-50 px-5 py-3 md:py-2.5 rounded-xl md:rounded-full text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition-colors w-full md:w-auto"
                             >
                                 <FiPlus className="w-4 h-4" /> Add Flight
                             </button>
 
                             <button
                                 onClick={handleSubmit}
-                                className="bg-[#E41D57] hover:bg-[#D41B50] text-white px-8 py-3 rounded-full text-sm font-bold shadow-lg shadow-[#E41D57]/20 flex items-center gap-2 transition-all transform active:scale-95"
+                                className="bg-[#E41D57] hover:bg-[#D41B50] text-white px-8 py-3 rounded-xl md:rounded-full text-sm font-bold shadow-lg shadow-[#E41D57]/20 flex items-center justify-center gap-2 transition-all transform active:scale-95 w-full md:w-auto"
                             >
                                 <FiSearch className="w-4 h-4 stroke-[3px]" /> Search Flights
                             </button>
@@ -593,7 +595,7 @@ const SuggestionsDropdown = ({ initialSearch, list, onSelect }) => {
     }).slice(0, 10);
 
     return (
-        <div className="absolute top-full left-0 mt-4 w-[350px] bg-white border border-gray-100 rounded-3xl shadow-2xl overflow-hidden py-2 z-[600]" onClick={(e) => e.stopPropagation()}>
+        <div className="absolute top-full left-0 mt-4 w-[85vw] md:w-[350px] bg-white border border-gray-100 rounded-3xl shadow-2xl overflow-hidden py-2 z-[600]" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-2 border-b border-gray-100 flex items-center gap-2">
                 <FiSearch className="text-gray-400 w-4 h-4" />
                 <input
