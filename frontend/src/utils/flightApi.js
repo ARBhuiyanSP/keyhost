@@ -5,7 +5,7 @@ const FLIGHT_API_BASE_URL = 'http://175.29.198.93/api';
 const flightApi = axios.create({
     baseURL: FLIGHT_API_BASE_URL,
     headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json', 
     },
 });
 

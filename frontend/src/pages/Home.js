@@ -636,9 +636,7 @@ const Home = () => {
     } else if (normalized.includes('hotel')) {
       imgSrc = '/images/nav-icon-hotel.png';
     } else if (normalized.includes('flight')) {
-      return (
-        <span className="text-2xl">✈️</span>
-      );
+      imgSrc = '/images/flight.png';
     }
 
     return (
@@ -940,7 +938,7 @@ const Home = () => {
               className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-500 hover:text-gray-800"
             >
               <div className="flex flex-col items-center px-2">
-                <span className="text-2xl">✈️</span>
+                <img src="/images/flight.png" alt="Flight" className="w-8 h-8 object-contain transition-all duration-300 opacity-70 grayscale" />
                 <span className="text-base font-medium whitespace-nowrap mt-1.5">Flight</span>
                 <span className="mt-1.5 h-[2px] w-full bg-transparent" />
               </div>
@@ -996,8 +994,8 @@ const Home = () => {
                 }}
                 className="flex flex-col items-center gap-2 min-w-[64px] flex-shrink-0 group cursor-pointer"
               >
-                <div className="transition-opacity duration-200 opacity-60 group-hover:opacity-100 text-gray-600">
-                  <span className="text-2xl">✈️</span>
+                <div className="transition-opacity duration-200 opacity-60 group-hover:opacity-100">
+                  <img src="/images/flight.png" alt="Flight" className="w-8 h-8 object-contain transition-all duration-300 opacity-70 grayscale" />
                 </div>
                 <span className="text-xs font-semibold whitespace-nowrap pb-2 border-b-2 transition-all duration-200 text-gray-500 border-transparent group-hover:text-gray-900 group-hover:border-gray-300">
                   Flight

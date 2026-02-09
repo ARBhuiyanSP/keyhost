@@ -153,9 +153,7 @@ const StickySearchHeader = ({
     } else if (normalized.includes('hotel')) {
       imgSrc = '/images/nav-icon-hotel.png';
     } else if (normalized.includes('flight')) {
-      return (
-        <span className="text-2xl">✈️</span>
-      );
+      imgSrc = '/images/flight.png';
     }
 
     return (
