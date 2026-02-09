@@ -145,7 +145,7 @@ const BookingSuccess = () => {
                         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4">
                             <h3 className="font-bold text-gray-800 mb-2">Actions</h3>
                             <button
-                                onClick={() => window.location.href = `http://127.0.0.1:8000/ticket-issue-show?booking_id=${pnr || booking_id}`}
+                                onClick={() => window.location.href = `http://127.0.0.1:8000/react/ticket-issue?booking_id=${pnr || booking_id}`}
                                 className="w-full flex justify-center items-center gap-2 bg-[#E41D57] hover:bg-[#c01b4b] text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-md transform hover:-translate-y-0.5"
                             >
                                 <FaFilePdf /> View / Issue Ticket
