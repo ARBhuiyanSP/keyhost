@@ -592,9 +592,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
 
 const SuggestionsDropdown = ({ initialSearch, list, onSelect }) => {
     const [searchTerm, setSearchTerm] = useState(initialSearch || '');
-    const [selectedIndex, setSelectedIndex] = useState(0);
     const searchInputRef = useRef(null);
-    const listRef = useRef(null);
 
     useEffect(() => {
         if (searchInputRef.current) searchInputRef.current.focus();
@@ -611,37 +609,6 @@ const SuggestionsDropdown = ({ initialSearch, list, onSelect }) => {
         );
     }).slice(0, 10);
 
-    // Reset selection when search changes
-    useEffect(() => {
-        setSelectedIndex(0);
-    }, [searchTerm]);
-
-    // Handle Keyboard Navigation
-    const handleKeyDown = (e) => {
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            setSelectedIndex(prev => (prev < filteredList.length - 1 ? prev + 1 : prev));
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            setSelectedIndex(prev => (prev > 0 ? prev - 1 : prev));
-        } else if (e.key === 'Enter') {
-            e.preventDefault();
-            if (filteredList[selectedIndex]) {
-                onSelect(`${filteredList[selectedIndex].shortName} (${filteredList[selectedIndex].code})`);
-            }
-        }
-    };
-
-    // Scroll active item into view
-    useEffect(() => {
-        if (listRef.current) {
-            const activeItem = listRef.current.children[selectedIndex];
-            if (activeItem) {
-                activeItem.scrollIntoView({ block: 'nearest' });
-            }
-        }
-    }, [selectedIndex]);
-
     return (
         <div className="absolute top-full left-0 mt-4 w-[85vw] md:w-[350px] bg-white border border-gray-100 rounded-3xl shadow-2xl overflow-hidden py-2 z-[600]" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-2 border-b border-gray-100 flex items-center gap-2">
@@ -651,16 +618,15 @@ const SuggestionsDropdown = ({ initialSearch, list, onSelect }) => {
                     type="text"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    onKeyDown={handleKeyDown}
                     placeholder="Type to search"
                     className="w-full text-sm text-gray-700 placeholder:text-gray-400 outline-none font-medium"
                 />
             </div>
-            <div ref={listRef} className="max-h-80 overflow-y-auto">
+            <div className="max-h-80 overflow-y-auto">
                 {filteredList.map((a, idx) => (
                     <div
                         key={idx}
-                        className={`px-5 py-3 cursor-pointer flex justify-between items-center transition-colors ${idx === selectedIndex ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
+                        className="px-5 py-3 hover:bg-gray-50 cursor-pointer flex justify-between items-center transition-colors"
                         onClick={() => onSelect(`${a.shortName} (${a.code})`)}
                     >
                         <div>

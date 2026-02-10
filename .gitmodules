@@ -1,0 +1,4 @@
+[submodule "aerotake"]
+	path = aerotake
+	url = https://github.com/titubiniamin/aerotake
+	ignore = all
