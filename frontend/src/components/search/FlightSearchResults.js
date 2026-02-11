@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import LoadingSkeleton from '../common/LoadingSkeleton';
 import { FiChevronDown, FiSun, FiMoon, FiLoader, FiX, FiEdit2, FiSearch } from 'react-icons/fi'; // Added FiEdit2 for Modify Search
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { searchSabre, searchAmadeus, initiateSearch } from '../../utils/flightApi';
@@ -472,6 +473,12 @@ const FlightSearchResults = () => {
 
                                 {/* Search Results List */}
                                 <div className="space-y-4">
+                                    {loading && (
+                                        <div className="space-y-4">
+                                            <LoadingSkeleton type="card" count={3} />
+                                        </div>
+                                    )}
+
                                     {!loading && hasSearched && filteredResults.length > 0 && filteredResults.map((flight, idx) => {
                                         const allLegs = Object.values(flight.legs || {});
                                         if (allLegs.length === 0) return null;

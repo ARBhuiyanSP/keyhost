@@ -5,7 +5,7 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { format } from 'date-fns';
 import { createPortal } from 'react-dom';
-import PlaneLoader from '../common/PlaneLoader';
+import LoadingSkeleton from '../common/LoadingSkeleton';
 
 // ... (HiddenAnchor)
 
@@ -181,7 +181,11 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
 
     return (
         <div ref={formRef} className="w-full max-w-5xl mx-auto flex flex-col items-center">
-            {isLoading && <PlaneLoader text="Searching Flights..." subtext="Finding the best deals for you" />}
+            {isLoading && (
+                <div className="absolute inset-0 z-[100] bg-white/80 backdrop-blur-sm flex items-center justify-center rounded-xl p-4">
+                    <LoadingSkeleton type="form" className="w-full max-w-2xl" />
+                </div>
+            )}
             {/* Trip Type Toggle */}
             <div className="bg-[#EBEBEB]/50 inline-flex items-center rounded-full p-1 mb-4 backdrop-blur-sm">
                 {['oneWay', 'roundTrip', 'multiCity'].map((type) => (

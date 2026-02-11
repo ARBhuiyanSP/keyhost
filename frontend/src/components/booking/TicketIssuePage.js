@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import flightApi from '../../utils/flightApi';
-
+import LoadingSkeleton from '../common/LoadingSkeleton';
 const TicketIssuePage = () => {
     const navigate = useNavigate();
     const [booking, setBooking] = useState(null);
@@ -118,7 +118,21 @@ const TicketIssuePage = () => {
         }
     };
 
-    if (loading) return <div className="p-8 text-center">Loading...</div>;
+    if (loading) return (
+        <div className="min-h-screen bg-gray-50 py-8 px-4 font-sans text-gray-800">
+            <div className="max-w-5xl mx-auto space-y-6">
+                <LoadingSkeleton type="card" />
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-2">
+                        <LoadingSkeleton type="list" count={3} />
+                    </div>
+                    <div className="space-y-6">
+                        <LoadingSkeleton type="card" />
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
     if (error && !booking) return <div className="p-8 text-center text-red-600 font-bold bg-white rounded shadow m-4">{error}</div>;
 
     const {

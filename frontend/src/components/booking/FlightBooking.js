@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchCountries, bookFlight, revalidateFlight } from '../../utils/flightApi';
-import PlaneLoader from '../common/PlaneLoader';
 import LoadingSkeleton from '../common/LoadingSkeleton';
+
 
 // Helper to calculate exact age
 function calculateExactAge(birth, ref) {
@@ -320,13 +320,35 @@ const FlightBooking = () => {
             };
         });
 
+        // Merge Contact and Lead Passenger Logic to avoid Validation Errors
+        let finalContact = { ...contact };
+        let finalLead = { ...leadPassenger };
+
+        // 1. If Contact is empty, use Lead Passenger
+        if (!finalContact.mobile && finalLead.mobile) {
+            finalContact.mobile = finalLead.mobile;
+            finalContact.country_code = finalLead.country_code;
+        }
+        if (!finalContact.email && finalLead.email) {
+            finalContact.email = finalLead.email;
+        }
+
+        // 2. If Lead Passenger is empty, use Contact
+        if (!finalLead.mobile && finalContact.mobile) {
+            finalLead.mobile = finalContact.mobile;
+            finalLead.country_code = finalContact.country_code;
+        }
+        if (!finalLead.email && finalContact.email) {
+            finalLead.email = finalContact.email;
+        }
+
         const payload = {
             flightData: flight,
-            passengers: calculatedPassengers, // Send processed passengers
-            contact: contact,
-            lead_passenger_country_code: leadPassenger.country_code,
-            lead_passenger_mobile: leadPassenger.mobile,
-            lead_passenger_email: leadPassenger.email,
+            passengers: calculatedPassengers,
+            contact: finalContact,
+            lead_passenger_country_code: finalLead.country_code,
+            lead_passenger_mobile: finalLead.mobile,
+            lead_passenger_email: finalLead.email,
         };
 
         try {
@@ -364,8 +386,15 @@ const FlightBooking = () => {
 
     return (
         <div className="bg-white min-h-screen py-8 font-sans text-gray-800 relative">
-            {/* Show PlaneLoader overlay when submitting */}
-            {submitting && <PlaneLoader text="Processing Booking..." subtext="Please do not close this window" />}
+            {/* Show LoadingSkeleton overlay when submitting */}
+            {submitting && (
+                <div className="fixed inset-0 z-50 bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center">
+                    <div className="w-full max-w-md space-y-4 p-6">
+                        <LoadingSkeleton type="card" />
+                        <p className="text-center text-[#E41D57] font-bold animate-pulse">Processing Booking...</p>
+                    </div>
+                </div>
+            )}
 
             <div className="container mx-auto px-4 max-w-7xl">
                 {/* Back Button */}
