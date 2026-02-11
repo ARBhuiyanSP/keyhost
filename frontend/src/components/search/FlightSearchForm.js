@@ -70,7 +70,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
     const [children, setChildren] = useState(parseInt(searchParams.children) || 0);
     const [kids, setKids] = useState(parseInt(searchParams.kids) || 0);
     const [infants, setInfants] = useState(parseInt(searchParams.infants) || 0);
-    const [cabinClass, setCabinClass] = useState(searchParams.class || 'Economy');
+    const [cabinClass, setCabinClass] = useState(searchParams.class || '');
     const [showTravelerModal, setShowTravelerModal] = useState(false);
     const [departOpen, setDepartOpen] = useState(false);
     const [returnOpen, setReturnOpen] = useState(false);
@@ -170,7 +170,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
     // STYLING CONSTANTS
     // STYLING CONSTANTS
     const pillContainerClass = "w-full bg-white rounded-3xl md:rounded-full shadow-[0_6px_16px_rgba(0,0,0,0.08)] border border-gray-200 flex flex-col md:flex-row items-stretch md:items-center pr-2 p-2 md:p-1 gap-1 md:gap-0.5 min-h-auto md:min-h-[66px] relative z-[500] overflow-visible";
-    const pillSectionBase = "group relative flex flex-1 flex-col justify-center px-4 py-3 md:px-6 md:py-3 cursor-pointer rounded-xl md:rounded-full transition-colors hover:bg-[#EBEBEB] border-b border-gray-100 md:border-b-0 last:border-0";
+    const pillSectionBase = "group relative flex flex-col justify-center px-4 md:px-6 cursor-pointer transition-colors";
     const labelClass = "text-[10px] font-bold text-[#E41D57] uppercase tracking-wider mb-0.5";
     const dividerClass = "hidden md:block w-px h-8 bg-gray-200 flex-shrink-0";
 
@@ -223,260 +223,289 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
 
             {/* --- ONE WAY / ROUND TRIP LAYOUT --- */}
             {tripType !== 'multiCity' && (
-                <div className={pillContainerClass}>
-                    {/* FROM */}
-                    <div className={`${pillSectionBase} z-[55]`} onClick={() => setActiveSuggestion('from')}>
-                        {/* Display Component */}
-                        <div className="w-full">
-                            <div className={labelClass}>From</div>
-                            <div className={`text-[15px] font-bold leading-tight truncate ${fromInput ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
-                                {fromInput ? fromInput.split('(')[0].trim() : "Where from?"}
+                <div className="w-full flex flex-col gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                        {/* FROM & TO WRAPPER */}
+                        <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 relative">
+                            {/* FROM */}
+                            <div className={`${pillSectionBase} z-[55] h-24 border border-gray-200 rounded-xl hover:border-gray-300 bg-white`} onClick={() => setActiveSuggestion('from')}>
+                                {/* Display Component */}
+                                <div className="w-full">
+                                    <div className={labelClass}>From</div>
+                                    <div className={`text-[15px] font-bold leading-tight truncate ${fromInput ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
+                                        {fromInput ? fromInput.split('(')[0].trim() : "Where from?"}
+                                    </div>
+                                    {fromInput && <div className="text-[10px] text-gray-400 truncate">{fromInput.match(/\((.*?)\)/)?.[1] || ''}, {fromInput.split(',')[1]?.trim() || 'Airport'}</div>}
+                                </div>
+                                {activeSuggestion === 'from' && (
+                                    <SuggestionsDropdown
+                                        initialSearch={''}
+                                        list={airportList}
+                                        onSelect={(val) => { setFromInput(val); setActiveSuggestion(null); }}
+                                    />
+                                )}
                             </div>
-                            {fromInput && <div className="text-[10px] text-gray-400 truncate">{fromInput.match(/\((.*?)\)/)?.[1] || ''}, {fromInput.split(',')[1]?.trim() || 'Airport'}</div>}
-                        </div>
-                        {activeSuggestion === 'from' && (
-                            <SuggestionsDropdown
-                                initialSearch={''}
-                                list={airportList}
-                                onSelect={(val) => { setFromInput(val); setActiveSuggestion(null); }}
-                            />
-                        )}
-                    </div>
-                    <div className={dividerClass} />
 
-                    {/* TO */}
-                    <div className={`${pillSectionBase} z-[54]`} onClick={() => setActiveSuggestion('to')}>
-                        {/* Display Component */}
-                        <div className="w-full">
-                            <div className={labelClass}>To</div>
-                            <div className={`text-[15px] font-bold leading-tight truncate ${toInput ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
-                                {toInput ? toInput.split('(')[0].trim() : "Where to?"}
-                            </div>
-                            {toInput && <div className="text-[10px] text-gray-400 truncate">{toInput.match(/\((.*?)\)/)?.[1] || ''}, {toInput.split(',')[1]?.trim() || 'Airport'}</div>}
-                        </div>
-                        {activeSuggestion === 'to' && (
-                            <SuggestionsDropdown
-                                initialSearch={''}
-                                list={airportList}
-                                onSelect={(val) => { setToInput(val); setActiveSuggestion(null); }}
-                            />
-                        )}
-                    </div>
-                    <div className={dividerClass} />
-
-                    {/* DATES */}
-                    <div className={`${pillSectionBase} w-full md:basis-[30%] z-[53] flex items-center`}>
-                        <div className="flex w-full h-full">
-                            <div className="flex-1 relative h-full flex flex-col justify-center" ref={departContainerRef}>
-                                <div
-                                    className="flex-1 h-full flex flex-col justify-center items-start text-left cursor-pointer hover:bg-gray-50 rounded-l-full px-4"
+                            {/* SWAP BUTTON */}
+                            <div className="hidden md:flex absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[60]">
+                                <button
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        setActiveSuggestion(null);
-                                        setDepartOpen(true);
-                                        setReturnOpen(false);
+                                        const temp = fromInput;
+                                        setFromInput(toInput);
+                                        setToInput(temp);
                                     }}
+                                    className="w-8 h-8 bg-white border border-gray-200 rounded-full flex items-center justify-center shadow-sm hover:bg-gray-50 transition-colors text-[#1e2049]"
                                 >
-                                    <div className="text-[10px] font-bold text-[#E41D57] uppercase tracking-wider mb-0.5">Depart</div>
-                                    <div className={`text-[13px] font-bold leading-tight ${departDate && !isNaN(departDate.getTime()) ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
-                                        {departDate && !isNaN(departDate.getTime()) ? format(departDate, "dd MMM") : 'Select Date'}
+                                    <FiRepeat className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            {/* TO */}
+                            <div className={`${pillSectionBase} z-[54] h-24 border border-gray-200 rounded-xl hover:border-gray-300 bg-white`} onClick={() => setActiveSuggestion('to')}>
+                                {/* Display Component */}
+                                <div className="w-full pl-4 md:pl-6"> {/* Added padding for swap button clearance if needed, though centered button usually clears */}
+                                    <div className={labelClass}>To</div>
+                                    <div className={`text-[15px] font-bold leading-tight truncate ${toInput ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
+                                        {toInput ? toInput.split('(')[0].trim() : "Where to?"}
                                     </div>
+                                    {toInput && <div className="text-[10px] text-gray-400 truncate">{toInput.match(/\((.*?)\)/)?.[1] || ''}, {toInput.split(',')[1]?.trim() || 'Airport'}</div>}
                                 </div>
+                                {activeSuggestion === 'to' && (
+                                    <SuggestionsDropdown
+                                        initialSearch={''}
+                                        list={airportList}
+                                        onSelect={(val) => { setToInput(val); setActiveSuggestion(null); }}
+                                    />
+                                )}
+                            </div>
+                        </div>
+
+                        {/* DEPART */}
+                        <div className={`${pillSectionBase} z-[53] h-24 border border-gray-200 rounded-xl hover:border-gray-300 bg-white`} ref={departContainerRef}>
+                            <div
+                                className="w-full h-full flex flex-col justify-center items-start text-left cursor-pointer"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveSuggestion(null);
+                                    setDepartOpen(true);
+                                    setReturnOpen(false);
+                                }}
+                            >
+                                <div className="text-[10px] font-bold text-[#E41D57] uppercase tracking-wider mb-0.5">Depart</div>
+                                <div className={`text-[15px] font-bold leading-tight ${departDate && !isNaN(departDate.getTime()) ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
+                                    {departDate && !isNaN(departDate.getTime()) ? format(departDate, "dd MMM") : 'Select Date'}
+                                </div>
+                                <div className="text-[10px] text-gray-400 truncate">Date from choice</div>
+                            </div>
+                            <DatePicker
+                                selected={departDate}
+                                onChange={(update, event) => {
+                                    if (event) event.stopPropagation();
+                                    if (tripType === 'roundTrip') {
+                                        const [start, end] = update;
+                                        setDepartDate(start);
+                                        setReturnDate(end);
+                                        if (end) setDepartOpen(false);
+                                    } else {
+                                        setDepartDate(update);
+                                        setDepartOpen(false);
+                                    }
+                                }}
+                                startDate={departDate}
+                                endDate={returnDate}
+                                selectsRange={tripType === 'roundTrip'}
+                                open={departOpen}
+                                onClickOutside={() => setDepartOpen(false)}
+                                popperContainer={({ children }) => {
+                                    if (window.innerWidth < 768) {
+                                        return createPortal(children, document.body);
+                                    }
+                                    return departContainerRef.current ? createPortal(children, departContainerRef.current) : null;
+                                }}
+                                dateFormat="dd MMM"
+                                className="hidden"
+                                popperClassName="fresh-datepicker-popper"
+                                monthsShown={tripType === 'roundTrip' && window.innerWidth >= 768 ? 2 : 1}
+                                minDate={new Date()}
+                                popperPlacement="bottom-start"
+                                popperModifiers={[
+                                    { name: "flip", enabled: false },
+                                    { name: "preventOverflow", enabled: true }
+                                ]}
+                                renderDayContents={(day) => <span>{day}</span>}
+                            />
+                        </div>
+
+                        {/* RETURN */}
+                        <div className={`${pillSectionBase} z-[52] h-24 border border-gray-200 rounded-xl hover:border-gray-300 bg-white`} ref={returnContainerRef}>
+                            <div
+                                className="w-full h-full flex flex-col justify-center items-start text-left cursor-pointer"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveSuggestion(null);
+                                    if (tripType === 'oneWay') {
+                                        setTripType('roundTrip');
+                                        setTimeout(() => setReturnOpen(true), 50);
+                                    } else {
+                                        setDepartOpen(false);
+                                        setReturnOpen(true);
+                                    }
+                                }}
+                            >
+                                <div className="text-[10px] font-bold text-[#E41D57] uppercase tracking-wider mb-0.5">Return</div>
+                                {tripType === 'oneWay' ? (
+                                    <div className="text-[15px] text-gray-400 font-normal leading-tight hover:text-[#E41D57]">Add return</div>
+                                ) : (
+                                    <div className={`text-[15px] font-bold leading-tight ${returnDate && !isNaN(returnDate.getTime()) ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
+                                        {returnDate && !isNaN(returnDate.getTime()) ? format(returnDate, "dd MMM") : 'Select Date'}
+                                    </div>
+                                )}
+                                <div className="text-[10px] text-gray-400 truncate">Save more on return</div>
+                            </div>
+                            {tripType === 'roundTrip' && (
                                 <DatePicker
-                                    selected={departDate}
-                                    onChange={(update, event) => {
+                                    selected={returnDate}
+                                    onChange={(date, event) => {
                                         if (event) event.stopPropagation();
-                                        if (tripType === 'roundTrip') {
-                                            const [start, end] = update;
-                                            setDepartDate(start);
-                                            setReturnDate(end);
-                                            if (end) setDepartOpen(false);
-                                        } else {
-                                            setDepartDate(update);
-                                            setDepartOpen(false);
-                                        }
+                                        setReturnDate(date);
+                                        setReturnOpen(false);
                                     }}
                                     startDate={departDate}
                                     endDate={returnDate}
-                                    selectsRange={tripType === 'roundTrip'}
-                                    open={departOpen}
-                                    onClickOutside={() => setDepartOpen(false)}
-                                    // Portal to body on mobile, local container on desktop
+                                    selectsEnd
+                                    open={returnOpen}
+                                    onClickOutside={() => setReturnOpen(false)}
                                     popperContainer={({ children }) => {
                                         if (window.innerWidth < 768) {
                                             return createPortal(children, document.body);
                                         }
-                                        return departContainerRef.current ? createPortal(children, departContainerRef.current) : null;
+                                        return returnContainerRef.current ? createPortal(children, returnContainerRef.current) : null;
                                     }}
                                     dateFormat="dd MMM"
-                                    className="hidden" // Hides default input
+                                    className="hidden"
                                     popperClassName="fresh-datepicker-popper"
-                                    monthsShown={tripType === 'roundTrip' && window.innerWidth >= 768 ? 2 : 1}
-                                    minDate={new Date()}
-                                    popperPlacement="bottom-start" // Ignored mostly due to manual CSS overrides now
+                                    monthsShown={window.innerWidth >= 768 ? 2 : 1}
+                                    minDate={departDate || new Date()}
+                                    popperPlacement="bottom-start"
                                     popperModifiers={[
                                         { name: "flip", enabled: false },
                                         { name: "preventOverflow", enabled: true }
                                     ]}
                                     renderDayContents={(day) => <span>{day}</span>}
                                 />
+                            )}
+                        </div>
+
+                        {/* TRAVELERS */}
+                        <div className={`${pillSectionBase} z-[51] h-24 border border-gray-200 rounded-xl hover:border-gray-300 bg-white`} onClick={() => setShowTravelerModal(!showTravelerModal)}>
+                            <div className={labelClass}>Travelers</div>
+                            <div className="text-[15px] font-bold text-[#1e2049] truncate leading-tight">
+                                {adults + children + kids + infants} Guests{cabinClass && `, ${cabinClass === 'Economy' ? 'Eco' : cabinClass === 'Business' ? 'Bus' : '1st'}`}
                             </div>
-
-                            <div className="w-px h-8 bg-gray-200 self-center" />
-
-                            <div className="flex-1 relative h-full flex flex-col justify-center" ref={returnContainerRef}>
-                                <div
-                                    className="flex-1 h-full flex flex-col justify-center items-start text-left cursor-pointer hover:bg-gray-50 rounded-r-full px-4"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setActiveSuggestion(null);
-                                        if (tripType === 'oneWay') {
-                                            setTripType('roundTrip');
-                                            setTimeout(() => setReturnOpen(true), 50);
-                                        } else {
-                                            setDepartOpen(false);
-                                            setReturnOpen(true);
-                                        }
-                                    }}
-                                >
-                                    <div className="text-[10px] font-bold text-[#E41D57] uppercase tracking-wider mb-0.5">Return</div>
-                                    {tripType === 'oneWay' ? (
-                                        <div className="text-[13px] text-gray-400 font-normal leading-tight hover:text-[#E41D57]">Add return</div>
-                                    ) : (
-                                        <div className={`text-[13px] font-bold leading-tight ${returnDate && !isNaN(returnDate.getTime()) ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
-                                            {returnDate && !isNaN(returnDate.getTime()) ? format(returnDate, "dd MMM") : 'Select Date'}
-                                        </div>
-                                    )}
-                                </div>
-                                {tripType === 'roundTrip' && (
-                                    <DatePicker
-                                        selected={returnDate}
-                                        onChange={(date, event) => {
-                                            if (event) event.stopPropagation();
-                                            setReturnDate(date);
-                                            setReturnOpen(false);
-                                        }}
-                                        startDate={departDate}
-                                        endDate={returnDate}
-                                        selectsEnd
-                                        open={returnOpen}
-                                        onClickOutside={() => setReturnOpen(false)}
-                                        // Portal to body on mobile, local container on desktop
-                                        popperContainer={({ children }) => {
-                                            if (window.innerWidth < 768) {
-                                                return createPortal(children, document.body);
-                                            }
-                                            return returnContainerRef.current ? createPortal(children, returnContainerRef.current) : null;
-                                        }}
-                                        dateFormat="dd MMM"
-                                        className="hidden"
-                                        popperClassName="fresh-datepicker-popper"
-                                        monthsShown={window.innerWidth >= 768 ? 2 : 1}
-                                        minDate={departDate || new Date()}
-                                        popperPlacement="bottom-start"
-                                        popperModifiers={[
-                                            { name: "flip", enabled: false },
-                                            { name: "preventOverflow", enabled: true }
-                                        ]}
-                                        renderDayContents={(day) => <span>{day}</span>}
+                            <div className="text-[10px] text-gray-400 truncate">{cabinClass || 'Economy'}</div>
+                            {showTravelerModal && (
+                                <div className="absolute top-full right-0 mt-4 w-[85vw] md:w-[340px] z-[70]" onClick={e => e.stopPropagation()}>
+                                    <TravelerModalContent
+                                        adults={adults} setAdults={setAdults}
+                                        children={children} setChildren={setChildren}
+                                        kids={kids} setKids={setKids}
+                                        infants={infants} setInfants={setInfants}
+                                        cabinClass={cabinClass} setCabinClass={setCabinClass}
+                                        onClose={() => setShowTravelerModal(false)}
                                     />
-                                )}
-                            </div>
+                                </div>
+                            )}
                         </div>
-                    </div>
-                    <div className={dividerClass} />
-
-                    {/* TRAVELERS */}
-                    <div className={`${pillSectionBase} flex-[0.8] z-[52]`} onClick={() => setShowTravelerModal(!showTravelerModal)}>
-                        <div className={labelClass}>Travelers</div>
-                        <div className="text-[15px] font-bold text-[#1e2049] truncate leading-tight">
-                            {adults + children + kids + infants} Guests, {cabinClass === 'Economy' ? 'Eco' : cabinClass === 'Business' ? 'Bus' : '1st'}
-                        </div>
-                        {showTravelerModal && (
-                            <div className="absolute top-full right-0 mt-4 w-[85vw] md:w-[340px] z-[70]" onClick={e => e.stopPropagation()}>
-                                <TravelerModalContent
-                                    adults={adults} setAdults={setAdults}
-                                    children={children} setChildren={setChildren}
-                                    kids={kids} setKids={setKids}
-                                    infants={infants} setInfants={setInfants}
-                                    cabinClass={cabinClass} setCabinClass={setCabinClass}
-                                    onClose={() => setShowTravelerModal(false)}
-                                />
-                            </div>
-                        )}
                     </div>
 
                     {/* SEARCH BUTTON */}
-                    <div className="p-2 md:pl-2 w-full md:w-auto mt-2 md:mt-0">
-                        <button onClick={handleSubmit} className="w-full md:w-12 h-12 bg-[#E41D57] hover:bg-[#D41B50] rounded-xl md:rounded-full shadow-lg flex items-center justify-center transition-all transform active:scale-95 gap-2">
-                            <FiSearch className="text-white w-5 h-5 stroke-[3px]" />
-                            <span className="md:hidden text-white font-bold">Search</span>
+                    <div className="flex justify-center mt-2">
+                        <button onClick={handleSubmit} className="bg-[#E41D57] hover:bg-[#D41B50] text-white font-bold py-3 px-16 rounded-xl shadow-lg hover:shadow-xl transition-all transform active:scale-95 text-lg">
+                            Search
                         </button>
                     </div>
                 </div>
             )
             }
 
-            {/* --- MULTI CITY LAYOUT (STACKED OVALS) --- */}
+            {/* --- MULTI CITY LAYOUT --- */}
             {
                 tripType === 'multiCity' && (
-                    <div className="w-full flex flex-col gap-3 pb-8 relative">
+                    <div className="w-full flex flex-col gap-4 pb-8 relative">
                         {segments.map((segment, idx) => (
-                            <div key={idx} className={pillContainerClass + " !min-h-auto md:!min-h-[66px] !overflow-visible"} style={{ zIndex: (segments.length - idx) * 10 }}>
-                                {/* FROM */}
-                                <div className={`${pillSectionBase} !flex-none w-full md:w-[22%]`} onClick={() => setActiveSuggestion(`segment_${idx}_from`)}>
-                                    {/* Display Component */}
-                                    <div className="w-full">
-                                        <div className={labelClass}>From</div>
-                                        <div className={`text-[15px] font-bold leading-tight truncate ${segment.from ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
-                                            {segment.from ? segment.from.split('(')[0].trim() : "Origin"}
-                                        </div>
-                                        {segment.from && <div className="text-[10px] text-gray-400 truncate">{segment.from.match(/\((.*?)\)/)?.[1] || ''}, {segment.from.split(',')[1]?.trim() || 'Airport'}</div>}
-                                    </div>
-                                    {activeSuggestion === `segment_${idx}_from` && (
-                                        <SuggestionsDropdown
-                                            initialSearch={''}
-                                            list={airportList}
-                                            onSelect={(val) => {
-                                                const newSegments = [...segments];
-                                                newSegments[idx].from = val;
-                                                setSegments(newSegments);
-                                                setActiveSuggestion(null);
-                                            }}
-                                        />
-                                    )}
-                                </div>
-                                <div className={dividerClass} />
+                            <div key={idx} className="grid grid-cols-1 md:grid-cols-4 gap-4 relative" style={{ zIndex: (segments.length - idx) * 10 }}>
 
-                                {/* TO */}
-                                <div className={`${pillSectionBase} !flex-none w-full md:w-[22%]`} onClick={() => setActiveSuggestion(`segment_${idx}_to`)}>
-                                    {/* Display Component */}
-                                    <div className="w-full">
-                                        <div className={labelClass}>To</div>
-                                        <div className={`text-[15px] font-bold leading-tight truncate ${segment.to ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
-                                            {segment.to ? segment.to.split('(')[0].trim() : "Destination"}
+                                {/* FROM & TO WRAPPER (Col 1 & 2) */}
+                                <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 relative">
+                                    {/* FROM */}
+                                    <div className={`${pillSectionBase} h-24 border border-gray-200 rounded-xl hover:border-gray-300 bg-white`} onClick={() => setActiveSuggestion(`segment_${idx}_from`)}>
+                                        <div className="w-full">
+                                            <div className={labelClass}>From</div>
+                                            <div className={`text-[15px] font-bold leading-tight truncate ${segment.from ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
+                                                {segment.from ? segment.from.split('(')[0].trim() : "Origin"}
+                                            </div>
+                                            {segment.from && <div className="text-[10px] text-gray-400 truncate">{segment.from.match(/\((.*?)\)/)?.[1] || ''}, {segment.from.split(',')[1]?.trim() || 'Airport'}</div>}
                                         </div>
-                                        {segment.to && <div className="text-[10px] text-gray-400 truncate">{segment.to.match(/\((.*?)\)/)?.[1] || ''}, {segment.to.split(',')[1]?.trim() || 'Airport'}</div>}
+                                        {activeSuggestion === `segment_${idx}_from` && (
+                                            <SuggestionsDropdown
+                                                initialSearch={''}
+                                                list={airportList}
+                                                onSelect={(val) => {
+                                                    const newSegments = [...segments];
+                                                    newSegments[idx].from = val;
+                                                    setSegments(newSegments);
+                                                    setActiveSuggestion(null);
+                                                }}
+                                            />
+                                        )}
                                     </div>
-                                    {activeSuggestion === `segment_${idx}_to` && (
-                                        <SuggestionsDropdown
-                                            initialSearch={''}
-                                            list={airportList}
-                                            onSelect={(val) => {
-                                                const newSegments = [...segments];
-                                                newSegments[idx].to = val;
-                                                setSegments(newSegments);
-                                                setActiveSuggestion(null);
-                                            }}
-                                        />
-                                    )}
-                                </div>
-                                <div className={dividerClass} />
 
-                                {/* DATE */}
-                                <div className="flex-1 relative h-full flex flex-col justify-center" ref={el => multiCityContainerRefs.current[idx] = el}>
+                                    {/* SWAP BUTTON - Centered in the group */}
+                                    <div className="hidden md:flex absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[60]">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                const newSegments = [...segments];
+                                                const temp = newSegments[idx].from;
+                                                newSegments[idx].from = newSegments[idx].to;
+                                                newSegments[idx].to = temp;
+                                                setSegments(newSegments);
+                                            }}
+                                            className="w-8 h-8 bg-white border border-gray-200 rounded-full flex items-center justify-center shadow-sm hover:bg-gray-50 transition-colors text-[#1e2049]"
+                                        >
+                                            <FiRepeat className="w-4 h-4" />
+                                        </button>
+                                    </div>
+
+                                    {/* TO */}
+                                    <div className={`${pillSectionBase} h-24 border border-gray-200 rounded-xl hover:border-gray-300 bg-white pl-4 md:pl-6`} onClick={() => setActiveSuggestion(`segment_${idx}_to`)}>
+                                        <div className="w-full">
+                                            <div className={labelClass}>To</div>
+                                            <div className={`text-[15px] font-bold leading-tight truncate ${segment.to ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
+                                                {segment.to ? segment.to.split('(')[0].trim() : "Destination"}
+                                            </div>
+                                            {segment.to && <div className="text-[10px] text-gray-400 truncate">{segment.to.match(/\((.*?)\)/)?.[1] || ''}, {segment.to.split(',')[1]?.trim() || 'Airport'}</div>}
+                                        </div>
+                                        {activeSuggestion === `segment_${idx}_to` && (
+                                            <SuggestionsDropdown
+                                                initialSearch={''}
+                                                list={airportList}
+                                                onSelect={(val) => {
+                                                    const newSegments = [...segments];
+                                                    newSegments[idx].to = val;
+                                                    setSegments(newSegments);
+                                                    setActiveSuggestion(null);
+                                                }}
+                                            />
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* DEPART */}
+                                <div className={`${pillSectionBase} h-24 border border-gray-200 rounded-xl hover:border-gray-300 bg-white`} ref={el => multiCityContainerRefs.current[idx] = el}>
                                     <div
-                                        className="flex-1 h-full flex flex-col justify-center items-start text-left cursor-pointer hover:bg-gray-50 px-4 w-full rounded-r-full"
+                                        className="w-full h-full flex flex-col justify-center items-start text-left cursor-pointer"
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             setActiveSuggestion(null);
@@ -484,9 +513,10 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                                         }}
                                     >
                                         <div className="text-[10px] font-bold text-[#E41D57] uppercase tracking-wider mb-0.5">Depart</div>
-                                        <div className={`text-[13px] font-bold leading-tight ${segment.depart ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
+                                        <div className={`text-[15px] font-bold leading-tight ${segment.depart ? 'text-[#1e2049]' : 'text-gray-400 font-normal'}`}>
                                             {segment.depart ? format(segment.depart, "dd MMM") : 'Select Date'}
                                         </div>
+                                        <div className="text-[10px] text-gray-400 truncate">Date from choice</div>
                                     </div>
                                     <DatePicker
                                         selected={segment.depart}
@@ -500,7 +530,6 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                                         }}
                                         open={multiCityDatesOpen[idx] || false}
                                         onClickOutside={() => setMultiCityDatesOpen(prev => ({ ...prev, [idx]: false }))}
-                                        // Portal to body on mobile, local container on desktop
                                         popperContainer={({ children }) => {
                                             if (window.innerWidth < 768) {
                                                 return createPortal(children, document.body);
@@ -520,64 +549,67 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                                     />
                                 </div>
 
-                                {/* REMOVE or TRAVELERS */}
+                                {/* COL 4: TRAVELERS (Row 0) or ACTIONS (Row > 0) */}
                                 {idx === 0 ? (
-                                    <>
-                                        <div className={dividerClass} />
-                                        <div className={`${pillSectionBase} !flex-none w-full md:w-[25%]`} onClick={() => setShowTravelerModal(!showTravelerModal)}>
-                                            <div className={labelClass}>Travelers</div>
-                                            <div className="text-[15px] font-bold text-[#1e2049] truncate leading-tight">
-                                                {adults + children + kids + infants} Guests
-                                            </div>
-                                            {showTravelerModal && (
-                                                <div className="absolute top-full right-0 mt-4 w-[85vw] md:w-[340px] z-[70]" onClick={e => e.stopPropagation()}>
-                                                    <TravelerModalContent
-                                                        adults={adults} setAdults={setAdults}
-                                                        children={children} setChildren={setChildren}
-                                                        kids={kids} setKids={setKids}
-                                                        infants={infants} setInfants={setInfants}
-                                                        cabinClass={cabinClass} setCabinClass={setCabinClass}
-                                                        onClose={() => setShowTravelerModal(false)}
-                                                    />
-                                                </div>
-                                            )}
+                                    <div className={`${pillSectionBase} h-24 border border-gray-200 rounded-xl hover:border-gray-300 bg-white`} onClick={() => setShowTravelerModal(!showTravelerModal)}>
+                                        <div className={labelClass}>Travelers</div>
+                                        <div className="text-[15px] font-bold text-[#1e2049] truncate leading-tight">
+                                            {adults + children + kids + infants} Guests{cabinClass && `, ${cabinClass === 'Economy' ? 'Eco' : cabinClass === 'Business' ? 'Bus' : '1st'}`}
                                         </div>
-                                    </>
+                                        <div className="text-[10px] text-gray-400 truncate">{cabinClass || 'Economy'}</div>
+                                        {showTravelerModal && (
+                                            <div className="absolute top-full right-0 mt-4 w-[85vw] md:w-[340px] z-[70]" onClick={e => e.stopPropagation()}>
+                                                <TravelerModalContent
+                                                    adults={adults} setAdults={setAdults}
+                                                    children={children} setChildren={setChildren}
+                                                    kids={kids} setKids={setKids}
+                                                    infants={infants} setInfants={setInfants}
+                                                    cabinClass={cabinClass} setCabinClass={setCabinClass}
+                                                    onClose={() => setShowTravelerModal(false)}
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
                                 ) : (
-                                    <div className="flex items-center pl-4 pr-2 w-full md:w-[25%] justify-end p-2 md:p-0">
+                                    <div className="h-24 flex items-center gap-2">
+                                        {/* If it's the last segment, show 'Add City' button occupying space? Or just Actions? */}
+                                        {/* If we want 'Add Another City' box here as per screenshot */}
+                                        {idx === segments.length - 1 ? (
+                                            <div
+                                                className={`${pillSectionBase} flex-1 h-24 border border-gray-200 rounded-xl hover:border-gray-300 bg-white flex flex-row items-center justify-center gap-2`}
+                                                onClick={() => setSegments([...segments, { from: '', to: '', depart: null }])}
+                                            >
+                                                <FiPlus className="text-[#1e2049]" />
+                                                <span className="text-[#1e2049] font-bold text-sm">Add Another City</span>
+                                            </div>
+                                        ) : (
+                                            <div className="flex-1"></div> /* Spacer */
+                                        )}
+
+                                        {/* Remove Button */}
                                         <button
                                             onClick={() => {
                                                 const newSegments = segments.filter((_, i) => i !== idx);
                                                 setSegments(newSegments);
                                             }}
-                                            className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                            className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0"
+                                            title="Remove Flight"
                                         >
                                             <FiX />
                                         </button>
                                     </div>
                                 )}
-
-                                {/* SEARCH (First row or separate?) -> Separate below usually, but we want it in the 'Action' area of the list.
-                                Actually, placing it at the bottom is safer for layout. 
-                                We will put a spacer here to balance the row if needed.
-                             */}
                             </div>
                         ))}
 
-                        {/* ACTIONS BOTTOM */}
-                        <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center px-0 md:px-4 mt-2 gap-3 md:gap-0">
-                            <button
-                                onClick={() => setSegments([...segments, { from: '', to: '', depart: null }])}
-                                className="bg-white border border-gray-200 text-[#1e2049] hover:bg-gray-50 px-5 py-3 md:py-2.5 rounded-xl md:rounded-full text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition-colors w-full md:w-auto"
-                            >
-                                <FiPlus className="w-4 h-4" /> Add Flight
-                            </button>
-
+                        {/* SEARCH BUTTON (Centered) */}
+                        <div className="flex justify-center mt-4">
                             <button
                                 onClick={handleSubmit}
-                                className="bg-[#E41D57] hover:bg-[#D41B50] text-white px-8 py-3 rounded-xl md:rounded-full text-sm font-bold shadow-lg shadow-[#E41D57]/20 flex items-center justify-center gap-2 transition-all transform active:scale-95 w-full md:w-auto"
+                                className="bg-[#E41D57] hover:bg-[#D41B50] text-white px-16 py-3 rounded-xl shadow-lg shadow-[#E41D57]/20 flex items-center justify-center gap-2 transition-all transform active:scale-95 text-xl font-bold"
                             >
-                                <FiSearch className="w-4 h-4 stroke-[3px]" /> Search Flights
+                                <span className="hidden md:inline">Search</span>
+                                <span className="md:hidden">Search</span>
                             </button>
                         </div>
 
@@ -658,7 +690,7 @@ const TravelerModalContent = ({ adults, setAdults, children, setChildren, kids, 
             <h4 className="font-bold text-gray-900 mb-4 text-sm uppercase tracking-wider text-gray-500">Cabin Class</h4>
             <div className="grid grid-cols-3 gap-3">
                 {['Economy', 'Business', 'First Class'].map((c) => (
-                    <button key={c} onClick={() => setCabinClass(c)} className={`px-2 py-2 rounded-xl text-[10px] font-bold transition-all border ${cabinClass === c ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-200'}`}>{c}</button>
+                    <button key={c} onClick={() => setCabinClass(prev => prev === c ? '' : c)} className={`px-2 py-2 rounded-xl text-[10px] font-bold transition-all border ${cabinClass === c ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-200'}`}>{c}</button>
                 ))}
             </div>
         </div>

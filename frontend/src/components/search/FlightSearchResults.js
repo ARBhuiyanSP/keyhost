@@ -110,7 +110,7 @@ const FlightSearchResults = () => {
                 }
 
                 apiParams['fare_type'] = 'Public';
-                apiParams['classOfService'] = currentParams.class || 'Economy';
+                apiParams['classOfService'] = currentParams.class || '';
 
                 console.log('Initiating Search with Aerotake Params:', apiParams);
 
@@ -257,7 +257,7 @@ const FlightSearchResults = () => {
         const from = p.from ? p.from.split('(')[0] : 'Origin';
         const to = p.to ? p.to.split('(')[0] : 'Dest';
         const date = p.depart ? format(new Date(p.depart), 'dd MMM') : '';
-        return `${from} to ${to}, ${date} • ${parseInt(p.adults || 1) + parseInt(p.children || 0)} Travelers`;
+        return `${from} to ${to}, ${date} • ${parseInt(p.adults || 1) + parseInt(p.children || 0) + parseInt(p.kids || 0) + parseInt(p.infants || 0)} Travelers`;
     }, [searchParams]);
 
     const SkeletonLoader = () => (

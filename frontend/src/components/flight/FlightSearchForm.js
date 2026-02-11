@@ -55,7 +55,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
     const [children, setChildren] = useState(parseInt(searchParams.children) || 0);
     const [kids, setKids] = useState(parseInt(searchParams.kids) || 0);
     const [infants, setInfants] = useState(parseInt(searchParams.infants) || 0);
-    const [cabinClass, setCabinClass] = useState(searchParams.class || 'Economy');
+    const [cabinClass, setCabinClass] = useState(searchParams.class || '');
     const [showTravelerModal, setShowTravelerModal] = useState(false);
     const [departOpen, setDepartOpen] = useState(false);
     const [returnOpen, setReturnOpen] = useState(false);
@@ -353,7 +353,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                     <div className={`${pillSectionBase} flex-[0.8] z-[52]`} onClick={() => setShowTravelerModal(!showTravelerModal)}>
                         <div className={labelClass}>Travelers</div>
                         <div className="text-[15px] font-bold text-[#1e2049] truncate leading-tight">
-                            {adults + children + kids + infants} Guests, {cabinClass === 'Economy' ? 'Eco' : cabinClass === 'Business' ? 'Bus' : '1st'}
+                            {adults + children + kids + infants} Guests{cabinClass && `, ${cabinClass === 'Economy' ? 'Eco' : cabinClass === 'Business' ? 'Bus' : '1st'}`}
                         </div>
                         {showTravelerModal && (
                             <div className="absolute top-full right-0 mt-4 w-[340px] z-[70]" onClick={e => e.stopPropagation()}>
@@ -615,7 +615,7 @@ const TravelerModalContent = ({ adults, setAdults, children, setChildren, kids, 
             <h4 className="font-bold text-gray-900 mb-4 text-sm uppercase tracking-wider text-gray-500">Cabin Class</h4>
             <div className="grid grid-cols-3 gap-3">
                 {['Economy', 'Business', 'First Class'].map((c) => (
-                    <button key={c} onClick={() => setCabinClass(c)} className={`px-2 py-2 rounded-xl text-[10px] font-bold transition-all border ${cabinClass === c ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-200'}`}>{c}</button>
+                    <button key={c} onClick={() => setCabinClass(prev => prev === c ? '' : c)} className={`px-2 py-2 rounded-xl text-[10px] font-bold transition-all border ${cabinClass === c ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-200'}`}>{c}</button>
                 ))}
             </div>
         </div>
