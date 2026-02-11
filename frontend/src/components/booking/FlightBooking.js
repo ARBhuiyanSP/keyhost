@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchCountries, bookFlight, revalidateFlight } from '../../utils/flightApi';
+import PlaneLoader from '../common/PlaneLoader';
+import LoadingSkeleton from '../common/LoadingSkeleton';
 
 // Helper to calculate exact age
 function calculateExactAge(birth, ref) {
@@ -347,14 +349,24 @@ const FlightBooking = () => {
         }
     };
 
-    if (loading) return <div className="flex justify-center items-center h-screen"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#E41D57]"></div></div>;
+
+
+    // Use LoadingSkeleton for initial loading
+    if (loading) return (
+        <div className="container mx-auto px-4 max-w-7xl py-8 bg-white">
+            <LoadingSkeleton type="form" count={3} />
+        </div>
+    );
     if (error) return <div className="p-10 text-center text-red-500 font-bold">{error}</div>;
 
     const firstLeg = flight.legs ? Object.values(flight.legs)[0] : null;
     const lastLeg = flight.legs ? Object.values(flight.legs)[Object.values(flight.legs).length - 1] : null;
 
     return (
-        <div className="bg-white min-h-screen py-8 font-sans text-gray-800">
+        <div className="bg-white min-h-screen py-8 font-sans text-gray-800 relative">
+            {/* Show PlaneLoader overlay when submitting */}
+            {submitting && <PlaneLoader text="Processing Booking..." subtext="Please do not close this window" />}
+
             <div className="container mx-auto px-4 max-w-7xl">
                 {/* Back Button */}
                 <button

@@ -5,22 +5,16 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { format } from 'date-fns';
 import { createPortal } from 'react-dom';
+import PlaneLoader from '../common/PlaneLoader';
 
-// Robust anchor for Popper.js positioning
-const HiddenAnchor = React.forwardRef(({ value, onClick }, ref) => (
-    <div
-        ref={ref}
-        onClick={onClick}
-        className="absolute inset-0 w-full h-full z-0"
-        aria-hidden="true"
-    />
-));
+// ... (HiddenAnchor)
 
 const FlightSearchForm = ({ searchParams, onSearch }) => {
     // Refs for manual calendar positioning
     const departContainerRef = useRef(null);
     const returnContainerRef = useRef(null);
     const multiCityContainerRefs = useRef({});
+    const [isLoading, setIsLoading] = useState(false);
 
     // Helper to extract IATA code
     const extractCode = (val) => {
@@ -141,6 +135,13 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
     }, []);
 
     const handleSubmit = () => {
+        setIsLoading(true); // START LOADING
+
+        // Simulate a small delay or just proceed (since navigation is usually fast, but we want to show the loader)
+        // Actually, onSearch likely navigates. The loader might disappear quickly if navigation is instant.
+        // But if onSearch fetches data, it will persist. 
+        // We'll set it to true and let the parent/navigation handle unmounting.
+
         const params = {
             trip_type: tripType,
             adults, children, kids, infants,
@@ -164,10 +165,14 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
             params.return = (tripType === 'roundTrip' && returnDate) ? returnDate.toISOString() : null;
         }
         params.property_type = 'flight';
-        onSearch(params);
+
+        // Timeout to ensure loader is seen if navigation is instant (optional, but good UX)
+        setTimeout(() => {
+            onSearch(params);
+        }, 500);
     };
 
-    // STYLING CONSTANTS
+    // ... existing render ...
     // STYLING CONSTANTS
     const pillContainerClass = "w-full bg-white rounded-3xl md:rounded-full shadow-[0_6px_16px_rgba(0,0,0,0.08)] border border-gray-200 flex flex-col md:flex-row items-stretch md:items-center pr-2 p-2 md:p-1 gap-1 md:gap-0.5 min-h-auto md:min-h-[66px] relative z-[500] overflow-visible";
     const pillSectionBase = "group relative flex flex-col justify-center px-4 md:px-6 cursor-pointer transition-colors";
@@ -176,6 +181,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
 
     return (
         <div ref={formRef} className="w-full max-w-5xl mx-auto flex flex-col items-center">
+            {isLoading && <PlaneLoader text="Searching Flights..." subtext="Finding the best deals for you" />}
             {/* Trip Type Toggle */}
             <div className="bg-[#EBEBEB]/50 inline-flex items-center rounded-full p-1 mb-4 backdrop-blur-sm">
                 {['oneWay', 'roundTrip', 'multiCity'].map((type) => (

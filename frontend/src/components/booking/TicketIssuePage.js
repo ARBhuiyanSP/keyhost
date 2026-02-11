@@ -15,24 +15,25 @@ const TicketIssuePage = () => {
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const bookingId = params.get('booking_id');
+        const folderPath = params.get('folder_path');
 
         if (bookingId) {
-            fetchBookingDetails(bookingId);
+            fetchBookingDetails(bookingId, folderPath);
         } else {
             setError('No Booking ID found.');
             setLoading(false);
         }
     }, []);
 
-    const fetchBookingDetails = async (bookingId) => {
+    const fetchBookingDetails = async (bookingId, folderPath) => {
         try {
-            // Updated to use flightApi (baseURL /api)
-            const res = await flightApi.get(`/flight-booking-details?booking_id=${bookingId}`);
-            // flightApi returns response.data directly (based on flightApi.js interceptor or default axios behavior)
-            // Wait, flightApi.js methods return response.data, but flightApi.get returns the axios response object unless intercepted?
-            // Checking flightApi.js: "export const fetchCountries = ... return response.data"
-            // But flightApi instance itself is just axios.create().
-            // So flightApi.get returns 'response'. content is in response.data.
+            // Include folder_path in the request if available
+            let url = `/flight-booking-details?booking_id=${bookingId}`;
+            if (folderPath) {
+                url += `&folder_path=${folderPath}`;
+            }
+
+            const res = await flightApi.get(url);
 
             if (res.data.success) {
                 setBooking(res.data.data);
@@ -41,7 +42,8 @@ const TicketIssuePage = () => {
             }
         } catch (err) {
             console.error(err);
-            setError('Error fetching booking details.');
+            const apiMsg = err.response?.data?.message;
+            setError(apiMsg || 'Error fetching booking details.');
         } finally {
             setLoading(false);
         }
@@ -94,14 +96,23 @@ const TicketIssuePage = () => {
                 setSuccessMessage("Tickets Issued Successfully!");
                 setSelectedPassengers({});
                 setTotalCost(0);
-                fetchBookingDetails(booking.bookingId);
+                // Refresh details
+                const params = new URLSearchParams(window.location.search);
+                fetchBookingDetails(booking.bookingId, params.get('folder_path'));
             } else {
                 setError(res.data.message || "Failed to issue tickets.");
             }
         } catch (err) {
             console.error(err);
             const apiMsg = err.response?.data?.message;
-            setError(apiMsg || "Error processing request.");
+            const apiErrors = err.response?.data?.errors; // If the API returns an array of specific errors
+
+            if (apiErrors && Array.isArray(apiErrors) && apiErrors.length > 0) {
+                // Join array errors if they exist
+                setError(apiMsg + ' ' + apiErrors.join(' | ') || "Error processing request.");
+            } else {
+                setError(apiMsg || "Error processing request.");
+            }
         } finally {
             setProcessing(false);
         }
