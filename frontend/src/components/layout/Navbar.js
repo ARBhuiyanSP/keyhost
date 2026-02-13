@@ -494,6 +494,9 @@ const Navbar = () => {
       const params = new URLSearchParams(window.location.search);
       params.set('property_type', normalized);
       navigate(`/search?${params.toString()}`, { replace: true });
+    } else if (!isHome) {
+      // If NOT on Home and NOT on Search (e.g. BookingSuccess, PropertyDetail), navigate to search
+      navigate(`/search?property_type=${normalized}`);
     }
   };
 
