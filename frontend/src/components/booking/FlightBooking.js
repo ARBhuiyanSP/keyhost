@@ -368,7 +368,27 @@ const FlightBooking = () => {
                 setValidationErrors(err.response.data.errors);
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             } else {
-                setSubmissionError("Booking Failed: " + (err.response?.data?.message || err.message || "Unknown Error"));
+                let errorMessage = err.response?.data?.message || err.message || "Unknown Error";
+
+                // Extract detailed Sabre error if available
+                const details = err.response?.data?.details;
+                if (details && details.Error) {
+                    try {
+                        const sabreErrors = details.Error.flatMap(e =>
+                            e.SystemSpecificResults?.flatMap(s =>
+                                s.Message?.map(m => `${m.code}: ${m.content}`)
+                            )
+                        ).filter(Boolean);
+
+                        if (sabreErrors.length > 0) {
+                            errorMessage += ": " + sabreErrors.join(' | ');
+                        }
+                    } catch (e) {
+                        console.error("Failed to parse Sabre error details", e);
+                    }
+                }
+
+                setSubmissionError("Booking Failed: " + errorMessage);
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             }
         } finally {

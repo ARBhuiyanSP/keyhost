@@ -337,7 +337,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                                 className="hidden"
                                 popperClassName="fresh-datepicker-popper"
                                 monthsShown={tripType === 'roundTrip' && window.innerWidth >= 768 ? 2 : 1}
-                                minDate={new Date()}
+                                minDate={new Date().setHours(0, 0, 0, 0)}
                                 popperPlacement="bottom-start"
                                 popperModifiers={[
                                     { name: "flip", enabled: false },
@@ -396,7 +396,8 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                                     className="hidden"
                                     popperClassName="fresh-datepicker-popper"
                                     monthsShown={window.innerWidth >= 768 ? 2 : 1}
-                                    minDate={departDate || new Date()}
+                                    minDate={departDate || new Date().setHours(0, 0, 0, 0)}
+                                    openToDate={departDate || new Date().setHours(0, 0, 0, 0)}
                                     popperPlacement="bottom-start"
                                     popperModifiers={[
                                         { name: "flip", enabled: false },
@@ -549,7 +550,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                                         className="hidden"
                                         popperClassName="fresh-datepicker-popper"
                                         monthsShown={1}
-                                        minDate={new Date()}
+                                        minDate={new Date().setHours(0, 0, 0, 0)}
                                         popperPlacement="bottom-start"
                                         popperModifiers={[
                                             { name: "flip", enabled: false },
