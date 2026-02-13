@@ -1,25 +1,65 @@
 
 import React, { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { FaCheckCircle, FaPlane, FaFilePdf, FaHome, FaUser, FaInfoCircle } from 'react-icons/fa';
 import Footer from '../layout/Footer';
 import LoadingSkeleton from '../common/LoadingSkeleton';
+import flightApi from '../../utils/flightApi';
 
 const BookingSuccess = () => {
     const location = useLocation();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const [booking, setBooking] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     useEffect(() => {
-        if (location.state && location.state.booking) {
-            setBooking(location.state.booking);
-        } else {
-            // Fallback or redirect if no state
-            // navigate('/'); 
-        }
-    }, [location, navigate]);
+        const fetchBookingDetails = async () => {
+            try {
+                // 1. Try to get from State
+                if (location.state && location.state.booking && location.state.booking.booking_details) {
+                    setBooking(location.state.booking);
+                    setLoading(false);
+                    return;
+                }
 
-    if (!booking) {
+                // 2. Try to get from URL Params (e.g. refresh or direct link)
+                const bookingId = searchParams.get('booking_id') || (location.state && location.state.booking ? (location.state.booking.booking_id || location.state.booking.pnr) : null);
+                const folderPath = searchParams.get('folder_path') || (location.state && location.state.booking ? location.state.booking.folder_path : null);
+
+                if (bookingId) {
+                    setLoading(true);
+                    const response = await flightApi.get('/flight-booking-details', {
+                        params: {
+                            booking_id: bookingId,
+                            folder_path: folderPath
+                        }
+                    });
+
+                    if (response.data.success) {
+                        setBooking({
+                            booking_id: bookingId,
+                            booking_details: response.data.data
+                        });
+                    } else {
+                        setError("Could not retrieve booking details.");
+                    }
+                } else {
+                    setError("No booking reference found.");
+                }
+            } catch (err) {
+                console.error("Failed to fetch booking details", err);
+                setError("Failed to load booking details.");
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchBookingDetails();
+    }, [location, searchParams]);
+
+    if (loading) {
         return (
             <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4">
                 <div className="w-full max-w-4xl space-y-4">
@@ -30,9 +70,30 @@ const BookingSuccess = () => {
         );
     }
 
+    if (error || !booking) {
+        return (
+            <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4">
+                <div className="text-center space-y-4">
+                    <div className="text-red-500 text-5xl">
+                        <FaInfoCircle />
+                    </div>
+                    <h2 className="text-2xl font-bold text-gray-800">Booking Details Not Found</h2>
+                    <p className="text-gray-600">{error || "We couldn't find the booking information you're looking for."}</p>
+                    <button
+                        onClick={() => navigate('/')}
+                        className="bg-gray-800 text-white px-6 py-2 rounded-full hover:bg-gray-700 transition"
+                    >
+                        Return Home
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     const { booking_details, booking_id } = booking;
-    // The API now returns `customBookingResponse` as `booking_details`.
-    // We can map these fields directly.
+
+    // map either directly if from API or from Custom Response
+    const data = booking_details || {};
 
     const {
         leadPassenger,
@@ -46,7 +107,7 @@ const BookingSuccess = () => {
         routeSummary,
         passengerSummary,
         ticketingLimit
-    } = booking_details || {};
+    } = data;
 
     return (
         <div className="min-h-screen bg-white flex flex-col font-sans">
