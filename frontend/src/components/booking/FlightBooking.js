@@ -26,6 +26,7 @@ const FlightBooking = () => {
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState(null);
+    const [submissionError, setSubmissionError] = useState(null);
     const [activeTab, setActiveTab] = useState('flight_details'); // flight_details | fare_summary
     const [validationErrors, setValidationErrors] = useState({});
     const [openPassengerIndices, setOpenPassengerIndices] = useState([0]);
@@ -167,6 +168,7 @@ const FlightBooking = () => {
         e.preventDefault();
         setSubmitting(true);
         setValidationErrors({});
+        setSubmissionError(null);
 
         const errors = {};
         const errorIndices = new Set(); // Track indices to auto-expand
@@ -283,7 +285,8 @@ const FlightBooking = () => {
         // Identify Source (Sabre vs Amadeus) check
         const isAmadeus = flight.source === 'Amadeus';
         if (isAmadeus) {
-            alert("Amadeus booking not implemented in this demo.");
+            setSubmissionError("Amadeus booking not implemented in this demo.");
+            window.scrollTo({ top: 0, behavior: 'smooth' });
             setSubmitting(false);
             return;
         }
@@ -356,7 +359,8 @@ const FlightBooking = () => {
             if (response.success || response.booking_id) {
                 navigate('/booking-success', { state: { booking: response } });
             } else {
-                alert("Booking Status Unknown: " + JSON.stringify(response));
+                setSubmissionError("Booking Status Unknown: " + JSON.stringify(response));
+                window.scrollTo({ top: 0, behavior: 'smooth' });
             }
         } catch (err) {
             console.error("Booking Error:", err);
@@ -364,7 +368,8 @@ const FlightBooking = () => {
                 setValidationErrors(err.response.data.errors);
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             } else {
-                alert("Booking Failed: " + (err.response?.data?.message || err.message || "Unknown Error"));
+                setSubmissionError("Booking Failed: " + (err.response?.data?.message || err.message || "Unknown Error"));
+                window.scrollTo({ top: 0, behavior: 'smooth' });
             }
         } finally {
             setSubmitting(false);
@@ -412,6 +417,20 @@ const FlightBooking = () => {
                     </svg>
                     <span className="font-semibold">Back</span>
                 </button>
+
+                {/* Submission Error Alert */}
+                {submissionError && (
+                    <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg mb-6 flex items-start gap-3 animate-fadeIn">
+                        <i className="fa fa-exclamation-circle mt-0.5"></i>
+                        <div className="flex-1">
+                            <h4 className="font-bold text-sm">Booking Failed</h4>
+                            <p className="text-sm">{submissionError}</p>
+                        </div>
+                        <button onClick={() => setSubmissionError(null)} className="text-red-400 hover:text-red-600">
+                            <i className="fa fa-times"></i>
+                        </button>
+                    </div>
+                )}
 
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
