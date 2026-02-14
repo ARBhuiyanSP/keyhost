@@ -60,7 +60,7 @@ const Navbar = () => {
   const [flightSearchData, setFlightSearchData] = useState({
     from: 'Dhaka', fromCode: 'DAC', fromFull: 'DAC, Hazrat Shahjalal International Airport',
     to: "Cox's Bazar", toCode: 'CXB', toFull: "CXB, Cox's Bazar Airport",
-    departDate: new Date('2026-02-12'),
+    departDate: new Date(new Date().setDate(new Date().getDate() + 3)),
     returnDate: null,
     travelers: 1,
     flightClass: 'Economy',

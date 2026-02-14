@@ -35,7 +35,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
     // Standard State (OneWay/RoundTrip)
     const [fromInput, setFromInput] = useState(searchParams.from || 'Dhaka (DAC)');
     const [toInput, setToInput] = useState(searchParams.to || 'Dubai (DXB)');
-    const [departDate, setDepartDate] = useState(safeDate(searchParams.depart, new Date(2026, 1, 15)));
+    const [departDate, setDepartDate] = useState(safeDate(searchParams.depart, new Date(new Date().setDate(new Date().getDate() + 3))));
     const [returnDate, setReturnDate] = useState(safeDate(searchParams.return));
 
     // Multi City State
@@ -54,7 +54,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
             }
         }
         return [
-            { from: searchParams.from || 'Dhaka (DAC)', to: searchParams.to || 'Dubai (DXB)', depart: safeDate(searchParams.depart, new Date(2026, 1, 15)) },
+            { from: searchParams.from || 'Dhaka (DAC)', to: searchParams.to || 'Dubai (DXB)', depart: safeDate(searchParams.depart, new Date(new Date().setDate(new Date().getDate() + 3))) },
             { from: '', to: '', depart: null }
         ];
     });
