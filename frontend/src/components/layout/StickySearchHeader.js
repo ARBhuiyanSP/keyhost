@@ -160,8 +160,8 @@ const StickySearchHeader = ({
       <img
         src={imgSrc}
         alt={typeName}
-        className={`w-8 h-8 object-contain transition-all duration-300 ${isActive
-          ? 'opacity-100 grayscale-0'
+        className={`w-8 h-8 object-contain transition-all duration-300 group-hover:scale-110 ${isActive
+          ? 'opacity-100 grayscale-0 scale-110'
           : 'opacity-70 grayscale'
           }`}
       />

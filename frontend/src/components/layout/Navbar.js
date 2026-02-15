@@ -512,7 +512,7 @@ const Navbar = () => {
       imgSrc = '/images/nav-icon-hotel.png';
     } else if (normalized.includes('flight')) {
       return (
-        <span className={`text-2xl transition-all duration-300 filter ${active
+        <span className={`text-2xl transition-all duration-300 filter group-hover:scale-110 ${active
           ? 'opacity-100 grayscale-0 scale-110'
           : 'opacity-60 grayscale hover:opacity-80'
           }`}>✈️</span>
@@ -523,7 +523,7 @@ const Navbar = () => {
       <img
         src={imgSrc}
         alt={name}
-        className={`w-7 h-7 object-contain transition-all duration-300 ${active
+        className={`w-7 h-7 object-contain transition-all duration-300 group-hover:scale-110 ${active
           ? 'opacity-100 grayscale-0 scale-110'
           : 'opacity-60 grayscale hover:opacity-80'
           }`}
@@ -625,7 +625,7 @@ const Navbar = () => {
                       key={type.id}
                       type="button"
                       onClick={() => handleTypeClick(type.name)}
-                      className={`flex flex-col items-center justify-center py-1.5 transition-colors ${isActiveTab
+                      className={`flex flex-col items-center justify-center py-1.5 transition-colors group ${isActiveTab
                         ? 'text-gray-900'
                         : 'text-gray-500 hover:text-gray-800'
                         }`}
