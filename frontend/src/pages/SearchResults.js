@@ -280,7 +280,20 @@ const SearchResults = () => {
             >
               <FiArrowLeft className="w-5 h-5 text-gray-700" />
             </button>
-            <span className="font-semibold text-gray-900">{getPropertyTypeTitle(currentPropertyType)}</span>
+            <button
+              disabled
+              className="flex-1 flex items-center justify-start gap-3 bg-white rounded-full px-4 py-2 border border-gray-200 shadow-sm text-left opacity-100"
+            >
+              <FiSearch className="w-4 h-4 text-gray-900 flex-shrink-0" />
+              <div className="flex flex-col items-start leading-tight overflow-hidden">
+                <span className="text-sm font-semibold text-gray-900 truncate w-full">
+                  Flight
+                </span>
+                <span className="text-xs text-gray-500 truncate w-full">
+                  Any week • Add Travelers
+                </span>
+              </div>
+            </button>
           </div>
 
           {/* Bottom Row: Property Type Tabs */}
