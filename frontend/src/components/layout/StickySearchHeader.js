@@ -85,7 +85,7 @@ const StickySearchHeader = ({
     children: 0,
     kids: 0,
     infants: 0,
-    flightClass: 'Economy',
+    flightClass: '',
     tripType: 'oneWay'
   });
   const [flightActiveSection, setFlightActiveSection] = useState(null); // 'from', 'to', 'depart', 'return', 'travelers'

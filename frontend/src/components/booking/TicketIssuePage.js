@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import flightApi from '../../utils/flightApi';
-
+import LoadingSkeleton from '../common/LoadingSkeleton';
 const TicketIssuePage = () => {
     const navigate = useNavigate();
     const [booking, setBooking] = useState(null);
@@ -11,28 +11,30 @@ const TicketIssuePage = () => {
     const [totalCost, setTotalCost] = useState(0);
     const [processing, setProcessing] = useState(false);
     const [successMessage, setSuccessMessage] = useState(null);
+    const [showConfirmModal, setShowConfirmModal] = useState(false);
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const bookingId = params.get('booking_id');
+        const folderPath = params.get('folder_path');
 
         if (bookingId) {
-            fetchBookingDetails(bookingId);
+            fetchBookingDetails(bookingId, folderPath);
         } else {
             setError('No Booking ID found.');
             setLoading(false);
         }
     }, []);
 
-    const fetchBookingDetails = async (bookingId) => {
+    const fetchBookingDetails = async (bookingId, folderPath) => {
         try {
-            // Updated to use flightApi (baseURL /api)
-            const res = await flightApi.get(`/flight-booking-details?booking_id=${bookingId}`);
-            // flightApi returns response.data directly (based on flightApi.js interceptor or default axios behavior)
-            // Wait, flightApi.js methods return response.data, but flightApi.get returns the axios response object unless intercepted?
-            // Checking flightApi.js: "export const fetchCountries = ... return response.data"
-            // But flightApi instance itself is just axios.create().
-            // So flightApi.get returns 'response'. content is in response.data.
+            // Include folder_path in the request if available
+            let url = `/flight-booking-details?booking_id=${bookingId}`;
+            if (folderPath) {
+                url += `&folder_path=${folderPath}`;
+            }
+
+            const res = await flightApi.get(url);
 
             if (res.data.success) {
                 setBooking(res.data.data);
@@ -41,7 +43,8 @@ const TicketIssuePage = () => {
             }
         } catch (err) {
             console.error(err);
-            setError('Error fetching booking details.');
+            const apiMsg = err.response?.data?.message;
+            setError(apiMsg || 'Error fetching booking details.');
         } finally {
             setLoading(false);
         }
@@ -69,15 +72,18 @@ const TicketIssuePage = () => {
         setTotalCost(newTotal);
     };
 
-    const handleIssueTicket = async () => {
+    const handleIssueTicketClick = () => {
         if (Object.keys(selectedPassengers).length === 0) {
-            alert("Please select at least one passenger.");
+            setError("Please select at least one passenger.");
+            window.scrollTo({ top: 0, behavior: 'smooth' });
             return;
         }
+        setShowConfirmModal(true);
+    };
 
-        if (!window.confirm(`Are you sure you want to issue tickets for ${Object.keys(selectedPassengers).length} passengers? Total Cost: ${booking.currency} ${totalCost}`)) {
-            return;
-        }
+    const executeIssueTicket = async () => {
+
+        setShowConfirmModal(false);
 
         setProcessing(true);
         setError(null);
@@ -94,20 +100,49 @@ const TicketIssuePage = () => {
                 setSuccessMessage("Tickets Issued Successfully!");
                 setSelectedPassengers({});
                 setTotalCost(0);
-                fetchBookingDetails(booking.bookingId);
+                // Refresh details
+                const params = new URLSearchParams(window.location.search);
+                fetchBookingDetails(booking.bookingId, params.get('folder_path'));
             } else {
                 setError(res.data.message || "Failed to issue tickets.");
             }
         } catch (err) {
             console.error(err);
-            const apiMsg = err.response?.data?.message;
-            setError(apiMsg || "Error processing request.");
+            const apiMsg = err.response?.data?.message || '';
+            const apiErrors = err.response?.data?.errors || []; // If the API returns an array of specific errors
+
+            // Deduplicate Errors
+            let errorParts = [];
+            if (apiMsg) errorParts.push(apiMsg);
+            if (Array.isArray(apiErrors)) errorParts.push(...apiErrors);
+
+            // Split all parts by '|' to handle pre-combined strings, then dedup
+            // Also normalize spaces
+            const allSegments = errorParts.join('|').split('|').map(s => s.trim()).filter(Boolean);
+            const uniqueSegments = [...new Set(allSegments)];
+
+            setError(uniqueSegments.join(' | ') || "Error processing request.");
+
         } finally {
             setProcessing(false);
         }
     };
 
-    if (loading) return <div className="p-8 text-center">Loading...</div>;
+    if (loading) return (
+        <div className="min-h-screen bg-gray-50 py-8 px-4 font-sans text-gray-800">
+            <div className="max-w-5xl mx-auto space-y-6">
+                <LoadingSkeleton type="card" />
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-2">
+                        <LoadingSkeleton type="list" count={3} />
+                    </div>
+                    <div className="space-y-6">
+                        <LoadingSkeleton type="card" />
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
     if (error && !booking) return <div className="p-8 text-center text-red-600 font-bold bg-white rounded shadow m-4">{error}</div>;
 
     const {
@@ -123,7 +158,52 @@ const TicketIssuePage = () => {
     } = booking;
 
     return (
-        <div className="min-h-screen bg-gray-50 py-8 px-4 font-sans text-gray-800">
+        <div className="min-h-screen bg-gray-50 py-8 px-4 font-sans text-gray-800 relative">
+            {/* Show LoadingSkeleton overlay when processing */}
+            {/* Show LoadingSkeleton overlay when processing */}
+            {processing && (
+                <div className="fixed inset-0 z-50 bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center">
+                    <div className="w-full max-w-md space-y-4 p-6">
+                        <LoadingSkeleton type="card" />
+                        <p className="text-center text-[#E41D57] font-bold animate-pulse">Issuing Tickets...</p>
+                    </div>
+                </div>
+            )}
+
+            {/* Confirmation Modal */}
+            {showConfirmModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn">
+                    <div className="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden">
+                        <div className="p-6 text-center space-y-4">
+                            <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto text-2xl">
+                                <i className="fa fa-question"></i>
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900">Confirm Ticket Issue</h3>
+                            <p className="text-gray-600">
+                                You are about to issue tickets for <span className="font-bold text-gray-900">{Object.keys(selectedPassengers).length}</span> passenger(s).
+                            </p>
+                            <div className="bg-gray-50 rounded-lg p-4">
+                                <div className="text-sm text-gray-500 mb-1">Total Cost</div>
+                                <div className="text-2xl font-bold text-[#1E2049]">{currency} {totalCost.toLocaleString()}</div>
+                            </div>
+                        </div>
+                        <div className="bg-gray-50 px-6 py-4 flex gap-4">
+                            <button
+                                onClick={() => setShowConfirmModal(false)}
+                                className="flex-1 py-3 px-4 bg-white border border-gray-300 text-gray-700 font-bold rounded-lg hover:bg-gray-50 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={executeIssueTicket}
+                                className="flex-1 py-3 px-4 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 shadow-md hover:shadow-lg transition-all"
+                            >
+                                Confirm Issue
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             <div className="max-w-5xl mx-auto space-y-6">
 
                 {/* Header / Flash Messages */}
@@ -238,7 +318,7 @@ const TicketIssuePage = () => {
                             )}
 
                             <button
-                                onClick={handleIssueTicket}
+                                onClick={handleIssueTicketClick}
                                 disabled={processing || totalCost === 0}
                                 className={`w-full mt-6 py-3 px-4 rounded-lg font-bold text-white shadow-md transition-all 
                                     ${processing || totalCost === 0

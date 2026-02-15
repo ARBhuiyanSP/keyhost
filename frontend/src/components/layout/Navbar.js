@@ -60,7 +60,7 @@ const Navbar = () => {
   const [flightSearchData, setFlightSearchData] = useState({
     from: 'Dhaka', fromCode: 'DAC', fromFull: 'DAC, Hazrat Shahjalal International Airport',
     to: "Cox's Bazar", toCode: 'CXB', toFull: "CXB, Cox's Bazar Airport",
-    departDate: new Date('2026-02-12'),
+    departDate: new Date(new Date().setDate(new Date().getDate() + 3)),
     returnDate: null,
     travelers: 1,
     flightClass: 'Economy',
@@ -494,6 +494,9 @@ const Navbar = () => {
       const params = new URLSearchParams(window.location.search);
       params.set('property_type', normalized);
       navigate(`/search?${params.toString()}`, { replace: true });
+    } else if (!isHome) {
+      // If NOT on Home and NOT on Search (e.g. BookingSuccess, PropertyDetail), navigate to search
+      navigate(`/search?property_type=${normalized}`);
     }
   };
 
@@ -613,7 +616,7 @@ const Navbar = () => {
 
           {/* Desktop Navigation / Home tabs */}
           <div className="hidden md:flex items-center flex-1 justify-center">
-            {(isHome || isSearchPage || isPropertyDetail || location.pathname.startsWith('/flight') || location.pathname === '/booking') && propertyTypes && propertyTypes.length > 0 ? (
+            {(isHome || isSearchPage || isPropertyDetail || location.pathname.startsWith('/flight') || location.pathname === '/booking' || location.pathname.startsWith('/booking-success') || location.pathname.startsWith('/ticket-issue') || location.pathname.startsWith('/react/ticket-issue')) && propertyTypes && propertyTypes.length > 0 ? (
               <div className="flex items-center gap-10 flex-wrap justify-center">
                 {propertyTypes.map((type) => {
                   const isActiveTab = headerActiveType === (type.name || '').toLowerCase();
