@@ -158,7 +158,55 @@ const TicketIssuePage = () => {
     } = booking;
 
     return (
-        <div className="min-h-screen bg-gray-50 py-8 px-4 font-sans text-gray-800 relative">
+        <div className="min-h-screen bg-gray-50 pb-8 md:pt-8 font-sans text-gray-800 relative">
+            {/* Mobile Header with Tabs - Visible only on mobile */}
+            <div className="bg-white pt-4 pb-2 px-4 md:hidden sticky top-0 z-50 shadow-sm border-b border-gray-100 mb-4">
+                <div className="flex items-center justify-center gap-2 overflow-x-auto scrollbar-hide pb-2">
+                    <button
+                        onClick={() => navigate('/search?property_type=room')}
+                        className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-500 hover:text-gray-800"
+                    >
+                        <div className="flex flex-col items-center px-2">
+                            <img src="/images/nav-icon-room.png" alt="Room" className="w-5 h-5 object-contain transition-all duration-300 opacity-70 grayscale" />
+                            <span className="text-base font-medium whitespace-nowrap mt-1.5">Room</span>
+                            <span className="mt-1.5 h-[2px] w-full bg-transparent" />
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => navigate('/search?property_type=apartment')}
+                        className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-500 hover:text-gray-800"
+                    >
+                        <div className="flex flex-col items-center px-2">
+                            <img src="/images/nav-icon-apartment.png" alt="Apartments" className="w-5 h-5 object-contain transition-all duration-300 opacity-70 grayscale" />
+                            <span className="text-base font-medium whitespace-nowrap mt-1.5">Apartments</span>
+                            <span className="mt-1.5 h-[2px] w-full bg-transparent" />
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => navigate('/search?property_type=hotel')}
+                        className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-500 hover:text-gray-800"
+                    >
+                        <div className="flex flex-col items-center px-2">
+                            <img src="/images/nav-icon-hotel.png" alt="Hotels" className="w-5 h-5 object-contain transition-all duration-300 opacity-70 grayscale" />
+                            <span className="text-base font-medium whitespace-nowrap mt-1.5">Hotels</span>
+                            <span className="mt-1.5 h-[2px] w-full bg-transparent" />
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => navigate('/search?property_type=flight')}
+                        className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-900"
+                    >
+                        <div className="flex flex-col items-center px-2">
+                            <img src="/images/flight.png" alt="Flight" className="w-5 h-5 object-contain transition-all duration-300 opacity-100 grayscale-0" />
+                            <span className="text-base font-medium whitespace-nowrap mt-1.5">Flight</span>
+                            <span className="mt-1.5 h-[2px] w-full bg-black" />
+                        </div>
+                    </button>
+                </div>
+            </div>
             {/* Show LoadingSkeleton overlay when processing */}
             {/* Show LoadingSkeleton overlay when processing */}
             {processing && (
@@ -204,7 +252,7 @@ const TicketIssuePage = () => {
                     </div>
                 </div>
             )}
-            <div className="max-w-5xl mx-auto space-y-6">
+            <div className="max-w-5xl mx-auto space-y-6 px-4">
 
                 {/* Header / Flash Messages */}
                 {successMessage && (

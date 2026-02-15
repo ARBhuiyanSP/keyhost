@@ -410,7 +410,55 @@ const FlightBooking = () => {
     const lastLeg = flight.legs ? Object.values(flight.legs)[Object.values(flight.legs).length - 1] : null;
 
     return (
-        <div className="bg-white min-h-screen py-8 font-sans text-gray-800 relative">
+        <div className="bg-white min-h-screen pb-8 font-sans text-gray-800 relative">
+            {/* Mobile Header with Tabs - Visible only on mobile */}
+            <div className="bg-white pt-4 pb-2 px-4 md:hidden sticky top-0 z-50 shadow-sm border-b border-gray-100 mb-4">
+                <div className="flex items-center justify-center gap-2 overflow-x-auto scrollbar-hide pb-2">
+                    <button
+                        onClick={() => navigate('/search?property_type=room')}
+                        className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-500 hover:text-gray-800"
+                    >
+                        <div className="flex flex-col items-center px-2">
+                            <img src="/images/nav-icon-room.png" alt="Room" className="w-5 h-5 object-contain transition-all duration-300 opacity-70 grayscale" />
+                            <span className="text-base font-medium whitespace-nowrap mt-1.5">Room</span>
+                            <span className="mt-1.5 h-[2px] w-full bg-transparent" />
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => navigate('/search?property_type=apartment')}
+                        className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-500 hover:text-gray-800"
+                    >
+                        <div className="flex flex-col items-center px-2">
+                            <img src="/images/nav-icon-apartment.png" alt="Apartments" className="w-5 h-5 object-contain transition-all duration-300 opacity-70 grayscale" />
+                            <span className="text-base font-medium whitespace-nowrap mt-1.5">Apartments</span>
+                            <span className="mt-1.5 h-[2px] w-full bg-transparent" />
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => navigate('/search?property_type=hotel')}
+                        className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-500 hover:text-gray-800"
+                    >
+                        <div className="flex flex-col items-center px-2">
+                            <img src="/images/nav-icon-hotel.png" alt="Hotels" className="w-5 h-5 object-contain transition-all duration-300 opacity-70 grayscale" />
+                            <span className="text-base font-medium whitespace-nowrap mt-1.5">Hotels</span>
+                            <span className="mt-1.5 h-[2px] w-full bg-transparent" />
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => navigate('/search?property_type=flight')}
+                        className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-900"
+                    >
+                        <div className="flex flex-col items-center px-2">
+                            <img src="/images/flight.png" alt="Flight" className="w-5 h-5 object-contain transition-all duration-300 opacity-100 grayscale-0" />
+                            <span className="text-base font-medium whitespace-nowrap mt-1.5">Flight</span>
+                            <span className="mt-1.5 h-[2px] w-full bg-black" />
+                        </div>
+                    </button>
+                </div>
+            </div>
             {/* Show LoadingSkeleton overlay when submitting */}
             {submitting && (
                 <div className="fixed inset-0 z-50 bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center">
@@ -422,10 +470,10 @@ const FlightBooking = () => {
             )}
 
             <div className="container mx-auto px-4 max-w-7xl">
-                {/* Back Button */}
+                {/* Back Button - Desktop Only */}
                 <button
                     onClick={() => navigate(-1)}
-                    className="flex items-center gap-2 mb-6 text-gray-600 hover:text-[#E41D57] transition-colors group"
+                    className="hidden md:flex items-center gap-2 mb-6 text-gray-600 hover:text-[#E41D57] transition-colors group"
                 >
                     <svg
                         className="w-5 h-5 transform group-hover:-translate-x-1 transition-transform"
