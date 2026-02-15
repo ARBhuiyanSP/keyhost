@@ -10,6 +10,7 @@ import StickySearchHeader from '../components/layout/StickySearchHeader';
 import PropertyImageSlider from '../components/property/PropertyImageSlider';
 import PropertyMap from '../components/property/PropertyMap';
 import FlightSearchResults from '../components/search/FlightSearchResults';
+import MobileSearchModal from '../components/search/MobileSearchModal';
 
 const SearchResults = () => {
   const navigate = useNavigate();
@@ -193,35 +194,6 @@ const SearchResults = () => {
     setSearchParams(clearedFilters);
   };
 
-  // Modal form state mirrors filters
-  const [modalData, setModalData] = useState({
-    location: filters.city || '',
-    checkIn: filters.check_in_date ? new Date(filters.check_in_date) : null,
-    checkOut: filters.check_out_date ? new Date(filters.check_out_date) : null,
-    guests: filters.min_guests ? parseInt(filters.min_guests) : 1,
-    propertyType: filters.property_type || ''
-  });
-
-  useEffect(() => {
-    setModalData({
-      location: filters.city || '',
-      checkIn: filters.check_in_date ? new Date(filters.check_in_date) : null,
-      checkOut: filters.check_out_date ? new Date(filters.check_out_date) : null,
-      guests: filters.min_guests ? parseInt(filters.min_guests) : 1,
-      propertyType: filters.property_type || ''
-    });
-  }, [filters]);
-
-  const getSearchSummary = () => {
-    const parts = [];
-    if (filters.city) parts.push(filters.city);
-    if (filters.check_in_date && filters.check_out_date) {
-      parts.push(`${new Date(filters.check_in_date).toLocaleDateString()} - ${new Date(filters.check_out_date).toLocaleDateString()}`);
-    }
-    if (filters.min_guests) parts.push(`${filters.min_guests} guests`);
-    return parts.length > 0 ? parts.join(' • ') : 'All properties';
-  };
-
   const formatDisplayDates = () => {
     if (filters.check_in_date && filters.check_out_date) {
       return `${new Date(filters.check_in_date).toLocaleDateString()} • ${new Date(filters.check_out_date).toLocaleDateString()}`;
@@ -238,20 +210,19 @@ const SearchResults = () => {
     return `${year}-${month}-${day}`;
   };
 
-  const applyModalSearch = (e) => {
-    e.preventDefault();
+  const applyModalSearch = (newParams) => {
+    // newParams comes from MobileSearchModal
     const updated = {
       ...filters,
-      city: modalData.location || '',
-      check_in_date: modalData.checkIn ? formatDateLocal(modalData.checkIn) : '',
-      check_out_date: modalData.checkOut ? formatDateLocal(modalData.checkOut) : '',
-      min_guests: modalData.guests || '',
-      property_type: modalData.propertyType || '',
+      city: newParams.city || '',
+      check_in_date: newParams.check_in_date || '',
+      check_out_date: newParams.check_out_date || '',
+      min_guests: newParams.min_guests ? String(newParams.min_guests) : '',
+      property_type: newParams.property_type || '',
       page: '1'
     };
     setFilters(updated);
     setSearchParams(updated);
-    setShowSearchModal(false);
     refetch();
   };
 
@@ -278,27 +249,172 @@ const SearchResults = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  if ((filters.property_type || '').toLowerCase() === 'flight') {
+  // Helper function to get property type display name
+  const getPropertyTypeTitle = (type) => {
+    const normalized = (type || '').toLowerCase();
+    if (normalized === 'flight') return 'Flight Search';
+    if (normalized === 'room') return 'Room Search';
+    if (normalized === 'apartment') return 'Apartments Search';
+    if (normalized === 'hotel') return 'Hotels Search';
+    return 'Property Search';
+  };
+
+  // Helper function to check if a tab is active
+  const isTabActive = (tabType) => {
+    return (filters.property_type || '').toLowerCase() === tabType.toLowerCase();
+  };
+
+  const currentPropertyType = (filters.property_type || '').toLowerCase();
+  // Special layout for Flight
+  if (currentPropertyType === 'flight') {
     return (
       <div className="min-h-screen bg-[#F4F6F9]">
         {/* Mobile Header with Back Button */}
-        <div className="bg-white pt-4 pb-2 px-4 md:hidden sticky top-0 z-50 shadow-sm border-b border-gray-100 flex items-center">
-          <button
-            onClick={() => navigate('/')}
-            className="p-2 -ml-2 bg-transparent text-gray-700 rounded-full hover:bg-gray-100 transition-colors"
-            aria-label="Back to home"
-          >
-            <FiArrowLeft className="w-5 h-5" />
-          </button>
-          <span className="ml-2 font-semibold text-gray-900">Flight Search</span>
+        <div className="bg-white pt-4 pb-2 px-4 md:hidden sticky top-0 z-50 shadow-sm border-b border-gray-100">
+          {/* Top Row: Back Button + Title */}
+          <div className="flex items-center gap-3 mb-3">
+            <button
+              onClick={() => navigate('/')}
+              className="p-2 rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-50 transition-colors flex-shrink-0"
+              aria-label="Back to home"
+            >
+              <FiArrowLeft className="w-5 h-5 text-gray-700" />
+            </button>
+            <span className="font-semibold text-gray-900">{getPropertyTypeTitle(currentPropertyType)}</span>
+          </div>
+
+          {/* Bottom Row: Property Type Tabs */}
+          <div className="flex items-center justify-center gap-2 overflow-x-auto scrollbar-hide pb-2">
+            <button
+              onClick={() => navigate('/search?property_type=room')}
+              className={`flex flex-col items-center justify-center py-1.5 transition-colors ${isTabActive('room') ? 'text-gray-900' : 'text-gray-500 hover:text-gray-800'}`}
+            >
+              <div className="flex flex-col items-center px-2">
+                <img src="/images/nav-icon-room.png" alt="Room" className={`w-5 h-5 object-contain transition-all duration-300 ${isTabActive('room') ? 'opacity-100 grayscale-0' : 'opacity-70 grayscale'}`} />
+                <span className="text-base font-medium whitespace-nowrap mt-1.5">Room</span>
+                <span className={`mt-1.5 h-[2px] w-full ${isTabActive('room') ? 'bg-black' : 'bg-transparent'}`} />
+              </div>
+            </button>
+
+            <button
+              onClick={() => navigate('/search?property_type=apartment')}
+              className={`flex flex-col items-center justify-center py-1.5 transition-colors ${isTabActive('apartment') ? 'text-gray-900' : 'text-gray-500 hover:text-gray-800'}`}
+            >
+              <div className="flex flex-col items-center px-2">
+                <img src="/images/nav-icon-apartment.png" alt="Apartments" className={`w-5 h-5 object-contain transition-all duration-300 ${isTabActive('apartment') ? 'opacity-100 grayscale-0' : 'opacity-70 grayscale'}`} />
+                <span className="text-base font-medium whitespace-nowrap mt-1.5">Apartments</span>
+                <span className={`mt-1.5 h-[2px] w-full ${isTabActive('apartment') ? 'bg-black' : 'bg-transparent'}`} />
+              </div>
+            </button>
+
+            <button
+              onClick={() => navigate('/search?property_type=hotel')}
+              className={`flex flex-col items-center justify-center py-1.5 transition-colors ${isTabActive('hotel') ? 'text-gray-900' : 'text-gray-500 hover:text-gray-800'}`}
+            >
+              <div className="flex flex-col items-center px-2">
+                <img src="/images/nav-icon-hotel.png" alt="Hotels" className={`w-5 h-5 object-contain transition-all duration-300 ${isTabActive('hotel') ? 'opacity-100 grayscale-0' : 'opacity-70 grayscale'}`} />
+                <span className="text-base font-medium whitespace-nowrap mt-1.5">Hotels</span>
+                <span className={`mt-1.5 h-[2px] w-full ${isTabActive('hotel') ? 'bg-black' : 'bg-transparent'}`} />
+              </div>
+            </button>
+
+            <button
+              onClick={() => navigate('/search?property_type=flight')}
+              className={`flex flex-col items-center justify-center py-1.5 transition-colors ${isTabActive('flight') ? 'text-gray-900' : 'text-gray-500 hover:text-gray-800'}`}
+            >
+              <div className="flex flex-col items-center px-2">
+                <img src="/images/flight.png" alt="Flight" className={`w-5 h-5 object-contain transition-all duration-300 ${isTabActive('flight') ? 'opacity-100 grayscale-0' : 'opacity-70 grayscale'}`} />
+                <span className="text-base font-medium whitespace-nowrap mt-1.5">Flight</span>
+                <span className={`mt-1.5 h-[2px] w-full ${isTabActive('flight') ? 'bg-black' : 'bg-transparent'}`} />
+              </div>
+            </button>
+          </div>
         </div>
         <FlightSearchResults searchParams={filters} />
       </div>
     );
   }
 
+  // Regular rendering for Room, Apartment, Hotel, and default
   return (
     <div className="min-h-screen bg-white mobile-footer-spacing">
+      {/* Mobile Header with Tabs - Visible only on mobile */}
+      <div className="bg-white pt-4 pb-2 px-4 md:hidden sticky top-0 z-50 shadow-sm border-b border-gray-100">
+        {/* Top Row: Back Button + Search Pill */}
+        <div className="flex items-center gap-3 mb-3">
+          <button
+            onClick={() => navigate('/')}
+            className="p-2 rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-50 transition-colors flex-shrink-0"
+            aria-label="Back to home"
+          >
+            <FiArrowLeft className="w-5 h-5 text-gray-700" />
+          </button>
+
+          {/* Search Pill */}
+          <button
+            onClick={() => setShowSearchModal(true)}
+            className="flex-1 flex items-center justify-start gap-3 bg-white rounded-full px-4 py-2 border border-gray-200 shadow-sm text-left hover:bg-gray-50 transition-all active:scale-[0.98]"
+          >
+            <FiSearch className="w-4 h-4 text-gray-900 flex-shrink-0" />
+            <div className="flex flex-col items-start leading-tight overflow-hidden">
+              <span className="text-sm font-semibold text-gray-900 truncate w-full">
+                {filters.city || 'Anywhere'}
+              </span>
+              <span className="text-xs text-gray-500 truncate w-full">
+                {filters.check_in_date ? formatDisplayDates() : 'Any week'} • {filters.min_guests ? `${filters.min_guests} guest${parseInt(filters.min_guests) > 1 ? 's' : ''}` : 'Add guests'}
+              </span>
+            </div>
+          </button>
+        </div>
+
+        {/* Bottom Row: Property Type Tabs */}
+        <div className="flex items-center justify-center gap-2 overflow-x-auto scrollbar-hide pb-2">
+          <button
+            onClick={() => navigate('/search?property_type=room')}
+            className={`flex flex-col items-center justify-center py-1.5 transition-colors ${isTabActive('room') ? 'text-gray-900' : 'text-gray-500 hover:text-gray-800'}`}
+          >
+            <div className="flex flex-col items-center px-2">
+              <img src="/images/nav-icon-room.png" alt="Room" className={`w-5 h-5 object-contain transition-all duration-300 ${isTabActive('room') ? 'opacity-100 grayscale-0' : 'opacity-70 grayscale'}`} />
+              <span className="text-base font-medium whitespace-nowrap mt-1.5">Room</span>
+              <span className={`mt-1.5 h-[2px] w-full ${isTabActive('room') ? 'bg-black' : 'bg-transparent'}`} />
+            </div>
+          </button>
+
+          <button
+            onClick={() => navigate('/search?property_type=apartment')}
+            className={`flex flex-col items-center justify-center py-1.5 transition-colors ${isTabActive('apartment') ? 'text-gray-900' : 'text-gray-500 hover:text-gray-800'}`}
+          >
+            <div className="flex flex-col items-center px-2">
+              <img src="/images/nav-icon-apartment.png" alt="Apartments" className={`w-5 h-5 object-contain transition-all duration-300 ${isTabActive('apartment') ? 'opacity-100 grayscale-0' : 'opacity-70 grayscale'}`} />
+              <span className="text-base font-medium whitespace-nowrap mt-1.5">Apartments</span>
+              <span className={`mt-1.5 h-[2px] w-full ${isTabActive('apartment') ? 'bg-black' : 'bg-transparent'}`} />
+            </div>
+          </button>
+
+          <button
+            onClick={() => navigate('/search?property_type=hotel')}
+            className={`flex flex-col items-center justify-center py-1.5 transition-colors ${isTabActive('hotel') ? 'text-gray-900' : 'text-gray-500 hover:text-gray-800'}`}
+          >
+            <div className="flex flex-col items-center px-2">
+              <img src="/images/nav-icon-hotel.png" alt="Hotels" className={`w-5 h-5 object-contain transition-all duration-300 ${isTabActive('hotel') ? 'opacity-100 grayscale-0' : 'opacity-70 grayscale'}`} />
+              <span className="text-base font-medium whitespace-nowrap mt-1.5">Hotels</span>
+              <span className={`mt-1.5 h-[2px] w-full ${isTabActive('hotel') ? 'bg-black' : 'bg-transparent'}`} />
+            </div>
+          </button>
+
+          <button
+            onClick={() => navigate('/search?property_type=flight')}
+            className={`flex flex-col items-center justify-center py-1.5 transition-colors ${isTabActive('flight') ? 'text-gray-900' : 'text-gray-500 hover:text-gray-800'}`}
+          >
+            <div className="flex flex-col items-center px-2">
+              <img src="/images/flight.png" alt="Flight" className={`w-5 h-5 object-contain transition-all duration-300 ${isTabActive('flight') ? 'opacity-100 grayscale-0' : 'opacity-70 grayscale'}`} />
+              <span className="text-base font-medium whitespace-nowrap mt-1.5">Flight</span>
+              <span className={`mt-1.5 h-[2px] w-full ${isTabActive('flight') ? 'bg-black' : 'bg-transparent'}`} />
+            </div>
+          </button>
+        </div>
+      </div>
+
       {/* Sticky header appears after scroll (desktop only) */}
       {showStickySearchHeader && (
         <div className="hidden md:block">
@@ -312,27 +428,23 @@ const SearchResults = () => {
           />
         </div>
       )}
-      {/* Header */}
+
+      {/* Header with Desktop Back Button */}
       <div className="bg-white pt-4 md:pt-0">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between">
             <div>
               <div className="flex items-center gap-2 mb-1">
+                {/* Desktop back button */}
                 <button
                   onClick={() => navigate('/')}
-                  className="md:hidden p-2 bg-white border border-gray-200 rounded-full shadow-sm hover:bg-gray-50 transition-colors text-gray-700 flex-shrink-0"
+                  className="hidden md:block p-2 bg-white border border-gray-200 rounded-full shadow-sm hover:bg-gray-50 transition-colors text-gray-700 flex-shrink-0"
                   aria-label="Back to home"
                 >
                   <FiArrowLeft className="w-5 h-5" />
                 </button>
               </div>
             </div>
-
-
-
-
-
-            {/* Controls removed as requested */}
           </div>
         </div>
       </div>
@@ -689,79 +801,13 @@ const SearchResults = () => {
       </div>
 
       {/* Search modal (mobile + desktop) */}
-      {showSearchModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-start md:items-center justify-center pt-16 px-4">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Search</h3>
-              <button
-                onClick={() => setShowSearchModal(false)}
-                className="text-gray-500 hover:text-gray-700"
-                aria-label="Close search"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <form
-              onSubmit={(e) => {
-                applyModalSearch(e);
-              }}
-              className="p-4 space-y-4"
-            >
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Where</label>
-                <input
-                  type="text"
-                  placeholder="Search destinations"
-                  value={modalData.location}
-                  onChange={(e) => setModalData(prev => ({ ...prev, location: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E41D57] focus:border-transparent"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Check-in & Check-out</label>
-                <DatePicker
-                  selected={modalData.checkIn}
-                  onChange={(dates) => {
-                    const [start, end] = dates;
-                    setModalData(prev => ({ ...prev, checkIn: start, checkOut: end }));
-                  }}
-                  startDate={modalData.checkIn}
-                  endDate={modalData.checkOut}
-                  selectsRange
-                  minDate={new Date()}
-                  placeholderText="Add dates"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E41D57] focus:border-transparent"
-                  dateFormat="MMM dd, yyyy"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Guests</label>
-                <select
-                  value={modalData.guests}
-                  onChange={(e) => setModalData(prev => ({ ...prev, guests: parseInt(e.target.value) || 1 }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E41D57] focus:border-transparent"
-                >
-                  {[1, 2, 3, 4, 5, 6, 7, 8].map(num => (
-                    <option key={num} value={num}>{num} {num === 1 ? 'Guest' : 'Guests'}</option>
-                  ))}
-                </select>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full bg-[#E41D57] text-white py-3 rounded-lg text-sm font-semibold hover:bg-[#C01A4A] transition-colors"
-              >
-                Search
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Search modal (mobile - repurposed for desktop too if needed, but primarily mobile per design) */}
+      <MobileSearchModal
+        isOpen={showSearchModal}
+        onClose={() => setShowSearchModal(false)}
+        filters={filters}
+        onSearch={applyModalSearch}
+      />
     </div>
   );
 };
