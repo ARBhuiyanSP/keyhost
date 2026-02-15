@@ -705,9 +705,9 @@ const FlightBooking = () => {
 
                                         return (
                                             <div key={idx} className={`border rounded-xl overflow-hidden transition-all duration-300 ${isOpen ? 'border-[#1E2049] shadow-md' : (hasError ? 'border-red-500 bg-red-50' : 'border-gray-200')}`}>
-                                                <button type="button" onClick={toggleAccordion} className={`w-full px-5 py-4 flex justify-between items-center text-left transition-colors ${isOpen ? 'bg-[#1E2049] text-white' : (hasError ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-gray-50 text-gray-700 hover:bg-white')}`}>
+                                                <button type="button" onClick={toggleAccordion} className={`w-full px-5 py-4 flex justify-between items-center text-left transition-colors ${isOpen ? 'bg-gray-50 text-[#1E2049]' : (hasError ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-gray-50 text-gray-700 hover:bg-white')}`}>
                                                     <div className="flex items-center gap-3">
-                                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${isOpen ? 'bg-white text-[#1E2049]' : (hasError ? 'bg-red-100 text-red-600' : 'bg-gray-200 text-gray-600')}`}>{idx + 1}</div>
+                                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${isOpen ? 'bg-[#1E2049] text-white' : (hasError ? 'bg-red-100 text-red-600' : 'bg-gray-200 text-gray-600')}`}>{idx + 1}</div>
                                                         <span className="font-bold text-sm tracking-wide uppercase">{typeLabel}</span>
                                                         {hasError && !isOpen && <span className="text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-bold ml-2">ERROR</span>}
                                                     </div>
