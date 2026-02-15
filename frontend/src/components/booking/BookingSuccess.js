@@ -72,19 +72,70 @@ const BookingSuccess = () => {
 
     if (error || !booking) {
         return (
-            <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4">
-                <div className="text-center space-y-4">
-                    <div className="text-red-500 text-5xl">
-                        <FaInfoCircle />
+            <div className="min-h-screen bg-white flex flex-col font-sans">
+                {/* Mobile Header with Tabs - Visible only on mobile */}
+                <div className="bg-white pt-4 pb-2 px-4 md:hidden sticky top-0 z-50 shadow-sm border-b border-gray-100 mb-4">
+                    <div className="flex items-center justify-center gap-2 overflow-x-auto scrollbar-hide pb-2">
+                        <button
+                            onClick={() => navigate('/search?property_type=room')}
+                            className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-500 hover:text-gray-800"
+                        >
+                            <div className="flex flex-col items-center px-2">
+                                <img src="/images/nav-icon-room.png" alt="Room" className="w-5 h-5 object-contain transition-all duration-300 opacity-70 grayscale" />
+                                <span className="text-base font-medium whitespace-nowrap mt-1.5">Room</span>
+                                <span className="mt-1.5 h-[2px] w-full bg-transparent" />
+                            </div>
+                        </button>
+
+                        <button
+                            onClick={() => navigate('/search?property_type=apartment')}
+                            className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-500 hover:text-gray-800"
+                        >
+                            <div className="flex flex-col items-center px-2">
+                                <img src="/images/nav-icon-apartment.png" alt="Apartments" className="w-5 h-5 object-contain transition-all duration-300 opacity-70 grayscale" />
+                                <span className="text-base font-medium whitespace-nowrap mt-1.5">Apartments</span>
+                                <span className="mt-1.5 h-[2px] w-full bg-transparent" />
+                            </div>
+                        </button>
+
+                        <button
+                            onClick={() => navigate('/search?property_type=hotel')}
+                            className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-500 hover:text-gray-800"
+                        >
+                            <div className="flex flex-col items-center px-2">
+                                <img src="/images/nav-icon-hotel.png" alt="Hotels" className="w-5 h-5 object-contain transition-all duration-300 opacity-70 grayscale" />
+                                <span className="text-base font-medium whitespace-nowrap mt-1.5">Hotels</span>
+                                <span className="mt-1.5 h-[2px] w-full bg-transparent" />
+                            </div>
+                        </button>
+
+                        <button
+                            onClick={() => navigate('/search?property_type=flight')}
+                            className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-900"
+                        >
+                            <div className="flex flex-col items-center px-2">
+                                <img src="/images/flight.png" alt="Flight" className="w-5 h-5 object-contain transition-all duration-300 opacity-100 grayscale-0" />
+                                <span className="text-base font-medium whitespace-nowrap mt-1.5">Flight</span>
+                                <span className="mt-1.5 h-[2px] w-full bg-black" />
+                            </div>
+                        </button>
                     </div>
-                    <h2 className="text-2xl font-bold text-gray-800">Booking Details Not Found</h2>
-                    <p className="text-gray-600">{error || "We couldn't find the booking information you're looking for."}</p>
-                    <button
-                        onClick={() => navigate('/')}
-                        className="bg-gray-800 text-white px-6 py-2 rounded-full hover:bg-gray-700 transition"
-                    >
-                        Return Home
-                    </button>
+                </div>
+
+                <div className="flex-grow flex flex-col items-center justify-center p-4">
+                    <div className="text-center space-y-4">
+                        <div className="text-red-500 text-5xl">
+                            <FaInfoCircle />
+                        </div>
+                        <h2 className="text-2xl font-bold text-gray-800">Booking Details Not Found</h2>
+                        <p className="text-gray-600">{error || "We couldn't find the booking information you're looking for."}</p>
+                        <button
+                            onClick={() => navigate('/')}
+                            className="bg-gray-800 text-white px-6 py-2 rounded-full hover:bg-gray-700 transition"
+                        >
+                            Return Home
+                        </button>
+                    </div>
                 </div>
             </div>
         );
@@ -111,6 +162,54 @@ const BookingSuccess = () => {
 
     return (
         <div className="min-h-screen bg-white flex flex-col font-sans">
+            {/* Mobile Header with Tabs - Visible only on mobile */}
+            <div className="bg-white pt-4 pb-2 px-4 md:hidden sticky top-0 z-50 shadow-sm border-b border-gray-100 mb-4">
+                <div className="flex items-center justify-center gap-2 overflow-x-auto scrollbar-hide pb-2">
+                    <button
+                        onClick={() => navigate('/search?property_type=room')}
+                        className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-500 hover:text-gray-800"
+                    >
+                        <div className="flex flex-col items-center px-2">
+                            <img src="/images/nav-icon-room.png" alt="Room" className="w-5 h-5 object-contain transition-all duration-300 opacity-70 grayscale" />
+                            <span className="text-base font-medium whitespace-nowrap mt-1.5">Room</span>
+                            <span className="mt-1.5 h-[2px] w-full bg-transparent" />
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => navigate('/search?property_type=apartment')}
+                        className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-500 hover:text-gray-800"
+                    >
+                        <div className="flex flex-col items-center px-2">
+                            <img src="/images/nav-icon-apartment.png" alt="Apartments" className="w-5 h-5 object-contain transition-all duration-300 opacity-70 grayscale" />
+                            <span className="text-base font-medium whitespace-nowrap mt-1.5">Apartments</span>
+                            <span className="mt-1.5 h-[2px] w-full bg-transparent" />
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => navigate('/search?property_type=hotel')}
+                        className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-500 hover:text-gray-800"
+                    >
+                        <div className="flex flex-col items-center px-2">
+                            <img src="/images/nav-icon-hotel.png" alt="Hotels" className="w-5 h-5 object-contain transition-all duration-300 opacity-70 grayscale" />
+                            <span className="text-base font-medium whitespace-nowrap mt-1.5">Hotels</span>
+                            <span className="mt-1.5 h-[2px] w-full bg-transparent" />
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => navigate('/search?property_type=flight')}
+                        className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-900"
+                    >
+                        <div className="flex flex-col items-center px-2">
+                            <img src="/images/flight.png" alt="Flight" className="w-5 h-5 object-contain transition-all duration-300 opacity-100 grayscale-0" />
+                            <span className="text-base font-medium whitespace-nowrap mt-1.5">Flight</span>
+                            <span className="mt-1.5 h-[2px] w-full bg-black" />
+                        </div>
+                    </button>
+                </div>
+            </div>
             <div className="flex-grow py-12 px-4 sm:px-6 lg:px-8">
                 <div className="max-w-4xl mx-auto space-y-8">
 
