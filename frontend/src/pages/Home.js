@@ -643,7 +643,7 @@ const Home = () => {
       <img
         src={imgSrc}
         alt={typeName}
-        className={`w-8 h-8 object-contain transition-all duration-300 ${isActive
+        className={`w-5 h-5 object-contain transition-all duration-300 ${isActive
           ? 'opacity-100 grayscale-0'
           : 'opacity-70 grayscale'
           }`}
@@ -932,18 +932,6 @@ const Home = () => {
             </button>
           </div>
           <div className="px-4 pb-2 flex items-center justify-center gap-2 overflow-x-auto scrollbar-hide">
-            {/* Manual Flight Tab */}
-            <button
-              onClick={() => navigate('/search?property_type=flight')}
-              className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-500 hover:text-gray-800"
-            >
-              <div className="flex flex-col items-center px-2">
-                <img src="/images/flight.png" alt="Flight" className="w-8 h-8 object-contain transition-all duration-300 opacity-70 grayscale" />
-                <span className="text-base font-medium whitespace-nowrap mt-1.5">Flight</span>
-                <span className="mt-1.5 h-[2px] w-full bg-transparent" />
-              </div>
-            </button>
-
             {propertyTypes.map((type) => {
               const isActive = activePropertyType === (type.name || '').toLowerCase();
               return (
@@ -966,6 +954,18 @@ const Home = () => {
                 </button>
               );
             })}
+
+            {/* Manual Flight Tab - Moved to End */}
+            <button
+              onClick={() => navigate('/search?property_type=flight')}
+              className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-500 hover:text-gray-800"
+            >
+              <div className="flex flex-col items-center px-2">
+                <img src="/images/flight.png" alt="Flight" className="w-5 h-5 object-contain transition-all duration-300 opacity-70 grayscale" />
+                <span className="text-base font-medium whitespace-nowrap mt-1.5">Flight</span>
+                <span className="mt-1.5 h-[2px] w-full bg-transparent" />
+              </div>
+            </button>
           </div>
         </div>
       )}
@@ -986,22 +986,6 @@ const Home = () => {
 
             {/* Property Type Tabs */}
             <div className="flex items-center justify-center gap-6 overflow-x-auto scrollbar-hide px-10 w-full">
-              {/* Manual Flight Tab inside Modal */}
-              <button
-                onClick={() => {
-                  setShowMobileSearch(false);
-                  navigate('/search?property_type=flight');
-                }}
-                className="flex flex-col items-center gap-2 min-w-[64px] flex-shrink-0 group cursor-pointer"
-              >
-                <div className="transition-opacity duration-200 opacity-60 group-hover:opacity-100">
-                  <img src="/images/flight.png" alt="Flight" className="w-8 h-8 object-contain transition-all duration-300 opacity-70 grayscale" />
-                </div>
-                <span className="text-xs font-semibold whitespace-nowrap pb-2 border-b-2 transition-all duration-200 text-gray-500 border-transparent group-hover:text-gray-900 group-hover:border-gray-300">
-                  Flight
-                </span>
-              </button>
-
               {propertyTypes.map((type) => {
                 const isActive = activePropertyType === (type.name || '').toLowerCase();
                 return (
@@ -1020,6 +1004,22 @@ const Home = () => {
                   </button>
                 );
               })}
+
+              {/* Manual Flight Tab inside Modal - Moved to End */}
+              <button
+                onClick={() => {
+                  setShowMobileSearch(false);
+                  navigate('/search?property_type=flight');
+                }}
+                className="flex flex-col items-center gap-2 min-w-[64px] flex-shrink-0 group cursor-pointer"
+              >
+                <div className="transition-opacity duration-200 opacity-60 group-hover:opacity-100">
+                  <img src="/images/flight.png" alt="Flight" className="w-5 h-5 object-contain transition-all duration-300 opacity-70 grayscale" />
+                </div>
+                <span className="text-xs font-semibold whitespace-nowrap pb-2 border-b-2 transition-all duration-200 text-gray-500 border-transparent group-hover:text-gray-900 group-hover:border-gray-300">
+                  Flight
+                </span>
+              </button>
             </div>
           </div>
 

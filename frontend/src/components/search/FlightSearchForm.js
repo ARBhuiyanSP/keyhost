@@ -174,7 +174,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
 
     // ... existing render ...
     // STYLING CONSTANTS
-    const pillContainerClass = "w-full bg-white rounded-3xl md:rounded-full shadow-[0_6px_16px_rgba(0,0,0,0.08)] border border-gray-200 flex flex-col md:flex-row items-stretch md:items-center pr-2 p-2 md:p-1 gap-1 md:gap-0.5 min-h-auto md:min-h-[66px] relative z-[500] overflow-visible";
+    const pillContainerClass = "w-full bg-white rounded-3xl md:rounded-full shadow-[0_6px_16px_rgba(0,0,0,0.08)] border border-gray-200 flex flex-col md:flex-row items-stretch md:items-center pr-2 p-2 md:p-1 gap-1 md:gap-0.5 min-h-auto md:min-h-[66px] relative z-0 overflow-visible";
     const pillSectionBase = "group relative flex flex-col justify-center px-4 md:px-6 cursor-pointer transition-colors";
     const labelClass = "text-[10px] font-bold text-[#E41D57] uppercase tracking-wider mb-0.5";
     const dividerClass = "hidden md:block w-px h-8 bg-gray-200 flex-shrink-0";
@@ -238,7 +238,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                         {/* FROM & TO WRAPPER */}
                         <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 relative">
                             {/* FROM */}
-                            <div className={`${pillSectionBase} z-[55] h-24 border border-gray-200 rounded-xl hover:border-gray-300 bg-white`} onClick={() => setActiveSuggestion('from')}>
+                            <div className={`${pillSectionBase} z-6 h-24 border border-gray-200 rounded-xl hover:border-gray-300 bg-white`} onClick={() => setActiveSuggestion('from')}>
                                 {/* Display Component */}
                                 <div className="w-full">
                                     <div className={labelClass}>From</div>
@@ -257,7 +257,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                             </div>
 
                             {/* SWAP BUTTON */}
-                            <div className="hidden md:flex absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[60]">
+                            <div className="hidden md:flex absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-10">
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -272,7 +272,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                             </div>
 
                             {/* TO */}
-                            <div className={`${pillSectionBase} z-[54] h-24 border border-gray-200 rounded-xl hover:border-gray-300 bg-white`} onClick={() => setActiveSuggestion('to')}>
+                            <div className={`${pillSectionBase} z-5 h-24 border border-gray-200 rounded-xl hover:border-gray-300 bg-white`} onClick={() => setActiveSuggestion('to')}>
                                 {/* Display Component */}
                                 <div className="w-full pl-4 md:pl-6"> {/* Added padding for swap button clearance if needed, though centered button usually clears */}
                                     <div className={labelClass}>To</div>
@@ -292,7 +292,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                         </div>
 
                         {/* DEPART */}
-                        <div className={`${pillSectionBase} z-[53] h-24 border border-gray-200 rounded-xl hover:border-gray-300 bg-white`} ref={departContainerRef}>
+                        <div className={`${pillSectionBase} z-4 h-24 border border-gray-200 rounded-xl hover:border-gray-300 bg-white`} ref={departContainerRef}>
                             <div
                                 className="w-full h-full flex flex-col justify-center items-start text-left cursor-pointer"
                                 onClick={(e) => {
@@ -348,7 +348,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                         </div>
 
                         {/* RETURN */}
-                        <div className={`${pillSectionBase} z-[52] h-24 border border-gray-200 rounded-xl hover:border-gray-300 bg-white`} ref={returnContainerRef}>
+                        <div className={`${pillSectionBase} z-3 h-24 border border-gray-200 rounded-xl hover:border-gray-300 bg-white`} ref={returnContainerRef}>
                             <div
                                 className="w-full h-full flex flex-col justify-center items-start text-left cursor-pointer"
                                 onClick={(e) => {
@@ -409,14 +409,14 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                         </div>
 
                         {/* TRAVELERS */}
-                        <div className={`${pillSectionBase} z-[51] h-24 border border-gray-200 rounded-xl hover:border-gray-300 bg-white`} onClick={() => setShowTravelerModal(!showTravelerModal)}>
+                        <div className={`${pillSectionBase} z-2 h-24 border border-gray-200 rounded-xl hover:border-gray-300 bg-white`} onClick={() => setShowTravelerModal(!showTravelerModal)}>
                             <div className={labelClass}>Travelers</div>
                             <div className="text-[15px] font-bold text-[#1e2049] truncate leading-tight">
                                 {adults + children + kids + infants} Guests{cabinClass && `, ${cabinClass === 'Economy' ? 'Eco' : cabinClass === 'Business' ? 'Bus' : '1st'}`}
                             </div>
                             <div className="text-[10px] text-gray-400 truncate">{cabinClass || 'Economy'}</div>
                             {showTravelerModal && (
-                                <div className="absolute top-full right-0 mt-4 w-[85vw] md:w-[340px] z-[70]" onClick={e => e.stopPropagation()}>
+                                <div className="absolute top-full right-0 mt-4 w-[85vw] md:w-[340px] z-10" onClick={e => e.stopPropagation()}>
                                     <TravelerModalContent
                                         adults={adults} setAdults={setAdults}
                                         children={children} setChildren={setChildren}
@@ -445,7 +445,7 @@ const FlightSearchForm = ({ searchParams, onSearch }) => {
                 tripType === 'multiCity' && (
                     <div className="w-full flex flex-col gap-4 pb-8 relative">
                         {segments.map((segment, idx) => (
-                            <div key={idx} className="grid grid-cols-1 md:grid-cols-4 gap-4 relative" style={{ zIndex: (segments.length - idx) * 10 }}>
+                            <div key={idx} className="grid grid-cols-1 md:grid-cols-4 gap-4 relative" style={{ zIndex: (segments.length - idx) + 1 }}>
 
                                 {/* FROM & TO WRAPPER (Col 1 & 2) */}
                                 <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 relative">
