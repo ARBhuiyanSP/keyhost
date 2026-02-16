@@ -41,6 +41,8 @@ const StickySearchHeader = ({
   const whoBtnRef = useRef(null);
   const mobileDatePickerRef = useRef(null);
   const mobileDatesContainerRef = useRef(null);
+  const propertyTypesStickyRef = useRef(null);
+  const mobilePropertyTypesRef = useRef(null);
   const { settings } = useSettingsStore();
   const { user, isAuthenticated, isAdmin, isPropertyOwner, logout } = useAuthStore();
 
@@ -190,7 +192,11 @@ const StickySearchHeader = ({
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setIsProfileOpen(false);
       }
-      if (mobileSearchRef.current && !mobileSearchRef.current.contains(event.target)) {
+      if (
+        mobileSearchRef.current &&
+        !mobileSearchRef.current.contains(event.target) &&
+        !(mobilePropertyTypesRef.current && mobilePropertyTypesRef.current.contains(event.target))
+      ) {
         setShowMobileSearch(false);
       }
       if (locationDropdownRef.current && !locationDropdownRef.current.contains(event.target)) {
@@ -202,7 +208,8 @@ const StickySearchHeader = ({
         !searchPillRef.current.contains(event.target) &&
         !event.target.closest('.react-datepicker-popper') &&
         !event.target.closest('.react-datepicker') &&
-        !(headerOuterRef.current && headerOuterRef.current.contains(event.target))
+        !(headerOuterRef.current && headerOuterRef.current.contains(event.target)) &&
+        !(propertyTypesStickyRef.current && propertyTypesStickyRef.current.contains(event.target))
       ) {
         setDesktopActiveSection(null);
         setDesktopHoverSection(null);
@@ -603,7 +610,7 @@ const StickySearchHeader = ({
                 >
                   <FiX className="w-4 h-4 text-black" />
                 </button>
-                <div className="flex items-center justify-center gap-6 overflow-x-auto scrollbar-hide px-10 w-full">
+                <div ref={mobilePropertyTypesRef} className="flex items-center justify-center gap-6 overflow-x-auto scrollbar-hide px-10 w-full">
                   {(propertyTypes?.length ? propertyTypes : [{ id: 'def-stays', name: 'Stays' }, { id: 'def-flight', name: 'Flight' }]).map((type) => {
                     const isActive = activePropertyType === (type.name || '').toLowerCase();
                     return (
@@ -1284,7 +1291,7 @@ const StickySearchHeader = ({
           {desktopActiveSection && (
             <div className="hidden md:block border-t border-gray-100 bg-white animate-fadeIn">
               <div className="max-w-7xl mx-auto px-4 lg:px-8">
-                <div className="flex items-center gap-8 py-3 overflow-x-auto scrollbar-hide">
+                <div ref={propertyTypesStickyRef} className="flex items-center gap-8 py-3 overflow-x-auto scrollbar-hide">
                   {propertyTypes && propertyTypes.map((type) => {
                     const isActive = activePropertyType === (type.name || '').toLowerCase();
                     return (
