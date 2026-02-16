@@ -94,22 +94,35 @@ app.get('/health', (req, res) => {
 });
 
 // API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/users', verifyToken, userRoutes);
-app.use('/api/payments', verifyToken, paymentRoutes);
-app.use('/api/reviews', reviewRoutes);
-app.use('/api/analytics', analyticsRoutes);
-app.use('/api/properties', propertiesRoutes);
-app.use('/api/bkash', bkashPaymentRoutes);
-app.use('/api/reports', reportRoutes);
-app.use('/api/messages', messagesRoutes);
+// Route definitions to support flexible mounting (both /api/x and /x)
+const apiRoutes = [
+  { path: '/auth', route: authRoutes },
+  { path: '/users', route: userRoutes, middleware: verifyToken },
+  { path: '/payments', route: paymentRoutes, middleware: verifyToken },
+  { path: '/reviews', route: reviewRoutes },
+  { path: '/analytics', route: analyticsRoutes },
+  { path: '/properties', route: propertiesRoutes },
+  { path: '/bkash', route: bkashPaymentRoutes },
+  { path: '/reports', route: reportRoutes },
+  { path: '/messages', route: messagesRoutes },
+  { path: '/admin', route: adminRoutes },
+  { path: '/property-owner', route: propertyOwnerRoutes },
+  { path: '/guest', route: guestRoutes },
+  { path: '/settings', route: settingsRoutes },
+  { path: '/rewards-points', route: rewardsPointsRoutes }
+];
 
-// Role-based API Routes
-app.use('/api/admin', adminRoutes);
-app.use('/api/property-owner', propertyOwnerRoutes);
-app.use('/api/guest', guestRoutes);
-app.use('/api/settings', settingsRoutes);
-app.use('/api/rewards-points', rewardsPointsRoutes);
+// Mount routes
+apiRoutes.forEach(({ path, route, middleware }) => {
+  const paths = [`/api${path}`, path];
+  paths.forEach(p => {
+    if (middleware) {
+      app.use(p, middleware, route);
+    } else {
+      app.use(p, route);
+    }
+  });
+});
 
 // 404 handler
 app.use('*', (req, res) => {
