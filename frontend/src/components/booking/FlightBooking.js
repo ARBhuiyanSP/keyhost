@@ -913,7 +913,7 @@ const FlightBooking = () => {
                                 </div>
                             </div>
 
-                            <div className="flex justify-end pt-4">
+                            <div className="flex justify-center md:justify-end pt-4">
                                 <button type="submit" disabled={submitting} className="bg-[#E41D57] text-white px-12 py-5 rounded-full font-bold shadow-xl shadow-[#E41D57]/30 hover:bg-[#c01b4b] transition-all transform hover:-translate-y-1 hover:shadow-2xl disabled:opacity-50 disabled:translate-y-0 disabled:shadow-none uppercase tracking-widest text-sm flex items-center gap-3">
                                     {submitting ? (<><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div><span>Processing Booking...</span></>) : (<><span>Confirm Booking</span><i className="fa fa-arrow-right"></i></>)}
                                 </button>
