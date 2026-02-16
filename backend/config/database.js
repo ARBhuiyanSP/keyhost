@@ -13,7 +13,8 @@ const pool = mysql.createPool({
   queueLimit: 0,
   acquireTimeout: 60000,
   timeout: 60000,
-  reconnect: true
+  reconnect: true,
+  charset: 'utf8mb4'
 });
 
 // Get promise-based connection
