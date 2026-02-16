@@ -115,6 +115,7 @@ const Navbar = () => {
   const searchFormRef = useRef(null);
   const [showHeaderLocationSuggestions, setShowHeaderLocationSuggestions] = useState(false);
   const [showHeaderToSuggestions, setShowHeaderToSuggestions] = useState(false); // New State for 'To' suggestions visibility
+  const propertyTypesRef = useRef(null); // Ref for property types container
 
   // Define pathname checks early
   const isHome = location.pathname === '/';
@@ -193,8 +194,12 @@ const Navbar = () => {
   }, [isSearchPage, location.search]);
   // Reset search form state on route change
   useEffect(() => {
-    setIsHeaderSearchActive(false);
-  }, [location.pathname]);
+    // Only close search if navigating away from main booking pages (Home, Search, Details)
+    // This allows Property Type tab switching (which navigates to /search) to keep the form open.
+    if (!isHome && !isSearchPage && !isPropertyDetail && !isContactHost) {
+      setIsHeaderSearchActive(false);
+    }
+  }, [location.pathname, isHome, isSearchPage, isPropertyDetail, isContactHost]);
 
   // Listen for sticky search request to open main header search sections
   useEffect(() => {
@@ -338,18 +343,20 @@ const Navbar = () => {
         return;
       }
 
-      const c = container.getBoundingClientRect();
-      const t = target.getBoundingClientRect();
-      const x = Math.max(0, t.left - c.left);
+      // Use offsetLeft/offsetWidth to avoid issues with CSS transforms (scale) during animation
+      // getBoundingClientRect() returns scaled values, which causes double-scaling when applied back as styles
+      const x = target.offsetLeft;
       // Add 8px to width for guests section to cover search button
-      const w = Math.max(0, t.width) + (section === 'guests' ? 8 : 0);
+      const w = target.offsetWidth + (section === 'guests' ? 8 : 0);
+
       setHeaderActivePillStyle({ x, w, visible: true });
     };
 
     updatePill();
+    // Add listeners for layout changes
     window.addEventListener('resize', updatePill);
     return () => window.removeEventListener('resize', updatePill);
-  }, [effectiveHeaderSection]);
+  }, [effectiveHeaderSection, isHeaderSearchActive]);
 
   const getDateRangeDisplay = () => {
     if (searchData.checkIn && searchData.checkOut) {
@@ -440,28 +447,34 @@ const Navbar = () => {
         setIsHeaderSearchActive(true);
       }
 
+      // Check if clicked inside property types (tabs)
+      const clickedInsidePropertyTypes = propertyTypesRef.current && propertyTypesRef.current.contains(event.target);
+
       // Inside header but outside a specific field => close only that field's popover
-      if (
-        showHeaderLocationSuggestions &&
-        headerLocationSuggestionsRef.current &&
-        !headerLocationSuggestionsRef.current.contains(event.target) &&
-        headerLocationInputRef.current &&
-        !headerLocationInputRef.current.contains(event.target)
-      ) {
-        setShowHeaderLocationSuggestions(false);
-      }
+      // BUT skip this if we clicked a Property Type tab (user wants to keep context open)
+      if (!clickedInsidePropertyTypes) {
+        if (
+          showHeaderLocationSuggestions &&
+          headerLocationSuggestionsRef.current &&
+          !headerLocationSuggestionsRef.current.contains(event.target) &&
+          headerLocationInputRef.current &&
+          !headerLocationInputRef.current.contains(event.target)
+        ) {
+          setShowHeaderLocationSuggestions(false);
+        }
 
-      if (showGuestsDropdown && guestDropdownRef.current && !guestDropdownRef.current.contains(event.target)) {
-        setShowGuestsDropdown(false);
-      }
+        if (showGuestsDropdown && guestDropdownRef.current && !guestDropdownRef.current.contains(event.target)) {
+          setShowGuestsDropdown(false);
+        }
 
-      if (
-        headerDateOpen &&
-        headerDateRef.current &&
-        !headerDateRef.current.contains(event.target) &&
-        !clickedInsideDatePopper
-      ) {
-        setHeaderDateOpen(false);
+        if (
+          headerDateOpen &&
+          headerDateRef.current &&
+          !headerDateRef.current.contains(event.target) &&
+          !clickedInsideDatePopper
+        ) {
+          setHeaderDateOpen(false);
+        }
       }
 
     };
@@ -575,7 +588,7 @@ const Navbar = () => {
   return (
     <nav
       ref={headerSearchRef}
-      className="hidden md:block bg-white shadow-lg sticky top-0 z-[100] overflow-visible"
+      className={`hidden md:block bg-white shadow-lg sticky top-0 overflow-visible ${isHeaderSearchActive ? 'z-[200]' : 'z-[100]'}`}
       onClick={(e) => {
         if (searchFormRef.current?.contains(e.target) || e.target.closest('button') || e.target.closest('a') || e.target.closest('input') || e.target.closest('.react-datepicker')) return;
         e.stopPropagation();
@@ -617,7 +630,7 @@ const Navbar = () => {
           {/* Desktop Navigation / Home tabs */}
           <div className="hidden md:flex items-center flex-1 justify-center">
             {(isHome || isSearchPage || isPropertyDetail || location.pathname.startsWith('/flight') || location.pathname === '/booking' || location.pathname.startsWith('/booking-success') || location.pathname.startsWith('/ticket-issue') || location.pathname.startsWith('/react/ticket-issue')) && propertyTypes && propertyTypes.length > 0 ? (
-              <div className="flex items-center gap-10 flex-wrap justify-center">
+              <div ref={propertyTypesRef} className="flex items-center gap-10 flex-wrap justify-center">
                 {propertyTypes.map((type) => {
                   const isActiveTab = headerActiveType === (type.name || '').toLowerCase();
                   return (
@@ -916,7 +929,7 @@ const Navbar = () => {
               `}
             >  <div ref={headerPillSegmentsRef} className="relative flex items-center flex-1 min-w-0">
                 <div
-                  className={`pointer-events-none absolute top-0 bottom-0 left-0 rounded-full transition-all duration-300 ease-out ${headerActivePillStyle.visible ? 'opacity-100' : 'opacity-0'} ${isActivePill ? 'bg-white shadow-sm' : 'bg-gray-50'}`}
+                  className={`pointer-events-none absolute top-0 bottom-0 left-0 rounded-full transition-all duration-300 ease-out ${headerActivePillStyle.visible ? 'opacity-100' : 'opacity-0'} ${isActivePill ? 'bg-white shadow-md' : 'bg-gray-50'}`}
                   style={{ transform: `translateX(${headerActivePillStyle.x}px)`, width: headerActivePillStyle.w }}
                 />
 
