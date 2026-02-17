@@ -535,18 +535,10 @@ const FlightSearchResults = () => {
                                             )}
                                         </div>
                                     ) : (
-                                        <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-between border border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => setIsSearchExpanded(true)}>
-                                            <div className="flex items-center gap-4">
-                                                <div className="bg-[#E41D57]/10 p-2 rounded-full text-[#E41D57]">
-                                                    <FiSearch className="w-5 h-5 stroke-[2.5px]" />
-                                                </div>
-                                                <div>
-                                                    <div className="font-bold text-[#1e2049] text-base">{searchSummary}</div>
-                                                    <div className="text-xs text-gray-500">Click to modify search</div>
-                                                </div>
-                                            </div>
-                                            <div className="bg-white p-2 rounded-full shadow-sm">
-                                                <FiEdit2 className="w-4 h-4 text-gray-400" />
+                                        <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-center border border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => setIsSearchExpanded(true)}>
+                                            <div className="text-center w-full">
+                                                <div className="font-bold text-[#1e2049] text-base">{searchSummary}</div>
+                                                <div className="text-xs text-gray-500">Click to modify search</div>
                                             </div>
                                         </div>
                                     )}

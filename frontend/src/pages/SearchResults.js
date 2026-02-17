@@ -283,10 +283,9 @@ const SearchResults = () => {
             </button>
             <button
               disabled
-              className="flex-1 flex items-center justify-start gap-3 bg-white rounded-full px-4 py-2 border border-gray-200 shadow-sm text-left opacity-100"
+              className="flex-1 flex items-center justify-center bg-white rounded-full px-4 py-2 border border-gray-200 shadow-sm text-center opacity-100"
             >
-              <FiSearch className="w-4 h-4 text-gray-900 flex-shrink-0" />
-              <div className="flex flex-col items-start leading-tight overflow-hidden">
+              <div className="flex flex-col items-center leading-tight overflow-hidden w-full">
                 <span className="text-sm font-semibold text-gray-900 truncate w-full">
                   Flight
                 </span>
@@ -367,10 +366,9 @@ const SearchResults = () => {
           {/* Search Pill */}
           <button
             onClick={() => setShowSearchModal(true)}
-            className="flex-1 flex items-center justify-start gap-3 bg-white rounded-full px-4 py-2 border border-gray-200 shadow-sm text-left hover:bg-gray-50 transition-all active:scale-[0.98]"
+            className="flex-1 flex items-center justify-center bg-white rounded-full px-4 py-2 border border-gray-200 shadow-sm text-center hover:bg-gray-50 transition-all active:scale-[0.98]"
           >
-            <FiSearch className="w-4 h-4 text-gray-900 flex-shrink-0" />
-            <div className="flex flex-col items-start leading-tight overflow-hidden">
+            <div className="flex flex-col items-center leading-tight overflow-hidden w-full">
               <span className="text-sm font-semibold text-gray-900 truncate w-full">
                 {sanitizeText(filters.city) || 'Anywhere'}
               </span>

@@ -1108,7 +1108,7 @@ const StickySearchHeader = ({
                           className={`${desktopActiveSection ? 'w-[110px] px-4 gap-2' : 'w-9'} h-9 rounded-full flex-shrink-0 bg-[#E41D57] text-white flex items-center justify-center shadow-md hover:bg-[#C01A4A] transition-all duration-300 ease-out overflow-hidden cursor-pointer`}
                         >
                           <FiSearch className="w-4 h-4 flex-shrink-0" />
-                          <span className={`${desktopActiveSection ? 'max-w-[60px] opacity-100' : 'max-w-0 opacity-0'} text-sm font-semibold whitespace-nowrap overflow-hidden transition-all duration-300 ease-out`}>Search</span>
+                          <span className={`${desktopActiveSection ? 'max-w-[60px] opacity-100 pl-1' : 'max-w-0 opacity-0'} text-xs font-semibold whitespace-nowrap overflow-hidden transition-all duration-300 ease-out`}>Search</span>
                         </div>
                       </div>
                     </div>
