@@ -8,7 +8,7 @@ const ERROR_DEBOUNCE_TIME = 5000; // 5 seconds
 
 // Create axios instance
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5000/api',
+  baseURL: process.env.REACT_APP_API_URL || 'http://175.29.198.93:5000/api',
   timeout: 60000, // Increased to 60 seconds for cPanel servers
   headers: {
     'Content-Type': 'application/json',
@@ -62,7 +62,7 @@ api.interceptors.response.use(
           const authData = JSON.parse(token);
           if (authData.state?.refreshToken) {
             const response = await axios.post(
-              `${process.env.REACT_APP_API_URL || 'http://localhost:5000/api'}/auth/refresh`,
+              `${process.env.REACT_APP_API_URL || 'http://175.29.198.93:5000/api'}/auth/refresh`,
               { refreshToken: authData.state.refreshToken }
             );
 
