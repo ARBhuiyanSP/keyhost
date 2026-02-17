@@ -6,12 +6,13 @@ import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import useAuthStore from '../../store/authStore';
 import useToast from '../../hooks/useToast';
+import { sanitizeText } from '../../utils/textUtils';
 
 const PropertyOwnerDashboard = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const { showSuccess, showError } = useToast();
-  
+
   const handleLogout = async () => {
     try {
       await logout();
@@ -238,19 +239,18 @@ const PropertyOwnerDashboard = () => {
                     {bookingsData.bookings.slice(0, 5).map((booking) => (
                       <div key={booking.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                         <div className="flex-1">
-                          <h4 className="font-medium text-gray-900">{booking.property_title}</h4>
+                          <h4 className="font-medium text-gray-900">{sanitizeText(booking.property_title)}</h4>
                           <p className="text-sm text-gray-600">{booking.guest_first_name} {booking.guest_last_name}</p>
                           <p className="text-sm text-gray-500">
                             {new Date(booking.check_in_date).toLocaleDateString()} - {new Date(booking.check_out_date).toLocaleDateString()}
                           </p>
                         </div>
                         <div className="text-right">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            booking.status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                            booking.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                            booking.status === 'cancelled' ? 'bg-red-100 text-red-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${booking.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                              booking.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                booking.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                                  'bg-gray-100 text-gray-800'
+                            }`}>
                             {booking.status}
                           </span>
                           <p className="text-sm font-bold text-red-600 mt-1">BDT {booking.total_amount}</p>
@@ -295,15 +295,14 @@ const PropertyOwnerDashboard = () => {
                       className="w-full h-32 object-cover"
                     />
                     <div className="p-4">
-                      <h4 className="font-medium text-gray-900 mb-2">{property.title}</h4>
-                      <p className="text-sm text-gray-600 mb-2">{property.city}</p>
+                      <h4 className="font-medium text-gray-900 mb-2">{sanitizeText(property.title)}</h4>
+                      <p className="text-sm text-gray-600 mb-2">{sanitizeText(property.city)}</p>
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-bold text-red-600">BDT {property.base_price}/night</span>
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          property.status === 'active' ? 'bg-green-100 text-green-800' :
-                          property.status === 'pending_approval' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
+                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${property.status === 'active' ? 'bg-green-100 text-green-800' :
+                            property.status === 'pending_approval' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-gray-100 text-gray-800'
+                          }`}>
                           {property.status?.replace('_', ' ')}
                         </span>
                       </div>

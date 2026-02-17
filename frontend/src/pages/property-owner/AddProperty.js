@@ -10,6 +10,7 @@ import api from '../../utils/api';
 import useToast from '../../hooks/useToast';
 import ImageUpload from '../../components/common/ImageUpload';
 import LocationPicker from '../../components/common/LocationPicker';
+import { sanitizeText } from '../../utils/textUtils';
 
 const AddProperty = () => {
   const navigate = useNavigate();
@@ -73,9 +74,16 @@ const AddProperty = () => {
 
   const handleInputChange = (e) => {
     const { name, value, type } = e.target;
+
+    let sanitizedValue = value;
+
+    if (type !== 'number' && typeof value === 'string' && name !== 'property_type' && name !== 'property_category') {
+      sanitizedValue = sanitizeText(value);
+    }
+
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'number' ? parseFloat(value) || 0 : value
+      [name]: type === 'number' ? parseFloat(value) || 0 : sanitizedValue
     }));
   };
 

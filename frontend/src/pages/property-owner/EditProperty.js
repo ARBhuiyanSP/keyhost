@@ -11,6 +11,7 @@ import useToast from '../../hooks/useToast';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import ImageUpload from '../../components/common/ImageUpload';
 import LocationPicker from '../../components/common/LocationPicker';
+import { sanitizeText } from '../../utils/textUtils';
 
 const EditProperty = () => {
   const { id } = useParams();
@@ -210,9 +211,17 @@ const EditProperty = () => {
 
   const handleInputChange = (e) => {
     const { name, value, type } = e.target;
+
+    let sanitizedValue = value;
+
+    if (type !== 'number' && typeof value === 'string' && name !== 'property_type' && name !== 'property_category') {
+      sanitizedValue = sanitizeText(value);
+      // extra check for time fields if needed, but our regex allows :
+    }
+
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'number' ? parseFloat(value) || 0 : value
+      [name]: type === 'number' ? parseFloat(value) || 0 : sanitizedValue
     }));
   };
 

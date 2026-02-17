@@ -11,6 +11,7 @@ import PropertyImageSlider from '../components/property/PropertyImageSlider';
 import PropertyMap from '../components/property/PropertyMap';
 import FlightSearchResults from '../components/search/FlightSearchResults';
 import MobileSearchModal from '../components/search/MobileSearchModal';
+import { sanitizeText } from '../utils/textUtils';
 
 const SearchResults = () => {
   const navigate = useNavigate();
@@ -371,7 +372,7 @@ const SearchResults = () => {
             <FiSearch className="w-4 h-4 text-gray-900 flex-shrink-0" />
             <div className="flex flex-col items-start leading-tight overflow-hidden">
               <span className="text-sm font-semibold text-gray-900 truncate w-full">
-                {filters.city || 'Anywhere'}
+                {sanitizeText(filters.city) || 'Anywhere'}
               </span>
               <span className="text-xs text-gray-500 truncate w-full">
                 {filters.check_in_date ? formatDisplayDates() : 'Any week'} • {filters.min_guests ? `${filters.min_guests} guest${parseInt(filters.min_guests) > 1 ? 's' : ''}` : 'Add guests'}
@@ -704,7 +705,7 @@ const SearchResults = () => {
                     <div className="space-y-0.5">
                       <div className="flex justify-between items-start">
                         <h3 className="font-semibold text-gray-900 text-[15px] truncate pr-2">
-                          {property.city ? `${property.property_type || 'Property'} in ${property.city}` : property.title}
+                          {property.city ? `${property.property_type || 'Property'} in ${sanitizeText(property.city)}` : sanitizeText(property.title)}
                         </h3>
                         <div className="flex items-center gap-1 text-[14px]">
                           <FiStar className="w-3 h-3 fill-current text-black" />
@@ -713,7 +714,7 @@ const SearchResults = () => {
                         </div>
                       </div>
 
-                      <p className="text-gray-500 text-[15px] line-clamp-1">{property.title}</p>
+                      <p className="text-gray-500 text-[15px] line-clamp-1">{sanitizeText(property.title)}</p>
                       <p className="text-gray-500 text-[15px]">
                         {property.bedrooms} bedrooms · {property.max_guests} guests
                       </p>

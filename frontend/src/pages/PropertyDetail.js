@@ -18,6 +18,7 @@ import StickySearchHeader from '../components/layout/StickySearchHeader';
 import PropertyImageSlider from '../components/property/PropertyImageSlider';
 import PropertyMap from '../components/property/PropertyMap';
 import { addToRecentlyViewed } from '../utils/recentlyViewed';
+import { sanitizeText } from '../utils/textUtils';
 
 const PropertyDetail = () => {
   const { id } = useParams();
@@ -36,7 +37,7 @@ const PropertyDetail = () => {
   const [showAllPhotos, setShowAllPhotos] = useState(false);
   const [showDescriptionModal, setShowDescriptionModal] = useState(false);
   const [showMobileReserveForm, setShowMobileReserveForm] = useState(false);
-  const [isMobileReserveDatePickerOpen, setIsMobileReserveDatePickerOpen] = useState(false);
+  const [mobileSearchStep, setMobileSearchStep] = useState('dates'); // 'dates', 'guests'
   const [showStickySearchHeader, setShowStickySearchHeader] = useState(true); // Show on first load
   const [reviewsPage, setReviewsPage] = useState(1);
   const [showAllReviews, setShowAllReviews] = useState(false);
@@ -162,6 +163,7 @@ const PropertyDetail = () => {
     number_of_guests: urlGuests ? parseInt(urlGuests) : 1,
     number_of_children: 0,
     number_of_infants: 0,
+    number_of_pets: 0,
     special_requests: ''
   });
 
@@ -254,28 +256,7 @@ const PropertyDetail = () => {
     checkFavoriteStatus();
   }, [isAuthenticated, property]);
 
-  useEffect(() => {
-    if (!showMobileReserveForm) {
-      setIsMobileReserveDatePickerOpen(false);
-    }
-  }, [showMobileReserveForm]);
 
-  useEffect(() => {
-    if (!showMobileReserveForm || !isMobileReserveDatePickerOpen) return;
-
-    const handleOutside = (event) => {
-      if (mobileReserveDateContainerRef.current && !mobileReserveDateContainerRef.current.contains(event.target)) {
-        setIsMobileReserveDatePickerOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleOutside);
-    document.addEventListener('touchstart', handleOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleOutside);
-      document.removeEventListener('touchstart', handleOutside);
-    };
-  }, [showMobileReserveForm, isMobileReserveDatePickerOpen]);
 
   // Scroll to top when property ID changes or component mounts
   useEffect(() => {
@@ -876,7 +857,7 @@ const PropertyDetail = () => {
             {/* Description Content */}
             <div className="flex-1 overflow-y-auto p-6">
               <p className="text-gray-700 leading-relaxed text-base whitespace-pre-line">
-                {property.description}
+                {sanitizeText(property.description)}
               </p>
             </div>
           </div>
@@ -1035,14 +1016,14 @@ const PropertyDetail = () => {
             <div className="space-y-4" id="section-photos">
               {/* Title */}
               <h1 className="text-base font-semibold text-gray-900 leading-tight">
-                {property.title}
+                {sanitizeText(property.title)}
               </h1>
 
               {/* Location and Review - Same Line */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center text-gray-600">
                   <FiMapPin className="mr-2 text-gray-400" />
-                  <span className="text-sm">{property.address}, {property.city}, {property.state}</span>
+                  <span className="text-sm">{sanitizeText(property.address)}, {sanitizeText(property.city)}, {sanitizeText(property.state)}</span>
                 </div>
                 <div className="flex items-center">
                   <FiStar className="text-yellow-400 mr-1" />
@@ -1086,7 +1067,7 @@ const PropertyDetail = () => {
                       {property.owner_first_name?.[0]?.toUpperCase()}
                     </div>
                   )}
-                  {property.owner_is_superhost && (
+                  {!!property.owner_is_superhost && (
                     <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-1 shadow-sm">
                       <div className="bg-[#E41D57] rounded-full p-1">
                         <FiShield className="w-3 h-3 text-white fill-current" />
@@ -1113,8 +1094,8 @@ const PropertyDetail = () => {
               <h3 className="text-xl font-semibold mb-4">About this place</h3>
               <p className="text-gray-700 leading-relaxed text-base whitespace-pre-line">
                 {property.description && property.description.length > 300
-                  ? `${property.description.substring(0, 300)}...`
-                  : property.description}
+                  ? `${sanitizeText(property.description).substring(0, 300)}...`
+                  : sanitizeText(property.description)}
               </p>
               {property.description && property.description.length > 300 && (
                 <button
@@ -1354,31 +1335,103 @@ const PropertyDetail = () => {
 
                   {/* Guest Picker Dropdown */}
                   {isGuestPickerOpen && (
-                    <div ref={guestPickerRef} className="mb-4 bg-white border border-gray-200 rounded-lg p-6 shadow-xl absolute w-full left-0 z-20 cursor-default top-[100%] -mt-[85px]">
+                    <div ref={guestPickerRef} className="mb-4 bg-white border border-gray-200 rounded-lg p-6 shadow-xl absolute w-full left-0 z-20 cursor-default top-[55%]">
                       <div className="space-y-6">
-                        {/* Adults (mapped to total guests for simplicity in this flat structure) */}
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <div className="font-semibold text-[#222222]">Guests</div>
-                            <div className="text-sm text-gray-500">Age 13+</div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <button
-                              className={`w-8 h-8 rounded-full border flex items-center justify-center ${bookingData.number_of_guests <= 1 ? 'border-gray-200 text-gray-200 cursor-not-allowed' : 'border-gray-400 text-gray-600 hover:border-black hover:text-black'}`}
-                              disabled={bookingData.number_of_guests <= 1}
-                              onClick={() => setBookingData({ ...bookingData, number_of_guests: bookingData.number_of_guests - 1 })}
-                            >-</button>
-                            <span className="w-4 text-center text-[#222222]">{bookingData.number_of_guests}</span>
-                            <button
-                              className={`w-8 h-8 rounded-full border flex items-center justify-center ${bookingData.number_of_guests >= property.max_guests ? 'border-gray-200 text-gray-200 cursor-not-allowed' : 'border-gray-400 text-gray-600 hover:border-black hover:text-black'}`}
-                              disabled={bookingData.number_of_guests >= property.max_guests}
-                              onClick={() => setBookingData({ ...bookingData, number_of_guests: bookingData.number_of_guests + 1 })}
-                            >+</button>
-                          </div>
-                        </div>
+                        {[
+                          { key: 'adults', label: 'Adults', subtitle: 'Ages 13 or above', min: 1 },
+                          { key: 'children', label: 'Children', subtitle: 'Ages 2 – 12', min: 0 },
+                          { key: 'infants', label: 'Infants', subtitle: 'Under 2', min: 0 },
+                          { key: 'pets', label: 'Pets', subtitle: 'Bringing a service animal?', min: 0 },
+                        ].map((item) => {
+                          let currentValue = 0;
+                          const totalGuests = bookingData.number_of_guests || 1;
+                          const children = bookingData.number_of_children || 0;
+
+                          if (item.key === 'adults') currentValue = totalGuests - children;
+                          else if (item.key === 'children') currentValue = children;
+                          else if (item.key === 'infants') currentValue = bookingData.number_of_infants || 0;
+                          else if (item.key === 'pets') currentValue = bookingData.number_of_pets || 0;
+
+                          const isMinusDisabled = currentValue <= item.min;
+                          let isPlusDisabled = false;
+
+                          if (item.key === 'adults' || item.key === 'children') {
+                            isPlusDisabled = totalGuests >= property.max_guests;
+                          } else if (item.key === 'infants') {
+                            isPlusDisabled = (bookingData.number_of_infants || 0) >= 2;
+                          } else if (item.key === 'pets') {
+                            isPlusDisabled = (bookingData.number_of_pets || 0) >= 3;
+                          }
+
+                          return (
+                            <div key={item.key} className="flex justify-between items-center w-full">
+                              <div className="flex-1 text-left">
+                                <div className="font-semibold text-[#222222]">{item.label}</div>
+                                <div className="text-sm text-gray-500">{item.subtitle}</div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <button
+                                  type="button"
+                                  className={`w-8 h-8 rounded-full border flex items-center justify-center ${isMinusDisabled ? 'border-gray-200 text-gray-200 cursor-not-allowed' : 'border-gray-400 text-gray-600 hover:border-black hover:text-black'}`}
+                                  disabled={isMinusDisabled}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (item.key === 'adults') {
+                                      setBookingData(prev => ({ ...prev, number_of_guests: (prev.number_of_guests || 1) - 1 }));
+                                    } else if (item.key === 'children') {
+                                      setBookingData(prev => ({
+                                        ...prev,
+                                        number_of_children: (prev.number_of_children || 0) - 1,
+                                        number_of_guests: (prev.number_of_guests || 1) - 1
+                                      }));
+                                    } else if (item.key === 'infants') {
+                                      setBookingData(prev => ({ ...prev, number_of_infants: (prev.number_of_infants || 0) - 1 }));
+                                    } else if (item.key === 'pets') {
+                                      setBookingData(prev => ({ ...prev, number_of_pets: (prev.number_of_pets || 0) - 1 }));
+                                    }
+                                  }}
+                                >
+                                  <FiMinus className="w-3 h-3" />
+                                </button>
+                                <span className="w-4 text-center text-[#222222]">{currentValue}</span>
+                                <button
+                                  type="button"
+                                  className={`w-8 h-8 rounded-full border flex items-center justify-center ${isPlusDisabled ? 'border-gray-200 text-gray-200 cursor-not-allowed' : 'border-gray-400 text-gray-600 hover:border-black hover:text-black'}`}
+                                  disabled={isPlusDisabled}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (item.key === 'adults') {
+                                      setBookingData(prev => ({ ...prev, number_of_guests: (prev.number_of_guests || 1) + 1 }));
+                                    } else if (item.key === 'children') {
+                                      setBookingData(prev => ({
+                                        ...prev,
+                                        number_of_children: (prev.number_of_children || 0) + 1,
+                                        number_of_guests: (prev.number_of_guests || 1) + 1
+                                      }));
+                                    } else if (item.key === 'infants') {
+                                      setBookingData(prev => ({ ...prev, number_of_infants: (prev.number_of_infants || 0) + 1 }));
+                                    } else if (item.key === 'pets') {
+                                      setBookingData(prev => ({ ...prev, number_of_pets: (prev.number_of_pets || 0) + 1 }));
+                                    }
+                                  }}
+                                >
+                                  <FiPlus className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
 
                         <div className="text-xs text-gray-500 mt-4 pt-4 border-t border-gray-100">
                           This place has a maximum of {property.max_guests || 4} guests.
+                        </div>
+                        <div className="flex justify-end pt-2">
+                          <button
+                            onClick={() => setIsGuestPickerOpen(false)}
+                            className="text-sm font-semibold underline text-black hover:text-gray-700"
+                          >
+                            Close
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1570,7 +1623,7 @@ const PropertyDetail = () => {
             <PropertyMap properties={[property]} detailView={true} />
           </div>
           <div className="mt-6">
-            <h3 className="font-semibold text-[#222222] text-lg">{property.city}, {property.state}</h3>
+            <h3 className="font-semibold text-[#222222] text-lg">{sanitizeText(property.city)}, {sanitizeText(property.state)}</h3>
             <p className="mt-2 text-gray-600 max-w-3xl">
               Very dynamic and appreciated area. We will send you the exact location once your booking is confirmed.
             </p>
@@ -1600,7 +1653,7 @@ const PropertyDetail = () => {
                       {property.owner_first_name?.[0]?.toUpperCase()}
                     </div>
                   )}
-                  {property.owner_is_superhost && (
+                  {!!property.owner_is_superhost && (
                     <div className="absolute bottom-0 right-0 lg:bottom-2 lg:right-2 bg-[#E41D57] text-white rounded-full p-2 border-4 border-white">
                       <FiShield className="w-4 h-4 lg:w-6 lg:h-6 fill-current" />
                     </div>
@@ -1612,7 +1665,7 @@ const PropertyDetail = () => {
                   <h3 className="text-2xl lg:text-3xl font-bold text-[#222222] mb-1">
                     {property.owner_first_name}
                   </h3>
-                  {property.owner_is_superhost && (
+                  {!!property.owner_is_superhost && (
                     <div className="flex items-center justify-start lg:justify-center gap-2 text-[#222222] font-semibold text-sm">
                       <FiShield className="w-3 h-3 fill-current" />
                       Superhost
@@ -1674,13 +1727,13 @@ const PropertyDetail = () => {
               </div>
 
               <div className="mt-8 space-y-4">
-                {property.owner_school && (
+                {!!property.owner_school && (
                   <div className="flex items-start gap-3 text-[#222222]">
                     <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" role="presentation" focusable="false" style={{ display: 'block', height: '24px', width: '24px', fill: 'currentcolor' }}><path d="M26 2v10h-2V4H8v24h8v2H6V2h20zM14 24h-4v-4h4v4zm16 2v4H18v-4h12zM28 28H20v-2h8v2zm-14-6h-4v-4h4v4zm6-2V8H12V6h8v14zm-2-8h-4V8h4v4z"></path></svg>
                     <span>Where I went to school: {property.owner_school}</span>
                   </div>
                 )}
-                {property.owner_work && (
+                {!!property.owner_work && (
                   <div className="flex items-start gap-3 text-[#222222]">
                     <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" role="presentation" focusable="false" style={{ display: 'block', height: '24px', width: '24px', fill: 'currentcolor' }}><path d="M24 2a2 2 0 0 1 1.995 1.85L26 4v22a2 2 0 0 1-1.85 1.995L24 28H8a2 2 0 0 1-1.995-1.85L6 26V4a2 2 0 0 1 1.85-1.995L8 2h16zM13 18H9v2h4v-2zm-4 4v2h4v-2H9zm8-4h-4v2h4v-2zm0 4h-4v2h4v-2zm8-4h-4v2h4v-2zm0 4h-4v2h4v-2zM24 4H8v22h16V4z"></path></svg>
                     <span>My work: {property.owner_work}</span>
@@ -1695,7 +1748,7 @@ const PropertyDetail = () => {
                 {property.owner_is_superhost ? `${property.owner_first_name} is a Superhost` : `About ${property.owner_first_name}`}
               </h3>
 
-              {property.owner_is_superhost && (
+              {!!property.owner_is_superhost && (
                 <div className="mb-6 text-[#222222] font-light">
                   Superhosts are experienced, highly rated hosts who are committed to providing great stays for guests.
                 </div>
@@ -1787,23 +1840,16 @@ const PropertyDetail = () => {
             {/* Scrollable Content */}
             <div className="flex-1 overflow-y-auto p-4">
               <form id="mobile-reserve-form" onSubmit={handleBookingSubmit} className="space-y-4">
-                <div className="relative">
-                  <label className="block text-xs font-medium text-gray-700 mb-1 uppercase tracking-wide">
-                    Check-in & Check-out
-                  </label>
-                  <div className="relative" ref={mobileReserveDateContainerRef}>
-                    <button
-                      type="button"
-                      onClick={() => setIsMobileReserveDatePickerOpen(true)}
-                      className="w-full px-3 py-3 border border-gray-300 rounded-lg text-sm text-left focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
-                    >
-                      {bookingData.check_in_date && bookingData.check_out_date
-                        ? `${parseDateLocal(bookingData.check_in_date).toLocaleDateString()} - ${parseDateLocal(bookingData.check_out_date).toLocaleDateString()}`
-                        : 'Add dates'}
-                    </button>
+                {/* When Card */}
+                <div
+                  className={`bg-white rounded-2xl transition-all duration-300 overflow-hidden ${mobileSearchStep === 'dates' ? 'p-6 shadow-xl border-transparent' : 'p-4 shadow-sm'}`}
+                  onClick={() => setMobileSearchStep('dates')}
+                >
+                  {mobileSearchStep === 'dates' ? (
+                    <div className="animate-fadeIn">
+                      <h3 className="text-2xl font-bold text-black mb-4">When's your trip?</h3>
 
-                    {isMobileReserveDatePickerOpen && (
-                      <div className="mt-3">
+                      <div onClick={(e) => e.stopPropagation()}>
                         <DatePicker
                           selected={bookingData.check_in_date ? parseDateLocal(bookingData.check_in_date) : null}
                           onChange={(dates) => {
@@ -1814,7 +1860,7 @@ const PropertyDetail = () => {
                               check_out_date: formatDateLocal(end) || null
                             });
                             if (end) {
-                              setIsMobileReserveDatePickerOpen(false);
+                              setTimeout(() => setMobileSearchStep('guests'), 300);
                             }
                           }}
                           startDate={bookingData.check_in_date ? parseDateLocal(bookingData.check_in_date) : null}
@@ -1824,29 +1870,139 @@ const PropertyDetail = () => {
                           filterDate={(date) => !isDateBlocked(date)}
                           dayClassName={getDayClassName}
                           inline
-                          calendarClassName="mobile-date-picker-calendar"
-                          shouldCloseOnSelect={false}
                           monthsShown={1}
-                          dateFormat="MMM dd, yyyy"
+                          calendarClassName="mobile-date-picker-calendar w-full"
+                          wrapperClassName="w-full"
+                          shouldCloseOnSelect={false}
                         />
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-500 font-semibold text-sm">When</span>
+                      <span className="text-black font-bold text-sm">
+                        {bookingData.check_in_date && bookingData.check_out_date
+                          ? `${parseDateLocal(bookingData.check_in_date).toLocaleDateString()} - ${parseDateLocal(bookingData.check_out_date).toLocaleDateString()}`
+                          : 'Add dates'}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Guests</label>
-                  <select
-                    value={bookingData.number_of_guests}
-                    onChange={(e) => setBookingData({ ...bookingData, number_of_guests: parseInt(e.target.value) })}
-                    className="w-full px-3 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-                  >
-                    {[...Array(property.max_guests)].map((_, i) => (
-                      <option key={i + 1} value={i + 1}>
-                        {i + 1} {i === 0 ? 'guest' : 'guests'}
-                      </option>
-                    ))}
-                  </select>
+                {/* Who Card */}
+                <div
+                  className={`bg-white rounded-2xl transition-all duration-300 overflow-hidden ${mobileSearchStep === 'guests' ? 'p-6 shadow-xl border-transparent' : 'p-4 shadow-sm'}`}
+                  onClick={() => setMobileSearchStep('guests')}
+                >
+                  {mobileSearchStep === 'guests' ? (
+                    <div className="animate-fadeIn">
+                      <h3 className="text-2xl font-bold text-black mb-6">Who's coming?</h3>
+                      <div className="space-y-6">
+                        {[
+                          { key: 'adults', label: 'Adults', subtitle: 'Ages 13 or above', min: 1 },
+                          { key: 'children', label: 'Children', subtitle: 'Ages 2 – 12', min: 0 },
+                          { key: 'infants', label: 'Infants', subtitle: 'Under 2', min: 0 },
+                          { key: 'pets', label: 'Pets', subtitle: 'Bringing a service animal?', min: 0 },
+                        ].map((item) => {
+                          // Calculate current value based on key
+                          let currentValue = 0;
+                          const totalGuests = bookingData.number_of_guests || 1;
+                          const children = bookingData.number_of_children || 0;
+
+                          if (item.key === 'adults') currentValue = totalGuests - children;
+                          else if (item.key === 'children') currentValue = children;
+                          else if (item.key === 'infants') currentValue = bookingData.number_of_infants || 0;
+                          else if (item.key === 'pets') currentValue = bookingData.number_of_pets || 0;
+
+                          // Disable logic
+                          const isMinusDisabled = currentValue <= item.min;
+                          let isPlusDisabled = false;
+
+                          if (item.key === 'adults' || item.key === 'children') {
+                            isPlusDisabled = totalGuests >= property.max_guests;
+                          } else if (item.key === 'infants') {
+                            isPlusDisabled = (bookingData.number_of_infants || 0) >= 2;
+                          } else if (item.key === 'pets') {
+                            isPlusDisabled = (bookingData.number_of_pets || 0) >= 3;
+                          }
+
+                          return (
+                            <div key={item.key} className="flex items-center justify-between">
+                              <div>
+                                <div className="text-base font-semibold text-gray-900">{item.label}</div>
+                                <div className="text-sm text-gray-500">{item.subtitle}</div>
+                              </div>
+                              <div className="flex items-center gap-4">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (isMinusDisabled) return;
+
+                                    if (item.key === 'adults') {
+                                      setBookingData(prev => ({ ...prev, number_of_guests: (prev.number_of_guests || 1) - 1 }));
+                                    } else if (item.key === 'children') {
+                                      setBookingData(prev => ({
+                                        ...prev,
+                                        number_of_children: (prev.number_of_children || 0) - 1,
+                                        number_of_guests: (prev.number_of_guests || 1) - 1
+                                      }));
+                                    } else if (item.key === 'infants') {
+                                      setBookingData(prev => ({ ...prev, number_of_infants: (prev.number_of_infants || 0) - 1 }));
+                                    } else if (item.key === 'pets') {
+                                      setBookingData(prev => ({ ...prev, number_of_pets: (prev.number_of_pets || 0) - 1 }));
+                                    }
+                                  }}
+                                  className={`w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center ${isMinusDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-black'}`}
+                                  disabled={isMinusDisabled}
+                                >
+                                  <FiMinus className="w-3 h-3" />
+                                </button>
+                                <span className="font-semibold text-base w-4 text-center">{currentValue}</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (isPlusDisabled) return;
+
+                                    if (item.key === 'adults') {
+                                      setBookingData(prev => ({ ...prev, number_of_guests: (prev.number_of_guests || 1) + 1 }));
+                                    } else if (item.key === 'children') {
+                                      setBookingData(prev => ({
+                                        ...prev,
+                                        number_of_children: (prev.number_of_children || 0) + 1,
+                                        number_of_guests: (prev.number_of_guests || 1) + 1
+                                      }));
+                                    } else if (item.key === 'infants') {
+                                      setBookingData(prev => ({ ...prev, number_of_infants: (prev.number_of_infants || 0) + 1 }));
+                                    } else if (item.key === 'pets') {
+                                      setBookingData(prev => ({ ...prev, number_of_pets: (prev.number_of_pets || 0) + 1 }));
+                                    }
+                                  }}
+                                  className={`w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center ${isPlusDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-black'}`}
+                                  disabled={isPlusDisabled}
+                                >
+                                  <FiPlus className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        <div className="text-xs text-gray-500 pt-2">
+                          Maximum {property.max_guests} guests allowed. Infants and pets don't count toward the limit.
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-500 font-semibold text-sm">Who</span>
+                      <span className="text-black font-bold text-sm">
+                        {bookingData.number_of_guests || 1} guest{(bookingData.number_of_guests || 1) !== 1 ? 's' : ''}
+                        {bookingData.number_of_infants > 0 ? `, ${bookingData.number_of_infants} infant${bookingData.number_of_infants !== 1 ? 's' : ''}` : ''}
+                        {bookingData.number_of_pets > 0 ? `, ${bookingData.number_of_pets} pet${bookingData.number_of_pets !== 1 ? 's' : ''}` : ''}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {availability && (
