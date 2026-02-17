@@ -469,22 +469,9 @@ const FlightBooking = () => {
                 </div>
             )}
 
-            <div className="container mx-auto px-4 max-w-7xl">
+            <div className="container mx-auto px-4 max-w-7xl pt-6 md:pt-10">
                 {/* Back Button - Desktop Only */}
-                <button
-                    onClick={() => navigate(-1)}
-                    className="hidden md:flex items-center gap-2 mb-6 text-gray-600 hover:text-[#E41D57] transition-colors group"
-                >
-                    <svg
-                        className="w-5 h-5 transform group-hover:-translate-x-1 transition-transform"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                    >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                    </svg>
-                    <span className="font-semibold">Back</span>
-                </button>
+
 
                 {/* Submission Error Alert */}
                 {submissionError && (
