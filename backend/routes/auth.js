@@ -1,15 +1,15 @@
 const express = require('express');
 const { pool } = require('../config/database');
-const { 
-  hashPassword, 
-  comparePassword, 
-  generateToken, 
+const {
+  hashPassword,
+  comparePassword,
+  generateToken,
   generateRefreshToken,
-  formatResponse 
+  formatResponse
 } = require('../utils/helpers');
-const { 
-  validateUserRegistration, 
-  validateUserLogin 
+const {
+  validateUserRegistration,
+  validateUserLogin
 } = require('../middleware/validation');
 
 const router = express.Router();
@@ -27,7 +27,7 @@ router.post('/register', validateUserRegistration, async (req, res) => {
       type: typeof req.body[key],
       isUndefined: req.body[key] === undefined
     })));
-    
+
     // Sanitize and extract all fields - handle missing fields properly
     // Required fields - throw error if missing
     const first_name = req.body.first_name ? String(req.body.first_name).trim() : null;
@@ -35,7 +35,7 @@ router.post('/register', validateUserRegistration, async (req, res) => {
     const email = req.body.email ? String(req.body.email).trim().toLowerCase() : null;
     const phone = req.body.phone ? String(req.body.phone).trim() : null;
     const password = req.body.password ? String(req.body.password) : null;
-    
+
     // Optional fields - safely convert to null if not present
     const user_type = req.body.user_type ? String(req.body.user_type) : 'guest';
     const date_of_birth = (req.body.date_of_birth && String(req.body.date_of_birth).trim()) || null;
@@ -44,20 +44,20 @@ router.post('/register', validateUserRegistration, async (req, res) => {
     const city = (req.body.city && String(req.body.city).trim()) || null;
     const state = (req.body.state && String(req.body.state).trim()) || null;
     const country = (req.body.country && String(req.body.country).trim()) || null;
-    
+
     // Log sanitized values
     console.log('Sanitized values:', {
-      first_name: first_name || 'NULL', 
-      last_name: last_name || 'NULL', 
-      email: email || 'NULL', 
-      phone: phone ? '***' : 'NULL', 
-      password: password ? '***' : 'NULL', 
-      user_type, 
-      date_of_birth: date_of_birth || 'NULL', 
-      gender: gender || 'NULL', 
-      address: address || 'NULL', 
-      city: city || 'NULL', 
-      state: state || 'NULL', 
+      first_name: first_name || 'NULL',
+      last_name: last_name || 'NULL',
+      email: email || 'NULL',
+      phone: phone ? '***' : 'NULL',
+      password: password ? '***' : 'NULL',
+      user_type,
+      date_of_birth: date_of_birth || 'NULL',
+      gender: gender || 'NULL',
+      address: address || 'NULL',
+      city: city || 'NULL',
+      state: state || 'NULL',
       country: country || 'NULL'
     });
 
@@ -102,7 +102,7 @@ router.post('/register', validateUserRegistration, async (req, res) => {
 
     // Hash password
     const hashedPassword = await hashPassword(password);
-    
+
     // Verify hashedPassword is not undefined
     if (!hashedPassword || hashedPassword === undefined) {
       console.error('Password hashing failed');
@@ -121,7 +121,7 @@ router.post('/register', validateUserRegistration, async (req, res) => {
       }
       return String(val).trim() || defaultValue;
     };
-    
+
     // Ensure required fields are not null
     if (!first_name || first_name === null || first_name === 'null') {
       return res.status(400).json(formatResponse(false, 'First name cannot be null'));
@@ -138,7 +138,7 @@ router.post('/register', validateUserRegistration, async (req, res) => {
     if (!hashedPassword || hashedPassword === null || hashedPassword === 'null') {
       return res.status(400).json(formatResponse(false, 'Password hash cannot be null'));
     }
-    
+
     const insertParams = [
       first_name,
       last_name,
@@ -153,22 +153,22 @@ router.post('/register', validateUserRegistration, async (req, res) => {
       state || null,
       country || null
     ];
-    
+
     // Log final insert params (without sensitive data)
     console.log('Final insert params check:', insertParams.map((p, i) => {
       const paramNames = ['first_name', 'last_name', 'email', 'phone', 'password', 'user_type',
-                          'date_of_birth', 'gender', 'address', 'city', 'state', 'country'];
+        'date_of_birth', 'gender', 'address', 'city', 'state', 'country'];
       if (i === 4) return `${paramNames[i]}: ${p ? '***' : p}`;
       return `${paramNames[i]}: ${p} (type: ${typeof p})`;
     }));
-    
+
     // Verify no undefined values before database insert
     const undefinedIndex = insertParams.findIndex(param => param === undefined || param === 'undefined');
     if (undefinedIndex !== -1) {
       const paramNames = ['first_name', 'last_name', 'email', 'phone', 'password', 'user_type',
-                          'date_of_birth', 'gender', 'address', 'city', 'state', 'country'];
-      console.error('Registration error: Undefined value detected at index', undefinedIndex, 
-                    'for parameter:', paramNames[undefinedIndex]);
+        'date_of_birth', 'gender', 'address', 'city', 'state', 'country'];
+      console.error('Registration error: Undefined value detected at index', undefinedIndex,
+        'for parameter:', paramNames[undefinedIndex]);
       console.error('All insert params:', insertParams.map((p, i) => ({
         param: paramNames[i],
         value: i === 4 ? '***' : p,
@@ -176,26 +176,26 @@ router.post('/register', validateUserRegistration, async (req, res) => {
         isUndefined: p === undefined
       })));
       console.error('Original values:', {
-        first_name: typeof first_name, last_name: typeof last_name, 
-        email: typeof email, phone: typeof phone, 
-        user_type: typeof user_type, date_of_birth: typeof date_of_birth, 
-        gender: typeof gender, address: typeof address, 
+        first_name: typeof first_name, last_name: typeof last_name,
+        email: typeof email, phone: typeof phone,
+        user_type: typeof user_type, date_of_birth: typeof date_of_birth,
+        gender: typeof gender, address: typeof address,
         city: typeof city, state: typeof state, country: typeof country,
         hashedPassword: hashedPassword ? '***' : typeof hashedPassword
       });
       return res.status(500).json(
-        formatResponse(false, 'Registration failed: Invalid data format', null, 
+        formatResponse(false, 'Registration failed: Invalid data format', null,
           `Undefined value for parameter: ${paramNames[undefinedIndex]}`)
       );
     }
-    
+
     // Final verification - log all params before insert
     console.log('About to insert with params:', insertParams.map((p, i) => {
       const names = ['first_name', 'last_name', 'email', 'phone', 'password', 'user_type',
-                     'date_of_birth', 'gender', 'address', 'city', 'state', 'country'];
+        'date_of_birth', 'gender', 'address', 'city', 'state', 'country'];
       return `${names[i]}: ${i === 4 ? '***' : (p === null ? 'NULL' : String(p).substring(0, 20))} (${typeof p})`;
     }));
-    
+
     // Verify again - no undefined allowed
     const finalCheck = insertParams.every((p, i) => {
       if (p === undefined) {
@@ -204,13 +204,13 @@ router.post('/register', validateUserRegistration, async (req, res) => {
       }
       return true;
     });
-    
+
     if (!finalCheck) {
       return res.status(500).json(
         formatResponse(false, 'Registration failed: Data validation error', null, 'One or more parameters are undefined')
       );
     }
-    
+
     let result;
     try {
       [result] = await pool.execute(
@@ -230,7 +230,7 @@ router.post('/register', validateUserRegistration, async (req, res) => {
         insertParams: insertParams.map((p, i) => ({
           index: i,
           name: ['first_name', 'last_name', 'email', 'phone', 'password', 'user_type',
-                 'date_of_birth', 'gender', 'address', 'city', 'state', 'country'][i],
+            'date_of_birth', 'gender', 'address', 'city', 'state', 'country'][i],
           value: i === 4 ? '***' : p,
           type: typeof p,
           isUndefined: p === undefined
@@ -268,7 +268,7 @@ router.post('/register', validateUserRegistration, async (req, res) => {
       token ?? null,
       refreshToken ?? null
     ];
-    
+
     // Verify no undefined values
     if (sessionParams.some(param => param === undefined)) {
       console.error('Registration error: Undefined values in session params:', sessionParams);
@@ -276,7 +276,7 @@ router.post('/register', validateUserRegistration, async (req, res) => {
         formatResponse(false, 'Registration failed: Invalid session data')
       );
     }
-    
+
     await pool.execute(
       `INSERT INTO user_sessions (user_id, session_token, refresh_token, expires_at, created_at) 
        VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY), NOW())`,
@@ -312,6 +312,16 @@ router.post('/login', validateUserLogin, async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    console.log(`Login attempt for email: ${email}`);
+
+    // Check critical environment variables
+    if (!process.env.JWT_SECRET) {
+      console.error('FATAL ERROR: JWT_SECRET is not defined in environment variables!');
+      return res.status(500).json(
+        formatResponse(false, 'Server configuration error: JWT_SECRET missing')
+      );
+    }
+
     // Find user
     const [users] = await pool.execute(
       `SELECT id, first_name, last_name, email, phone, password, user_type, 
@@ -321,6 +331,7 @@ router.post('/login', validateUserLogin, async (req, res) => {
     );
 
     if (users.length === 0) {
+      console.log(`Login failed: User not found for email ${email}`);
       return res.status(401).json(
         formatResponse(false, 'Invalid email or password')
       );
@@ -344,8 +355,9 @@ router.post('/login', validateUserLogin, async (req, res) => {
 
     // Verify password
     const isPasswordValid = await comparePassword(password, user.password);
-    
+
     if (!isPasswordValid) {
+      console.log(`Login failed: Invalid password for user ${user.id}`);
       // Increment login attempts
       const newAttempts = user.login_attempts + 1;
       const lockUntil = newAttempts >= 5 ? new Date(Date.now() + 30 * 60 * 1000) : null; // Lock for 30 minutes
@@ -366,21 +378,38 @@ router.post('/login', validateUserLogin, async (req, res) => {
       [user.id]
     );
 
+    console.log(`User ${user.id} logged in. Generating tokens...`);
+
     // Generate tokens
     const token = generateToken(user.id, user.user_type);
     const refreshToken = generateRefreshToken(user.id);
 
+    console.log('Tokens generated. Saving session...');
+
     // Store refresh token in database
-    await pool.execute(
-      `INSERT INTO user_sessions (user_id, session_token, refresh_token, expires_at, created_at) 
-       VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY), NOW())`,
-      [user.id, token, refreshToken]
-    );
+    try {
+      await pool.execute(
+        `INSERT INTO user_sessions (user_id, session_token, refresh_token, expires_at, created_at) 
+         VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY), NOW())`,
+        [user.id, token, refreshToken]
+      );
+    } catch (dbError) {
+      console.error('Session save error:', dbError);
+      // Check if table exists error
+      if (dbError.code === 'ER_NO_SUCH_TABLE') {
+        return res.status(500).json(
+          formatResponse(false, 'Database error: user_sessions table missing', null, dbError.message)
+        );
+      }
+      throw dbError;
+    }
 
     // Remove password from response
     delete user.password;
     delete user.login_attempts;
     delete user.locked_until;
+
+    console.log('Login process completed successfully.');
 
     res.json(
       formatResponse(true, 'Login successful', {
@@ -391,9 +420,9 @@ router.post('/login', validateUserLogin, async (req, res) => {
     );
 
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('Login error details:', error);
     res.status(500).json(
-      formatResponse(false, 'Login failed', null, error.message)
+      formatResponse(false, 'Login failed: ' + error.message, null, process.env.NODE_ENV === 'development' ? error.stack : undefined)
     );
   }
 });
@@ -411,7 +440,7 @@ router.post('/refresh', async (req, res) => {
 
     // Verify refresh token
     const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-    
+
     // Check if session exists and is valid
     const [sessions] = await pool.execute(
       `SELECT us.*, u.user_type, u.is_active 
@@ -466,7 +495,7 @@ router.post('/refresh', async (req, res) => {
 router.post('/logout', async (req, res) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
-    
+
     if (token) {
       // Deactivate session
       await pool.execute(
@@ -515,10 +544,10 @@ router.post('/forgot-password', async (req, res) => {
 
     // Generate reset token (in a real app, you'd send this via email)
     const resetToken = generateRandomString(32);
-    
+
     // Store reset token (you'd typically store this with expiration)
     // For now, we'll just return success
-    
+
     // TODO: Send email with reset link
     // await sendPasswordResetEmail(user.email, resetToken);
 
@@ -541,7 +570,7 @@ router.post('/verify-email', async (req, res) => {
 
     // In a real app, you'd verify the token and update email_verified_at
     // For now, we'll just return success
-    
+
     res.json(
       formatResponse(true, 'Email verified successfully')
     );

@@ -8,6 +8,7 @@ import useSettingsStore from '../../store/settingsStore';
 import useAuthStore from '../../store/authStore';
 import api from '../../utils/api';
 import FlightSearchForm from '../search/FlightSearchForm';
+import { sanitizeText } from '../../utils/textUtils';
 
 const StickySearchHeader = ({
   alwaysSticky = false,
@@ -346,9 +347,13 @@ const StickySearchHeader = ({
   };
 
   const handleInputChange = (field, value) => {
+    let sanitizedValue = value;
+    if (typeof value === 'string' && field === 'location') {
+      sanitizedValue = sanitizeText(value);
+    }
     setSearchData(prev => ({
       ...prev,
-      [field]: value
+      [field]: sanitizedValue
     }));
   };
 
@@ -481,7 +486,7 @@ const StickySearchHeader = ({
   }, [alwaysSticky, isVisible]);
 
   const summaryTitle = searchData.location && searchData.location.trim() !== ''
-    ? searchData.location
+    ? sanitizeText(searchData.location)
     : 'Start your search';
 
   const summarySubtitle = () => {
