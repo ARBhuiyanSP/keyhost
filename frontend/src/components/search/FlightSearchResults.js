@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import LoadingSkeleton from '../common/LoadingSkeleton';
-import { FiChevronDown, FiSun, FiMoon, FiLoader, FiX, FiEdit2, FiSearch, FiFilter } from 'react-icons/fi'; // Added FiEdit2 for Modify Search
+import { FiChevronDown, FiSun, FiMoon, FiLoader, FiX, FiEdit2, FiSearch } from 'react-icons/fi'; // Added FiEdit2 for Modify Search
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { searchSabre, searchAmadeus, initiateSearch } from '../../utils/flightApi';
 import { format } from 'date-fns';
@@ -331,6 +331,17 @@ const FlightSearchResults = () => {
                         <SkeletonLoader />
                     ) : (
                         <>
+                            {/* Mobile Filter Button */}
+                            <div className="lg:hidden flex justify-end mb-4">
+                                <button
+                                    onClick={() => setIsMobileFilterOpen(true)}
+                                    className="flex items-center gap-2 bg-[#E41D57] text-white px-4 py-2 rounded-lg font-bold shadow-md hover:bg-[#c01b4b] transition-colors"
+                                >
+                                    <span className="text-sm">Filter</span>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+                                </button>
+                            </div>
+
                             {/* Mobile Filter Overlay Background */}
                             {isMobileFilterOpen && (
                                 <div
@@ -534,23 +545,8 @@ const FlightSearchResults = () => {
                                                     <div className="text-xs text-gray-500">Click to modify search</div>
                                                 </div>
                                             </div>
-
-                                            <div className="flex items-center gap-2">
-                                                {/* Mobile Filter Button */}
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setIsMobileFilterOpen(true);
-                                                    }}
-                                                    className="lg:hidden flex items-center gap-2 bg-[#E41D57] text-white px-3 py-1.5 rounded-full font-bold shadow-sm hover:bg-[#c01b4b] transition-colors"
-                                                >
-                                                    <span className="text-xs">Filter</span>
-                                                    <FiFilter className="w-3 h-3" />
-                                                </button>
-
-                                                <div className="bg-white p-2 rounded-full shadow-sm">
-                                                    <FiEdit2 className="w-4 h-4 text-gray-400" />
-                                                </div>
+                                            <div className="bg-white p-2 rounded-full shadow-sm">
+                                                <FiEdit2 className="w-4 h-4 text-gray-400" />
                                             </div>
                                         </div>
                                     )}
