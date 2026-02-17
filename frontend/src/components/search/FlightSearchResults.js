@@ -526,31 +526,20 @@ const FlightSearchResults = () => {
                                             )}
                                         </div>
                                     ) : (
-                                        <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-between border border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => setIsSearchExpanded(true)}>
-                                            <div className="flex items-center gap-4 flex-1 min-w-0">
-                                                <div className="bg-[#E41D57]/10 p-2 rounded-full text-[#E41D57] flex-shrink-0">
-                                                    <FiSearch className="w-5 h-5 stroke-[2.5px]" />
-                                                </div>
-                                                <div className="min-w-0 flex-1">
-                                                    <div className="font-bold text-[#1e2049] text-sm md:text-base truncate">{searchSummary}</div>
-                                                    <div className="text-xs text-gray-500 truncate">Click to modify search</div>
-                                                </div>
-
+                                        <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-center relative border border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => setIsSearchExpanded(true)}>
+                                            <div className="text-center w-full">
+                                                <div className="font-bold text-[#1e2049] text-base">{searchSummary}</div>
+                                                <div className="text-xs text-gray-500">Click to modify search</div>
                                             </div>
-                                            <div className="flex items-center gap-2 ml-2">
-                                                <div className="bg-white p-2 rounded-full shadow-sm flex-shrink-0">
-                                                    <FiEdit2 className="w-4 h-4 text-gray-400" />
-                                                </div>
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setIsMobileFilterOpen(true);
-                                                    }}
-                                                    className="lg:hidden flex items-center gap-2 bg-[#E41D57] text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm hover:bg-[#c01b4b] transition-colors whitespace-nowrap"
-                                                >
-                                                    Filter <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                                                </button>
-                                            </div>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setIsMobileFilterOpen(true);
+                                                }}
+                                                className="lg:hidden absolute right-2 flex items-center gap-2 bg-[#E41D57] text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm hover:bg-[#c01b4b] transition-colors whitespace-nowrap"
+                                            >
+                                                Filter <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+                                            </button>
                                         </div>
                                     )}
                                 </div>

@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Documentation & User Manual - Keyhost Booking System</title>
+    <style>
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+
+            body {
+                font-size: 12pt;
+            }
+
+            a {
+                text-decoration: none;
+                color: black;
+            }
+
+            .page-break {
+                page-break-before: always;
+            }
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+
+        .container {
+            background-color: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h1,
+        h2,
+        h3 {
+            color: #1e2049;
+        }
+
+        h1 {
+            border-bottom: 2px solid #E41D57;
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+        }
+
+        h2 {
+            margin-top: 40px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 5px;
+            color: #E41D57;
+        }
+
+        h3 {
+            margin-top: 25px;
+            font-size: 1.2em;
+        }
+
+        ul {
+            padding-left: 20px;
+        }
+
+        li {
+            margin-bottom: 5px;
+        }
+
+        .feature-tag {
+            background-color: #e0f2fe;
+            color: #0369a1;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: bold;
+            margin-right: 5px;
+        }
+
+        .role-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: bold;
+            color: white;
+            margin-left: 5px;
+        }
+
+        .role-admin {
+            background-color: #dc2626;
+        }
+
+        .role-owner {
+            background-color: #ca8a04;
+        }
+
+        .role-guest {
+            background-color: #16a34a;
+        }
+
+        .export-btn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: #E41D57;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            transition: background-color 0.3s;
+            z-index: 1000;
+        }
+
+        .export-btn:hover {
+            background-color: #be1242;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f3f4f6;
+            font-weight: bold;
+        }
+
+        .note {
+            background-color: #fff7ed;
+            border-left: 4px solid #f97316;
+            padding: 10px 15px;
+            margin: 15px 0;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+
+<body>
+
+    <button class="export-btn no-print" onclick="window.print()">
+        <svg style="width:16px;height:16px;vertical-align:middle;margin-right:5px" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+        </svg>
+        Export to PDF
+    </button>
+
+    <div class="container">
+        <h1>Keyhost Booking System Documentation</h1>
+        <p><strong>Version:</strong> 1.0.0</p>
+        <p><strong>Generated Date:</strong> <span id="date"></span></p>
+
+        <div class="note">
+            <strong>Note for Export:</strong> Click the "Export to PDF" button and choose "Save as PDF" in the
+            destination dropdown to download this document.
+        </div>
+
+        <h2>1. System Overview</h2>
+        <p>Keyhost is a comprehensive multi-vendor booking platform designed to facilitate seamless reservations for
+            properties (stays) and flights. It serves three primary user roles: Guests (travelers),
+            Property Owners (hosts), and Administrators.</p>
+
+        <h3>Core Modules</h3>
+        <ul>
+            <li><strong>Property Booking:</strong> Search, filter, and book diverse property types (Apartments, Hotels,
+                Villas).</li>
+            <li><strong>Flight Booking:</strong> Real-time flight search and booking integration (One-way, Round-trip,
+                Multi-city).
+            </li>
+            <li><strong>User Management:</strong> Role-based access control and dashboard interfaces.</li>
+            <li><strong>Financials:</strong> Earnings tracking, payouts, agency balance, and reward points system.</li>
+        </ul>
+
+        <div class="page-break"></div>
+
+        <h2>2. User Roles & Capabilities</h2>
+
+        <h3>Guest (Traveler) <span class="role-badge role-guest">Guest</span></h3>
+        <p>End-users looking to book services.</p>
+        <ul>
+            <li><strong>Search:</strong> Advanced search filters for location, dates, guests, and price range.</li>
+            <li><strong>Booking:</strong> Secure booking flow for properties and flights.</li>
+            <li><strong>Dashboard:</strong> View upcoming/past bookings, manage profile.</li>
+            <li><strong>Rewards:</strong> Earn and redeem points for discounts.</li>
+            <li><strong>Favorites:</strong> Save properties to a wishlist.</li>
+            <li><strong>Messaging:</strong> Communicate directly with hosts.</li>
+        </ul>
+
+        <h3>Property Owner (Host) <span class="role-badge role-owner">Owner</span></h3>
+        <p>Partners listing their properties on the platform.</p>
+        <ul>
+            <li><strong>Property Management:</strong> Add new listings, edit details, upload photos, set pricing.</li>
+            <li><strong>Booking Management:</strong> Accept/reject requests, view calendar availability.</li>
+            <li><strong>Analytics:</strong> View performance metrics (views, bookings, revenue).</li>
+            <li><strong>Earnings:</strong> Track payout history and pending balances.</li>
+        </ul>
+
+        <h3>Administrator <span class="role-badge role-admin">Admin</span></h3>
+        <p>Platform managers overseeing operations.</p>
+        <ul>
+            <li><strong>System Oversight:</strong> Manage all users, properties, and bookings.</li>
+            <li><strong>Content Management:</strong> Configure amenities, property types, and site settings.</li>
+            <li><strong>Financial Control:</strong> Process payouts, view platform earnings, manage reward points
+                system.</li>
+            <li><strong>Reviews:</strong> Moderation of user reviews and ratings.</li>
+        </ul>
+
+        <div class="page-break"></div>
+
+        <h2>3. Detailed Feature Manual</h2>
+
+        <h3>3.1 Search Functionality</h3>
+        <p>The search system is the core entry point for users.</p>
+        <ul>
+            <li><span class="feature-tag">Global Search Bar</span> Located in the Navbar and Sticky Header (on scroll).
+                Allows quick access to location, dates, and guest selection.</li>
+            <li><span class="feature-tag">Filters</span>
+                <ul>
+                    <li><strong>Property Type:</strong> Tabs for Stays (Room, Apartment, Hotel) vs Flights.</li>
+                    <li><strong>Location:</strong> Autocomplete suggestions for cities and airports (with IATA codes).
+                    </li>
+                    <li><strong>Dates:</strong> Date range picker with support for check-in/check-out and flight
+                        departure/return.</li>
+                    <li><strong>Guests:</strong> Detailed counters for Adults, Children, Infants, and Pets.</li>
+                </ul>
+            </li>
+            <li><span class="feature-tag">Flight Specifics</span>
+                <ul>
+                    <li><strong>Trip Type:</strong> Toggle between One Way, Round Trip, and Multi-city.</li>
+                    <li><strong>Class:</strong> Economy, Business, First Class selection.</li>
+                    <li><strong>Passenger Breakdown:</strong> Specific age-based passenger validation (e.g., Infants
+                        &lt; 2 years).</li>
+                    <li><strong>Agency Balance:</strong> Wallet system for instant ticketing (B2B/Admin context).</li>
+                </ul>
+            </li>
+
+            <li><span class="feature-tag">Mobile Optimization</span>
+                <ul>
+                    <li><strong>Sticky Search Header:</strong> Collapses to a pill view on scroll for maximum screen
+                        real estate.</li>
+                    <li><strong>Mobile Tabs:</strong> Swipeable property type tabs.</li>
+                    <li><strong>Mobile Filters:</strong> dedicated filter modal for easy access on small screens.</li>
+                </ul>
+            </li>
+        </ul>
+
+        <h3>3.2 Booking Process</h3>
+        <h4>Property Booking</h4>
+        <ol>
+            <li><strong>Selection:</strong> User views property details (amenities, photos, rules).</li>
+            <li><strong>Request:</strong> User selects dates and guests to check availability.</li>
+            <li><strong>Confirmation:</strong> User proceeds to checkout (Guest details, Payment).</li>
+        </ol>
+
+        <h4>Flight Booking</h4>
+        <ol>
+            <li><strong>Search Results:</strong> List of available flights with airline logos, timings, stops, and
+                refund status.</li>
+            <li><strong>Flight Details:</strong> Expandable view showing leg details, aircraft type, and baggage
+                allowance.</li>
+            <li><strong>Fare Summary:</strong> Breakdown of base fare, taxes, and total per passenger.</li>
+            <li><strong>Passenger Details:</strong> Strict form validation for passport expiry and age compliance.</li>
+            <li><strong>Ticket Issuance:</strong>
+                <ul>
+                    <li>Automated redirection to ticket success page upon booking.</li>
+                    <li><strong>Issue Ticket Page:</strong> For authorized users, a dedicated interface to confirm
+                        passengers and deduct cost from Agency Balance to issue final tickets (e-ticket generation).
+                    </li>
+                </ul>
+            </li>
+        </ol>
+
+        <h3>3.3 Dashboard Features</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Feature</th>
+                    <th>Description</th>
+                    <th>Availability</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>My Properties</td>
+                    <td>List view of all properties with status (Active/Pending) and quick edit actions.</td>
+                    <td>Owner, Admin</td>
+                </tr>
+                <tr>
+                    <td>Add Property Wizard</td>
+                    <td>Multi-step form for creating listing (Basic Info -> Location -> Amenities -> Photos -> Pricing).
+                    </td>
+                    <td>Owner, Admin</td>
+                </tr>
+                <tr>
+                    <td>Booking History</td>
+                    <td>List of all reservations with status filters (Upcoming, Completed, Cancelled).</td>
+                    <td>All Roles</td>
+                </tr>
+                <tr>
+                    <td>Analytics</td>
+                    <td>Charts and graphs showing booking trends and revenue over time.</td>
+                    <td>Owner, Admin</td>
+                </tr>
+                <tr>
+                    <td>Messages</td>
+                    <td>Real-time chat interface for Guest-Host communication.</td>
+                    <td>All Roles</td>
+                </tr>
+                <tr>
+                    <td>Rewards Points</td>
+                    <td>System to track and redeem points earned from bookings.</td>
+                    <td>Guest, Admin</td>
+                </tr>
+                <tr>
+                    <td>Accounting & Earnings</td>
+                    <td>Comprehensive financial overview including agency balances, payouts, and commission tracking.
+                    </td>
+                    <td>Admin</td>
+                </tr>
+                <tr>
+                    <td>System Settings</td>
+                    <td>Global configuration for site name, maintenance mode, and other core settings.</td>
+                    <td>Admin</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="page-break"></div>
+
+        <h2>5. User Guide (Walkthroughs)</h2>
+
+
+
+        <h3>5.1 Guest Guide</h3>
+
+        <h4>How to Book a Property</h4>
+        <ol>
+            <li><strong>Search:</strong> On the homepage, select the "Stays" tab. Enter your destination, check-in/out
+                dates, and number of guests. Click <strong>Search</strong>.</li>
+            <li><strong>Browse & Filter:</strong> View the list of available properties. Use filters (Price, Review
+                Score, Property Type) to narrow down choices.</li>
+            <li><strong>View Details:</strong> Click on a property card to view full details including description,
+                amenities, host profile, and location map.</li>
+            <li><strong>Select Room/Unit:</strong> If applicable, choose the specific room or unit type.</li>
+            <li><strong>Reserve:</strong> Click <strong>Reserve</strong> or <strong>Request to Book</strong>.</li>
+            <li><strong>Checkout:</strong>
+                <ul>
+                    <li>Review booking summary (dates, guests, total price).</li>
+                    <li>Enter guest details.</li>
+                    <li>Proceed to payment (Credit Card / Digital Wallet).</li>
+                </ul>
+            </li>
+            <li><strong>Confirmation:</strong> You will receive a booking confirmation email and can view the trip in
+                your <strong>Dashboard > My Trips</strong>.</li>
+        </ol>
+
+        <h4>How to Book a Flight</h4>
+        <ol>
+            <li><strong>Search:</strong> Navigate to the <strong>Flight</strong> tab. Select Trip Type (One Way / Round
+                Trip / Multi-city).</li>
+            <li><strong>Enter Route:</strong> Input Origin (From) and Destination (To) airports. Select dates and
+                travelers. Click <strong>Search</strong>.</li>
+            <li><strong>Compare:</strong> Review flight options. Expand details to see layovers, baggage allowance, and
+                aircraft info.</li>
+            <li><strong>Select:</strong> Choose your preferred outbound (and return) flight. Click <strong>Book
+                    Now</strong>.</li>
+            <li><strong>Passenger Info:</strong> Enter details for all passengers exactly as they appear on passports.
+                (Watch out for age-based validation for children/infants).</li>
+            <li><strong>Extras:</strong> Select add-ons like extra baggage or meals if available.</li>
+            <li><strong>Payment:</strong> Review the Fare Summary (Base Fare + Taxes) and complete payment.</li>
+            <li><strong>Ticket Issue:</strong> Receive your e-ticket immediately on the confirmation page and via email.
+            </li>
+        </ol>
+
+        <h3>5.2 Property Owner (Host) Guide</h3>
+
+        <h4>Adding a New Property</h4>
+        <ol>
+            <li><strong>Login:</strong> Access your Owner Dashboard.</li>
+            <li><strong>Start Listing:</strong> Click <strong>Add New Property</strong>.</li>
+            <li><strong>Step 1 - Basic Info:</strong> Enter property title, description, and select category (e.g.,
+                Apartment, Villa).</li>
+            <li><strong>Step 2 - Location:</strong> Provide address and pin the exact location on the map.</li>
+            <li><strong>Step 3 - Details:</strong> Set guest capacity, number of bedrooms/bathrooms, and size (sq ft).
+            </li>
+            <li><strong>Step 4 - Amenities:</strong> Check all available features (WiFi, Pool, AC, etc.).</li>
+            <li><strong>Step 5 - Photos:</strong> Upload valid, high-resolution images. Set a cover photo.</li>
+            <li><strong>Step 6 - Pricing:</strong> Set your nightly rate. Configure weekend or seasonal pricing if
+                needed.</li>
+            <li><strong>Publish:</strong> Submit for admin review. Once approved, it goes live.</li>
+        </ol>
+
+        <h4>Managing Earnings & Payouts</h4>
+        <ol>
+            <li><strong>Track Revenue:</strong> Go to <strong>Dashboard > Earnings</strong>. View a graph of your income
+                over time.</li>
+            <li><strong>Wallet Balance:</strong> Check your "Current Balance". This is the amount available for
+                withdrawal (Total Earnings - Commission).</li>
+            <li><strong>Request Payout:</strong> Click <strong>Withdraw</strong>. Enter the amount and select your
+                payout method (Bank Transfer / PayPal).</li>
+            <li><strong>History:</strong> View status of past withdrawal requests in the Payout History table.</li>
+        </ol>
+
+        <h3>How to Export this Manual</h3>
+        <ol>
+            <li>Click the red <strong>Export to PDF</strong> button at the top right of this page.</li>
+            <li>In the print dialog that appears, change the <strong>Destination</strong> printer to <strong>"Save as
+                    PDF"</strong>.</li>
+            <li>Click <strong>Save</strong> and choose a location on your device.</li>
+        </ol>
+
+        <footer>
+            <p
+                style="margin-top: 50px; text-align: center; color: #666; font-size: 0.8em; border-top: 1px solid #ddd; padding-top: 20px;">
+                &copy; 2026 Keyhost Booking System. All rights reserved.
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        document.getElementById('date').innerText = new Date().toLocaleDateString();
+    </script>
+</body>
+
+</html>

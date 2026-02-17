@@ -1462,8 +1462,8 @@ const Navbar = () => {
                     }}
                     className={`flex items-center justify-center h-10 rounded-full bg-[#E41D57] text-white shadow-md hover:bg-[#C01A4A] transition-all duration-300 ease-out flex-shrink-0 overflow-hidden ${isHeaderSearchActive ? 'w-[100px] px-4' : 'w-10 px-0'}`}
                   >
-                    <FiSearch className={`w-5 h-5 flex-shrink-0 ${isHeaderSearchActive ? 'mr-2' : ''}`} />
-                    <span className={`whitespace-nowrap font-bold transition-all duration-300 ease-out ${isHeaderSearchActive ? 'max-w-[100px] opacity-100' : 'max-w-0 opacity-0 overflow-hidden'}`}>
+                    <FiSearch className={`w-4 h-4 flex-shrink-0 ${isHeaderSearchActive ? 'mr-2' : ''}`} />
+                    <span className={`whitespace-nowrap font-bold text-sm transition-all duration-300 ease-out ${isHeaderSearchActive ? 'max-w-[100px] opacity-100' : 'max-w-0 opacity-0 overflow-hidden'}`}>
                       Search
                     </span>
                   </button>
@@ -1562,7 +1562,8 @@ const Navbar = () => {
               </div>
             </form>
           </div>
-        )}
+        )
+        }
 
         {/* Mobile Navigation */}
         {
