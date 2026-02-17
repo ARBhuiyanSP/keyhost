@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import LoadingSkeleton from '../common/LoadingSkeleton';
-import { FiChevronDown, FiSun, FiMoon, FiLoader, FiX, FiEdit2, FiSearch } from 'react-icons/fi'; // Added FiEdit2 for Modify Search
+import { FiChevronDown, FiSun, FiMoon, FiLoader, FiX, FiEdit2, FiSearch, FiFilter } from 'react-icons/fi'; // Added FiEdit2 for Modify Search
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { searchSabre, searchAmadeus, initiateSearch } from '../../utils/flightApi';
 import { format } from 'date-fns';
@@ -21,12 +21,37 @@ const FlightSearchResults = () => {
 
     // Collapsible Search State
     const [isSearchExpanded, setIsSearchExpanded] = useState(true);
+    const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
 
     // Side Filter States
     const [selectedAirlines, setSelectedAirlines] = useState([]);
     const [selectedStops, setSelectedStops] = useState([]);
-    const [selectedDepartureTimes, setSelectedDepartureTimes] = useState([]); // Added missing state
+    const [selectedDepartureTimes, setSelectedDepartureTimes] = useState([]);
     const [priceRange, setPriceRange] = useState([0, 100000]);
+
+    // Collapsible Filter Sections State
+    const [expandedSections, setExpandedSections] = useState({
+        airlines: false,
+        stops: false,
+        price: false,
+        departure: false
+    });
+
+    const toggleSection = (section) => {
+        setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+    };
+
+    // Auto-expand filters when results are loaded
+    useEffect(() => {
+        if (results.length > 0) {
+            setExpandedSections({
+                airlines: true,
+                stops: true,
+                price: true,
+                departure: true
+            });
+        }
+    }, [results]);
 
     // Flight Details Modal State
     const [selectedFlight, setSelectedFlight] = useState(null);
@@ -238,11 +263,10 @@ const FlightSearchResults = () => {
         else setList([...list, item]);
     };
 
-    const FilterSection = ({ title, children, defaultOpen = false }) => {
-        const [isOpen, setIsOpen] = useState(defaultOpen);
+    const FilterSection = ({ title, children, isOpen, onToggle }) => {
         return (
             <div className="border-b border-gray-100 py-4 last:border-0">
-                <div className="flex items-center justify-between mb-3 cursor-pointer" onClick={() => setIsOpen(!isOpen)}>
+                <div className="flex items-center justify-between mb-3 cursor-pointer" onClick={onToggle}>
                     <h4 className="font-bold text-gray-900 text-sm">{title}</h4>
                     <FiChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                 </div>
@@ -299,7 +323,7 @@ const FlightSearchResults = () => {
     );
 
     return (
-        <div className="bg-white min-h-screen pb-12 font-sans">
+        <div className="bg-white min-h-screen pb-12 font-sans relative">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
 
                 <div className="flex flex-col lg:flex-row gap-6">
@@ -307,25 +331,52 @@ const FlightSearchResults = () => {
                         <SkeletonLoader />
                     ) : (
                         <>
+                            {/* Mobile Filter Overlay Background */}
+                            {isMobileFilterOpen && (
+                                <div
+                                    className="fixed inset-0 bg-black/50 z-[90] lg:hidden backdrop-blur-sm"
+                                    onClick={() => setIsMobileFilterOpen(false)}
+                                ></div>
+                            )}
+
                             {/* Sidebar Filters */}
-                            <div className="w-full lg:w-64 bg-white rounded-xl shadow-sm border border-gray-200 p-5 h-fit flex-shrink-0 lg:sticky lg:top-24">
+                            <div className={`
+                                w-full lg:w-64 bg-white rounded-xl shadow-sm border border-gray-200 p-5 h-fit flex-shrink-0 
+                                fixed lg:sticky inset-0 lg:top-24 z-[100] lg:z-auto overflow-y-auto lg:overflow-visible transition-transform duration-300
+                                ${isMobileFilterOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+                                lg:block
+                            `}>
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="font-bold text-gray-900 text-lg">Filters</h3>
-                                    <button
-                                        onClick={() => {
-                                            setSelectedAirlines([]);
-                                            setSelectedStops([]);
-                                            setSelectedDepartureTimes([]); // Clear this too
-                                            setPriceRange([minPrice, maxPrice]);
-                                        }}
-                                        className="text-xs text-[#E41D57] font-medium"
-                                    >
-                                        Reset
-                                    </button>
+                                    <div className="flex items-center gap-4">
+                                        <button
+                                            onClick={() => {
+                                                setSelectedAirlines([]);
+                                                setSelectedStops([]);
+                                                setSelectedDepartureTimes([]); // Clear this too
+                                                setPriceRange([minPrice, maxPrice]);
+                                            }}
+                                            className="text-xs text-[#E41D57] font-medium"
+                                        >
+                                            Reset
+                                        </button>
+
+                                        {/* Mobile Close Button */}
+                                        <button
+                                            onClick={() => setIsMobileFilterOpen(false)}
+                                            className="lg:hidden p-1 hover:bg-gray-100 rounded-full"
+                                        >
+                                            <FiX className="w-5 h-5 text-gray-500" />
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {/* Airlines */}
-                                <FilterSection title="Airlines" defaultOpen={true}>
+                                <FilterSection
+                                    title="Airlines"
+                                    isOpen={expandedSections.airlines}
+                                    onToggle={() => toggleSection('airlines')}
+                                >
                                     <div className="space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
                                         {results.length > 0 ? (
                                             availableAirlines.map((airline, idx) => {
@@ -363,7 +414,11 @@ const FlightSearchResults = () => {
                                 </FilterSection>
 
                                 {/* Stops (Blank if no results) */}
-                                <FilterSection title="Stops" defaultOpen={true}>
+                                <FilterSection
+                                    title="Stops"
+                                    isOpen={expandedSections.stops}
+                                    onToggle={() => toggleSection('stops')}
+                                >
                                     <div className="space-y-2">
                                         {results.length > 0 ? (
                                             ['Non-Stop', '1 Stop', '2 Stops or more'].map((stop, idx) => (
@@ -387,7 +442,11 @@ const FlightSearchResults = () => {
                                 </FilterSection>
 
                                 {/* Price Range (Blank if no results) */}
-                                <FilterSection title="Price Range" defaultOpen={true}>
+                                <FilterSection
+                                    title="Price Range"
+                                    isOpen={expandedSections.price}
+                                    onToggle={() => toggleSection('price')}
+                                >
                                     {results.length > 0 ? (
                                         <>
                                             <div className="px-2 mb-4">
@@ -411,7 +470,11 @@ const FlightSearchResults = () => {
                                 </FilterSection>
 
                                 {/* Departure Time (Always shown for visual structure) */}
-                                <FilterSection title="Departure Time" defaultOpen={true}>
+                                <FilterSection
+                                    title="Departure Time"
+                                    isOpen={expandedSections.departure}
+                                    onToggle={() => toggleSection('departure')}
+                                >
                                     <div className="grid grid-cols-2 gap-2">
                                         {['00-06', '06-12', '12-18', '18-00'].map((range, idx) => {
                                             const isActive = selectedDepartureTimes.includes(range);
@@ -429,6 +492,15 @@ const FlightSearchResults = () => {
                                         })}
                                     </div>
                                 </FilterSection>
+
+                                <div className="mt-6 lg:hidden">
+                                    <button
+                                        onClick={() => setIsMobileFilterOpen(false)}
+                                        className="w-full bg-[#E41D57] text-white font-bold py-3 rounded-xl shadow-lg"
+                                    >
+                                        Apply Filters
+                                    </button>
+                                </div>
                             </div>
 
                             {/* Main Content */}
@@ -462,8 +534,23 @@ const FlightSearchResults = () => {
                                                     <div className="text-xs text-gray-500">Click to modify search</div>
                                                 </div>
                                             </div>
-                                            <div className="bg-white p-2 rounded-full shadow-sm">
-                                                <FiEdit2 className="w-4 h-4 text-gray-400" />
+
+                                            <div className="flex items-center gap-2">
+                                                {/* Mobile Filter Button */}
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setIsMobileFilterOpen(true);
+                                                    }}
+                                                    className="lg:hidden flex items-center gap-2 bg-[#E41D57] text-white px-3 py-1.5 rounded-full font-bold shadow-sm hover:bg-[#c01b4b] transition-colors"
+                                                >
+                                                    <span className="text-xs">Filter</span>
+                                                    <FiFilter className="w-3 h-3" />
+                                                </button>
+
+                                                <div className="bg-white p-2 rounded-full shadow-sm">
+                                                    <FiEdit2 className="w-4 h-4 text-gray-400" />
+                                                </div>
                                             </div>
                                         </div>
                                     )}
