@@ -9,6 +9,36 @@ import useSettingsStore from '../../store/settingsStore';
 import api from '../../utils/api';
 import FlightSearchForm from '../search/FlightSearchForm';
 
+const PropertyTypeIcon = ({ name = '', active = false }) => {
+  const normalized = (name || '').toLowerCase();
+
+  let imgSrc = '/images/nav-icon-room.png'; // Default fallback
+
+  if (normalized.includes('apartment') || normalized.includes('villa') || normalized.includes('house') || normalized.includes('home')) {
+    imgSrc = '/images/nav-icon-apartment.png';
+  } else if (normalized.includes('hotel')) {
+    imgSrc = '/images/nav-icon-hotel.png';
+  } else if (normalized.includes('flight')) {
+    return (
+      <span className={`text-2xl transition-all duration-300 filter group-hover:scale-110 ${active
+        ? 'opacity-100 grayscale-0 scale-110 animate-shake-active'
+        : 'opacity-100 grayscale-0 hover:opacity-80'
+        }`}>✈️</span>
+    );
+  }
+
+  return (
+    <img
+      src={imgSrc}
+      alt={name}
+      className={`w-7 h-7 object-contain transition-all duration-300 group-hover:scale-110 ${active
+        ? 'opacity-100 grayscale-0 scale-110 animate-shake-active'
+        : 'opacity-100 grayscale-0 hover:opacity-80'
+        }`}
+    />
+  );
+};
+
 const Navbar = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -515,34 +545,7 @@ const Navbar = () => {
 
   const navLinks = [];
 
-  const PropertyTypeIcon = ({ name = '', active = false }) => {
-    const normalized = (name || '').toLowerCase();
 
-    let imgSrc = '/images/nav-icon-room.png'; // Default fallback
-
-    if (normalized.includes('apartment') || normalized.includes('villa') || normalized.includes('house') || normalized.includes('home')) {
-      imgSrc = '/images/nav-icon-apartment.png';
-      imgSrc = '/images/nav-icon-hotel.png';
-    } else if (normalized.includes('flight')) {
-      return (
-        <span className={`text-2xl transition-all duration-300 filter group-hover:scale-110 ${active
-          ? 'opacity-100 grayscale-0 scale-110'
-          : 'opacity-60 grayscale hover:opacity-80'
-          }`}>✈️</span>
-      );
-    }
-
-    return (
-      <img
-        src={imgSrc}
-        alt={name}
-        className={`w-7 h-7 object-contain transition-all duration-300 group-hover:scale-110 ${active
-          ? 'opacity-100 grayscale-0 scale-110'
-          : 'opacity-60 grayscale hover:opacity-80'
-          }`}
-      />
-    );
-  };
 
   // Role-based menu items
   const getRoleBasedMenu = () => {

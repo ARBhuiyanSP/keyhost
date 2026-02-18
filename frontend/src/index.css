@@ -1172,3 +1172,16 @@ nav.sticky>div {
 .animate-page-load {
   animation: pageFadeIn 0.8s ease-out forwards;
 }
+
+@keyframes shake-active {
+  0% { transform: rotate(0deg); }
+  25% { transform: rotate(-5deg); }
+  50% { transform: rotate(5deg); }
+  75% { transform: rotate(-5deg); }
+  100% { transform: rotate(0deg); }
+}
+
+.animate-shake-active {
+  animation: shake-active 0.5s ease-in-out;
+  transform-origin: center center;
+}
