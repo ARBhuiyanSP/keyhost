@@ -88,7 +88,7 @@ const PropertyMap = ({ properties, hoveredPropertyId, onMarkerClick, onMarkerHov
                 left: 0;
                 z-index: ${isHovered ? 1000 : 1};
                 width: max-content;
-            ">৳${price}</div>`,
+            ">৳${Math.floor(Number(price))}</div>`,
             iconSize: null, // Allow auto-sizing via CSS/HTML content
             iconAnchor: [0, 0] // Anchor at the coordinate, content is centered via transform
         });
@@ -146,7 +146,7 @@ const PropertyMap = ({ properties, hoveredPropertyId, onMarkerClick, onMarkerHov
                                             </div>
                                         </div>
                                         <div className="flex items-baseline gap-1">
-                                            <span className="font-bold text-black">৳{property.base_price}</span>
+                                            <span className="font-bold text-black">৳{Math.floor(Number(property.base_price))}</span>
                                             <span className="text-gray-500 text-xs font-normal">night</span>
                                         </div>
                                     </div>

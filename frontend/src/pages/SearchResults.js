@@ -702,7 +702,7 @@ const SearchResults = () => {
 
                     <div className="space-y-0.5">
                       <div className="flex justify-between items-start">
-                        <h3 className="font-semibold text-gray-900 text-[15px] truncate pr-2">
+                        <h3 className="font-semibold text-gray-900 text-[15px] truncate pr-2 capitalize">
                           {property.city ? `${property.property_type || 'Property'} in ${sanitizeText(property.city)}` : sanitizeText(property.title)}
                         </h3>
                         <div className="flex items-center gap-1 text-[14px]">
@@ -712,7 +712,7 @@ const SearchResults = () => {
                         </div>
                       </div>
 
-                      <p className="text-gray-500 text-[15px] line-clamp-1">{sanitizeText(property.title)}</p>
+                      <p className="text-gray-500 text-[15px] line-clamp-1 capitalize">{sanitizeText(property.title)}</p>
                       <p className="text-gray-500 text-[15px]">
                         {property.bedrooms} bedrooms · {property.max_guests} guests
                       </p>
