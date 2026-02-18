@@ -1,12 +1,12 @@
 const express = require('express');
 const { pool } = require('../config/database');
-const { 
-  formatResponse, 
-  hashPassword, 
-  comparePassword 
+const {
+  formatResponse,
+  hashPassword,
+  comparePassword
 } = require('../utils/helpers');
-const { 
-  validateId 
+const {
+  validateId
 } = require('../middleware/validation');
 
 const router = express.Router();
@@ -43,7 +43,7 @@ router.get('/profile', async (req, res) => {
         FROM property_owners 
         WHERE user_id = ?
       `, [req.user.id]);
-      
+
       if (owners.length > 0) {
         user.property_owner_info = owners[0];
       }
@@ -167,7 +167,7 @@ router.put('/change-password', async (req, res) => {
 
     // Verify current password
     const isCurrentPasswordValid = await comparePassword(current_password, users[0].password);
-    
+
     if (!isCurrentPasswordValid) {
       return res.status(400).json(
         formatResponse(false, 'Current password is incorrect')

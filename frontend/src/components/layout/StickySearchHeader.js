@@ -573,10 +573,10 @@ const StickySearchHeader = ({
           e.stopPropagation();
           setDesktopActiveSection(null);
         }}
-        className={`fixed top-0 left-0 right-0 z-[100] bg-[#F9FAFB] border-b border-gray-200 transition-all duration-500 ease-in-out ${isVisible ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'
+        className={`fixed top-0 left-0 right-0 z-[100] bg-gradient-to-b from-[#FFFFFF] to-[#F5F5F5] transition-all duration-500 ease-in-out ${isVisible ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'
           }`}
       >
-        <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 h-full flex items-center py-1.5 md:py-0 md:h-16 relative" ref={desktopSearchRef}>
+        <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 h-full flex items-center py-1.5 md:py-0 md:h-20 relative" ref={desktopSearchRef}>
           {/* Mobile: back + search pill */}
           <div className="md:hidden w-full flex items-center justify-center px-4">
             <div className="flex items-center gap-2 w-full max-w-sm">

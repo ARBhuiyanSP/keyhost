@@ -20,7 +20,7 @@ const PropertyTypeIcon = ({ name = '', active = false }) => {
     imgSrc = '/images/nav-icon-hotel.png';
   } else if (normalized.includes('flight')) {
     return (
-      <span className={`text-2xl transition-all duration-300 filter group-hover:scale-110 ${active
+      <span className={`text-4xl transition-all duration-300 filter group-hover:scale-110 ${active
         ? 'opacity-100 grayscale-0 scale-110 animate-shake-active'
         : 'opacity-100 grayscale-0 hover:opacity-80'
         }`}>✈️</span>
@@ -31,7 +31,7 @@ const PropertyTypeIcon = ({ name = '', active = false }) => {
     <img
       src={imgSrc}
       alt={name}
-      className={`w-7 h-7 object-contain transition-all duration-300 group-hover:scale-110 ${active
+      className={`w-10 h-10 object-contain transition-all duration-300 group-hover:scale-110 ${active
         ? 'opacity-100 grayscale-0 scale-110 animate-shake-active'
         : 'opacity-100 grayscale-0 hover:opacity-80'
         }`}
@@ -591,7 +591,7 @@ const Navbar = () => {
   return (
     <nav
       ref={headerSearchRef}
-      className={`hidden md:block bg-white shadow-lg sticky top-0 overflow-visible ${isHeaderSearchActive ? 'z-[200]' : 'z-[100]'}`}
+      className={`hidden md:block bg-gradient-to-b from-[#FFFFFF] to-[#F5F5F5] sticky top-0 overflow-visible ${isHeaderSearchActive ? 'z-[200]' : 'z-[100]'}`}
       onClick={(e) => {
         if (searchFormRef.current?.contains(e.target) || e.target.closest('button') || e.target.closest('a') || e.target.closest('input') || e.target.closest('.react-datepicker')) return;
         e.stopPropagation();
@@ -603,7 +603,7 @@ const Navbar = () => {
       }}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 overflow-visible">
-        <div className="flex justify-between items-center h-16 gap-4">
+        <div className="flex justify-between items-center h-20 gap-4">
           {/* Logo */}
           <Link to="/" className="flex items-center">
             {settings?.site_logo ? (
@@ -649,10 +649,10 @@ const Navbar = () => {
                       <div className="flex flex-col items-center px-2">
                         <div className="flex items-center gap-2">
                           <PropertyTypeIcon name={type.name} active={isActiveTab} />
-                          <span className="text-sm font-medium">{type.name}</span>
+                          <span className="text-sm font-bold">{type.name}</span>
                         </div>
                         <span
-                          className={`mt-2 h-[2px] w-full ${isActiveTab ? 'bg-black' : 'bg-transparent'
+                          className={`mt-2 h-[3px] w-full ${isActiveTab ? 'bg-black' : 'bg-transparent'
                             }`}
                         />
                       </div>
