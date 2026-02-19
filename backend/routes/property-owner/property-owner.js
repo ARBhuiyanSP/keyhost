@@ -1702,6 +1702,6 @@ router.patch('/bookings/:id/payment', validateId, async (req, res) => {
 });
 
 // Use earnings routes
-router.use('/earnings', earningsRoutes);
+router.use(earningsRoutes);
 
 module.exports = router;

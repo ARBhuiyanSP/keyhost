@@ -15,7 +15,7 @@ const AdminReviews = () => {
   // Fetch reviews
   const { data: reviewsData, isLoading, refetch } = useQuery(
     ['admin-reviews', filters],
-    () => api.get(`/admin/reviews/pending?${new URLSearchParams(filters).toString()}`),
+    () => api.get(`/admin/reviews?${new URLSearchParams(filters).toString()}`),
     {
       select: (response) => response.data?.data || { reviews: [], pagination: {} },
     }
@@ -114,110 +114,103 @@ const AdminReviews = () => {
           </div>
         </div>
 
-        {/* Reviews Table */}
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900">
-              Reviews ({reviewsData?.pagination?.totalItems || 0})
+        {/* Reviews List */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
+            <h2 className="text-lg font-bold text-gray-900">
+              Reviews List <span className="text-gray-500 font-normal text-sm ml-2">({reviewsData?.pagination?.totalItems || 0} total)</span>
             </h2>
           </div>
 
           {isLoading ? (
-            <div className="p-6">
+            <div className="p-12 flex justify-center">
               <LoadingSpinner />
             </div>
           ) : reviewsData?.reviews?.length > 0 ? (
             <div className="divide-y divide-gray-200">
               {reviewsData.reviews.map((review) => (
-                <div key={review.id} className="p-6">
-                  <div className="flex items-start justify-between">
+                <div key={review.id} className="p-6 hover:bg-gray-50 transition-colors duration-150 group">
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                     <div className="flex-1">
-                      {/* Guest Info */}
-                      <div className="flex items-center mb-3">
-                        <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
-                          <span className="text-primary-600 font-medium text-sm">
-                            {review.first_name?.[0]}{review.last_name?.[0]}
-                          </span>
+                      <div className="flex items-start">
+                        <div className="flex-shrink-0">
+                          {review.first_name ? (
+                            <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold border border-blue-200">
+                              {review.first_name[0]}{review.last_name?.[0]}
+                            </div>
+                          ) : (
+                            <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-500">
+                              <FiUser />
+                            </div>
+                          )}
                         </div>
-                        <div className="ml-3">
-                          <div className="text-sm font-medium text-gray-900">
-                            {review.first_name} {review.last_name}
+                        <div className="ml-4 flex-1">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h4 className="text-sm font-bold text-gray-900">{review.first_name} {review.last_name}</h4>
+                              <p className="text-xs text-gray-500 flex items-center mt-0.5">
+                                <span className="font-medium mr-1">Booking:</span> {review.booking_reference}
+                              </p>
+                            </div>
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize border ${getStatusColor(review.status).replace('bg-', 'bg-opacity-10 border-')}`}>
+                              {review.status}
+                            </span>
                           </div>
-                          <div className="text-sm text-gray-500">
-                            {review.booking_reference}
+
+                          <div className="mt-3 bg-gray-50 rounded-lg p-3 border border-gray-100">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center space-x-1">
+                                {[...Array(5)].map((_, i) => (
+                                  <FiStar
+                                    key={i}
+                                    className={`w-4 h-4 ${i < review.rating ? 'text-yellow-400 fill-current' : 'text-gray-300'}`}
+                                  />
+                                ))}
+                                <span className="text-sm font-bold text-gray-900 ml-1.5">{review.rating}</span>
+                              </div>
+                              <div className="text-xs text-gray-400 flex items-center">
+                                <FiCalendar className="w-3 h-3 mr-1" />
+                                {new Date(review.created_at).toLocaleDateString()}
+                              </div>
+                            </div>
+                            <h5 className="text-sm font-semibold text-gray-900 mb-1">{review.title}</h5>
+                            <p className="text-sm text-gray-600 leading-relaxed">{review.comment}</p>
+                          </div>
+
+                          <div className="mt-3 flex items-center text-xs text-gray-500">
+                            <FiHome className="w-3.5 h-3.5 mr-1.5 text-gray-400" />
+                            <span className="font-medium text-gray-700 mr-1">Property:</span>
+                            <span className="text-gray-600">{review.property_title}</span>
+                            <span className="mx-2 text-gray-300">|</span>
+                            <span>{review.property_city}</span>
                           </div>
                         </div>
-                      </div>
-
-                      {/* Property Info */}
-                      <div className="mb-3">
-                        <h4 className="text-lg font-medium text-gray-900 mb-1">
-                          {review.property_title}
-                        </h4>
-                        <div className="flex items-center text-sm text-gray-600">
-                          <FiHome className="w-4 h-4 mr-1" />
-                          <span>{review.property_city}</span>
-                        </div>
-                      </div>
-
-                      {/* Rating */}
-                      <div className="flex items-center mb-3">
-                        <div className="flex items-center">
-                          {[...Array(5)].map((_, i) => (
-                            <FiStar
-                              key={i}
-                              className={`w-5 h-5 ${
-                                i < review.rating ? 'text-yellow-400 fill-current' : 'text-gray-300'
-                              }`}
-                            />
-                          ))}
-                        </div>
-                        <span className="ml-2 text-sm font-medium text-gray-900">
-                          {review.rating}/5
-                        </span>
-                      </div>
-
-                      {/* Review Content */}
-                      <div className="mb-4">
-                        <h5 className="text-sm font-medium text-gray-900 mb-1">
-                          {review.title}
-                        </h5>
-                        <p className="text-sm text-gray-700">
-                          {review.comment}
-                        </p>
-                      </div>
-
-                      {/* Review Date */}
-                      <div className="flex items-center text-sm text-gray-500">
-                        <FiCalendar className="w-4 h-4 mr-1" />
-                        <span>
-                          Submitted on {new Date(review.created_at).toLocaleDateString()}
-                        </span>
                       </div>
                     </div>
 
                     {/* Actions */}
-                    <div className="ml-6 flex flex-col items-end space-y-3">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(review.status)}`}>
-                        {review.status}
-                      </span>
-                      
+                    <div className="flex sm:flex-col gap-2 sm:ml-4 sm:border-l sm:border-gray-100 sm:pl-4 min-w-[120px] justify-center sm:justify-start">
                       {review.status === 'pending' && (
-                        <div className="flex space-x-2">
+                        <>
                           <button
                             onClick={() => handleStatusChange(review.id, 'approved')}
-                            className="flex items-center px-3 py-1 bg-green-100 text-green-700 rounded-md hover:bg-green-200 transition-colors"
+                            className="flex-1 sm:flex-none flex items-center justify-center px-3 py-1.5 bg-green-50 text-green-700 border border-green-200 rounded-md hover:bg-green-100 transition-colors text-sm font-medium"
                           >
-                            <FiCheck className="w-4 h-4 mr-1" />
+                            <FiCheck className="w-4 h-4 mr-1.5" />
                             Approve
                           </button>
                           <button
                             onClick={() => handleStatusChange(review.id, 'rejected')}
-                            className="flex items-center px-3 py-1 bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors"
+                            className="flex-1 sm:flex-none flex items-center justify-center px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-md hover:bg-red-100 transition-colors text-sm font-medium"
                           >
-                            <FiX className="w-4 h-4 mr-1" />
+                            <FiX className="w-4 h-4 mr-1.5" />
                             Reject
                           </button>
+                        </>
+                      )}
+                      {review.status !== 'pending' && (
+                        <div className="text-center w-full py-2 text-xs text-gray-400 italic">
+                          No actions available
                         </div>
                       )}
                     </div>
@@ -226,43 +219,42 @@ const AdminReviews = () => {
               ))}
             </div>
           ) : (
-            <div className="text-center py-12">
-              <FiStar className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">No reviews found</h3>
-              <p className="text-gray-600">Try adjusting your search criteria</p>
+            <div className="text-center py-16 bg-gray-50">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white shadow-sm mb-4">
+                <FiStar className="w-8 h-8 text-gray-300" />
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mb-1">No reviews found</h3>
+              <p className="text-gray-500 max-w-sm mx-auto">None of the reviews match your current filter settings. Try clearing the filters.</p>
+              <button
+                onClick={() => setFilters({ status: '', search: '', page: 1, limit: 10 })}
+                className="mt-4 px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Clear all filters
+              </button>
             </div>
           )}
 
           {/* Pagination */}
           {reviewsData?.pagination && reviewsData.pagination.totalPages > 1 && (
-            <div className="px-6 py-4 border-t border-gray-200">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-gray-700">
-                  Showing {((reviewsData.pagination.currentPage - 1) * reviewsData.pagination.itemsPerPage) + 1} to{' '}
-                  {Math.min(reviewsData.pagination.currentPage * reviewsData.pagination.itemsPerPage, reviewsData.pagination.totalItems)} of{' '}
-                  {reviewsData.pagination.totalItems} results
-                </div>
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => handleFilterChange('page', reviewsData.pagination.prevPage)}
-                    disabled={!reviewsData.pagination.hasPrevPage}
-                    className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Previous
-                  </button>
-                  
-                  <span className="px-4 py-2 text-sm text-gray-700">
-                    Page {reviewsData.pagination.currentPage} of {reviewsData.pagination.totalPages}
-                  </span>
-                  
-                  <button
-                    onClick={() => handleFilterChange('page', reviewsData.pagination.nextPage)}
-                    disabled={!reviewsData.pagination.hasNextPage}
-                    className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Next
-                  </button>
-                </div>
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+              <div className="text-sm text-gray-500">
+                Page <span className="font-medium text-gray-900">{reviewsData.pagination.currentPage}</span> of <span className="font-medium text-gray-900">{reviewsData.pagination.totalPages}</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => handleFilterChange('page', reviewsData.pagination.prevPage)}
+                  disabled={!reviewsData.pagination.hasPrevPage}
+                  className="px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => handleFilterChange('page', reviewsData.pagination.nextPage)}
+                  disabled={!reviewsData.pagination.hasNextPage}
+                  className="px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next
+                </button>
               </div>
             </div>
           )}
