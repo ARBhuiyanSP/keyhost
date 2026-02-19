@@ -4,7 +4,7 @@ import {
     FiGrid, FiCalendar, FiHome, FiUsers, FiDollarSign,
     FiSettings, FiLogOut, FiMenu, FiX, FiSearch,
     FiChevronDown, FiChevronRight, FiUser,
-    FiTruck, FiActivity
+    FiTruck, FiActivity, FiSend
 } from 'react-icons/fi';
 import useAuthStore from '../../store/authStore';
 import useSettingsStore from '../../store/settingsStore';
@@ -71,20 +71,22 @@ const DashboardLayout = () => {
             return [
                 { name: 'Dashboard', path: '/admin', icon: FiGrid },
                 {
-                    name: 'Reservation',
-                    icon: FiCalendar,
-                    submenu: [
-                        { name: 'All Bookings', path: '/admin/bookings' },
-                    ]
-                },
-                {
                     name: 'Properties',
                     icon: FiHome,
                     submenu: [
+                        { name: 'All Bookings', path: '/admin/bookings' },
                         { name: 'All Properties', path: '/admin/properties' },
                         { name: 'Property Types', path: '/admin/property-types' },
                         { name: 'Amenities', path: '/admin/amenities' },
                         { name: 'Display Categories', path: '/admin/display-categories' }
+                    ]
+                },
+                {
+                    name: 'Flights',
+                    icon: FiSend,
+                    submenu: [
+                        { name: 'All Flights', path: '/admin/flights' },
+                        { name: 'Bookings', path: '/admin/flight-bookings' },
                     ]
                 },
                 { name: 'Users', path: '/admin/users', icon: FiUsers },
