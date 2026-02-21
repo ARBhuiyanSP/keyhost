@@ -8,7 +8,6 @@ const FlightDetailsTabs = ({ flight, fare, tab, setTab }) => {
     // Determine which tabs to show based on context
     const tabs = fare
         ? [
-            { id: "details", label: "Flight Details" },
             { id: "baggage", label: "Baggage" },
             { id: "policies", label: "Policies" },
             { id: "fare", label: "Fare Breakdown" },
