@@ -1,0 +1,46 @@
+{
+    "info": {
+        "_postman_id": "aerotake-collection-id",
+        "name": "Aerotake Flight API",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "Revalidate Flight",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    },
+                    {
+                        "key": "Accept",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n    \"brandID\": \"BN03\",\n    \"programID\": \"225268\",\n    \"folderPath\": \"17715674593456\",\n    \"passengerFareSummary\": [\n        {\n            \"code\": \"ADT\",\n            \"passengerNumberByType\": 1\n        }\n    ],\n    \"legs\": [\n        {\n            \"departure\": { \"time\": \"2026-02-28+06:00\", \"airport\": \"DAC\" },\n            \"arrival\": { \"time\": \"2026-02-28+04:00\", \"airport\": \"DXB\" },\n            \"schedules\": [\n                {\n                    \"departure\": { \"time\": \"19:45:00+06:00\", \"airport\": \"DAC\", \"date\": \"2026-02-28\" },\n                    \"arrival\": { \"time\": \"23:10:00+03:00\", \"airport\": \"BAH\", \"date\": \"2026-02-28\" },\n                    \"carrier\": { \"marketing\": \"GF\", \"marketingFlightNumber\": 251, \"operating\": "GF" },\n                    \"cabinBookings\": [{ \"bookingCode\": \"I\" }]\n                },\n                {\n                    \"departure\": { \"time\": \"18:10:00+03:00\", \"airport\": \"BAH\", \"date\": \"2026-02-28\" },\n                    \"arrival\": { \"time\": \"20:35:00+04:00\", \"airport\": \"DXB\", \"date\": \"2026-02-28\" },\n                    \"carrier\": { \"marketing\": \"GF\", \"marketingFlightNumber\": 510, \"operating\": "GF" },\n                    \"cabinBookings\": [{ \"bookingCode\": \"I\" }]\n                }\n            ]\n        }\n    ]\n}"
+                },
+                "url": {
+                    "raw": "{{base_url}}/api/flight-revalidate",
+                    "host": [
+                        "{{base_url}}"
+                    ],
+                    "path": [
+                        "api",
+                        "flight-revalidate"
+                    ]
+                }
+            },
+            "response": []
+        }
+    ],
+    "variable": [
+        {
+            "key": "base_url",
+            "value": "http://127.0.0.1:8000"
+        }
+    ]
+}

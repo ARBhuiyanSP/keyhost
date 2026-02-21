@@ -157,7 +157,8 @@ const BookingSuccess = () => {
         airlineName,
         routeSummary,
         passengerSummary,
-        ticketingLimit
+        ticketingLimit,
+        originalFlightData
     } = data;
 
     return (
