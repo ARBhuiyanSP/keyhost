@@ -1891,15 +1891,61 @@ router.get('/analytics', async (req, res) => {
       FROM reviews
     `, [days]);
 
+    // Get Top Properties
+    const [topProperties] = await pool.execute(`
+      SELECT 
+        p.id, p.title, p.city, 
+        COUNT(b.id) as total_bookings, 
+        COALESCE(SUM(b.total_amount), 0) as total_revenue
+      FROM properties p
+      LEFT JOIN bookings b ON p.id = b.property_id AND b.status = 'confirmed'
+      GROUP BY p.id, p.title, p.city
+      ORDER BY total_revenue DESC
+      LIMIT 5
+    `);
+
+    // Get Recent Activity
+    const [recentActivity] = await pool.execute(`
+      SELECT description, timestamp, type FROM (
+        (SELECT 
+          CONCAT('New booking #', b.booking_reference) as description,
+          b.created_at as timestamp,
+          'booking' as type
+        FROM bookings b
+        WHERE b.status != 'cancelled'
+        ORDER BY b.created_at DESC LIMIT 5)
+        UNION ALL
+        (SELECT 
+          CONCAT('New review for ', p.title) as description,
+          r.created_at as timestamp,
+          'review' as type
+        FROM reviews r
+        JOIN properties p ON r.property_id = p.id
+        ORDER BY r.created_at DESC LIMIT 5)
+      ) as combined
+      ORDER BY timestamp DESC
+      LIMIT 10
+    `);
+
+    // Format timestamps for activity
+    const formattedActivity = recentActivity.map(item => ({
+      ...item,
+      timestamp: new Date(item.timestamp).toLocaleString()
+    }));
+
     res.json(
       formatResponse(true, 'Analytics retrieved successfully', {
         users: userStats[0],
         properties: propertyStats[0],
         bookings: bookingStats[0],
         reviews: reviewStats[0],
-        period: days
+        period: days,
+        topProperties: topProperties,
+        recentActivity: formattedActivity
       })
     );
+
+
 
   } catch (error) {
     console.error('Get admin analytics error:', error);
