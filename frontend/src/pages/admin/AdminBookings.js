@@ -11,7 +11,7 @@ const AdminBookings = () => {
     page: 1,
     limit: 10
   });
-  
+
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
 
@@ -54,7 +54,7 @@ const AdminBookings = () => {
       // Fetch payment history for the booking
       const response = await api.get(`/admin/bookings/${booking.id}/payments`);
       const payments = response.data?.data?.payments || [];
-      
+
       setSelectedBooking({
         ...booking,
         payments: payments
@@ -78,7 +78,7 @@ const AdminBookings = () => {
 
     const printWindow = window.open('', '_blank');
     const nights = Math.ceil((new Date(selectedBooking.check_out_date) - new Date(selectedBooking.check_in_date)) / (1000 * 60 * 60 * 24));
-    
+
     const printContent = `
       <!DOCTYPE html>
       <html>
@@ -262,20 +262,20 @@ const AdminBookings = () => {
               <div class="info-item">
                 <div class="info-label">Check-in Date</div>
                 <div class="info-value">${new Date(selectedBooking.check_in_date).toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric'
-                })}</div>
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    })}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">Check-out Date</div>
                 <div class="info-value">${new Date(selectedBooking.check_out_date).toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric'
-                })}</div>
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    })}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">Duration</div>
@@ -327,7 +327,7 @@ const AdminBookings = () => {
 
     printWindow.document.write(printContent);
     printWindow.document.close();
-    
+
     // Wait for content to load then print
     printWindow.onload = () => {
       printWindow.print();
@@ -540,11 +540,11 @@ const AdminBookings = () => {
                   >
                     Previous
                   </button>
-                  
+
                   <span className="px-4 py-2 text-sm text-gray-700">
                     Page {bookingsData.pagination.currentPage} of {bookingsData.pagination.totalPages}
                   </span>
-                  
+
                   <button
                     onClick={() => handleFilterChange('page', bookingsData.pagination.nextPage)}
                     disabled={!bookingsData.pagination.hasNextPage}
@@ -563,8 +563,8 @@ const AdminBookings = () => {
           <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
             <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
               {/* Background overlay */}
-              <div 
-                className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" 
+              <div
+                className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
                 aria-hidden="true"
                 onClick={handleCloseModal}
               ></div>
@@ -699,11 +699,10 @@ const AdminBookings = () => {
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-sm text-gray-600">Payment Status</span>
-                          <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            selectedBooking.payment_status === 'paid' 
-                              ? 'bg-green-100 text-green-800' 
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${selectedBooking.payment_status === 'paid'
+                              ? 'bg-green-100 text-green-800'
                               : 'bg-yellow-100 text-yellow-800'
-                          }`}>
+                            }`}>
                             {selectedBooking.payment_status || 'Pending'}
                           </span>
                         </div>
@@ -727,7 +726,7 @@ const AdminBookings = () => {
                           <FiDollarSign className="mr-2" />
                           Payment History & Ledger
                         </h4>
-                        
+
                         {/* Accounting Summary */}
                         <div className="bg-gradient-to-r from-red-50 via-yellow-50 to-green-50 rounded-lg p-4 border-2 border-gray-200 mb-3">
                           <div className="grid grid-cols-3 gap-3">
@@ -748,7 +747,7 @@ const AdminBookings = () => {
                             <div className="text-center bg-white rounded-lg p-3 shadow-sm">
                               <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Remaining</div>
                               <div className="text-xl font-bold text-orange-600">
-                                BDT {(selectedBooking.payments.reduce((sum, p) => sum + parseFloat(p.dr_amount || 0), 0) - 
+                                BDT {(selectedBooking.payments.reduce((sum, p) => sum + parseFloat(p.dr_amount || 0), 0) -
                                   selectedBooking.payments.reduce((sum, p) => sum + parseFloat(p.cr_amount || 0), 0)).toFixed(0)}
                               </div>
                               <div className="text-xs text-gray-500 mt-1">Due</div>
@@ -767,16 +766,15 @@ const AdminBookings = () => {
                                     <div className="flex-1">
                                       <div className="flex items-center gap-1 mb-0.5">
                                         <span className="font-semibold">#{index + 1}</span>
-                                        <span className={`px-1.5 py-0.5 rounded ${
-                                          payment.dr_amount > 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
-                                        }`}>
+                                        <span className={`px-1.5 py-0.5 rounded ${payment.dr_amount > 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                                          }`}>
                                           {payment.dr_amount > 0 ? 'DR' : 'CR'}
                                         </span>
                                         <span className="text-blue-600">{payment.payment_reference}</span>
                                       </div>
                                       <div className="text-gray-600 capitalize">{payment.transaction_type?.replace('_', ' ')}</div>
                                       <div className="text-gray-500">
-                                        {new Date(payment.created_at).toLocaleString('en-US', { 
+                                        {new Date(payment.created_at).toLocaleString('en-US', {
                                           month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
                                         })}
                                       </div>

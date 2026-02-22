@@ -8,7 +8,7 @@ const ERROR_DEBOUNCE_TIME = 5000; // 5 seconds
 
 // Create axios instance
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'http://175.29.198.93:5000/api',
+  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5000/api',
   timeout: 60000, // Increased to 60 seconds for cPanel servers
   headers: {
     'Content-Type': 'application/json',
@@ -30,12 +30,12 @@ api.interceptors.request.use(
         console.error('Error parsing auth token:', error);
       }
     }
-    
+
     // Preserve silent flag from config
     if (config.silent) {
       config._silent = true;
     }
-    
+
     return config;
   },
   (error) => {
@@ -62,12 +62,12 @@ api.interceptors.response.use(
           const authData = JSON.parse(token);
           if (authData.state?.refreshToken) {
             const response = await axios.post(
-              `${process.env.REACT_APP_API_URL || 'http://175.29.198.93:5000/api'}/auth/refresh`,
+              `${process.env.REACT_APP_API_URL || 'http://localhost:5000/api'}/auth/refresh`,
               { refreshToken: authData.state.refreshToken }
             );
 
             const { token: newToken, refreshToken: newRefreshToken } = response.data.data;
-            
+
             // Update stored tokens
             const updatedAuthData = {
               ...authData,
@@ -151,9 +151,9 @@ export const apiHelpers = {
       const response = await api.get(url, config);
       return { success: true, data: response.data };
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.message || error.message 
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message
       };
     }
   },
@@ -164,9 +164,9 @@ export const apiHelpers = {
       const response = await api.post(url, data, config);
       return { success: true, data: response.data };
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.message || error.message 
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message
       };
     }
   },
@@ -177,9 +177,9 @@ export const apiHelpers = {
       const response = await api.put(url, data, config);
       return { success: true, data: response.data };
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.message || error.message 
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message
       };
     }
   },
@@ -190,9 +190,9 @@ export const apiHelpers = {
       const response = await api.patch(url, data, config);
       return { success: true, data: response.data };
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.message || error.message 
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message
       };
     }
   },
@@ -203,9 +203,9 @@ export const apiHelpers = {
       const response = await api.delete(url, config);
       return { success: true, data: response.data };
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.message || error.message 
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message
       };
     }
   },
@@ -222,9 +222,9 @@ export const apiHelpers = {
       });
       return { success: true, data: response.data };
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.message || error.message 
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message
       };
     }
   },

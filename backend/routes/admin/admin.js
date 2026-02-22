@@ -1,12 +1,12 @@
 const express = require('express');
 const { pool } = require('../../config/database');
-const { 
-  formatResponse, 
-  generatePagination 
+const {
+  formatResponse,
+  generatePagination
 } = require('../../utils/helpers');
-const { 
-  validateId, 
-  validatePagination 
+const {
+  validateId,
+  validatePagination
 } = require('../../middleware/validation');
 const { verifyToken, requireAdmin } = require('../../middleware/auth');
 
@@ -57,6 +57,19 @@ router.get('/dashboard', async (req, res) => {
       LIMIT 5
     `);
 
+    // Get daily bookings for the last 7 days for chart
+    const [dailyStats] = await pool.execute(`
+      SELECT 
+        DATE(created_at) as date, 
+        COUNT(*) as bookings,
+        SUM(total_amount) as revenue
+      FROM bookings 
+      WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) 
+      AND status != 'cancelled'
+      GROUP BY DATE(created_at) 
+      ORDER BY date ASC
+    `);
+
     res.json(
       formatResponse(true, 'Admin dashboard data retrieved successfully', {
         statistics: {
@@ -65,6 +78,7 @@ router.get('/dashboard', async (req, res) => {
           totalBookings: bookingCount[0].total,
           totalRevenue: revenueResult[0].total || 0
         },
+        chartData: dailyStats,
         recentBookings,
         pendingReviews
       })
@@ -328,48 +342,69 @@ router.get('/bookings', validatePagination, async (req, res) => {
   }
 });
 
-// Get pending reviews
-router.get('/reviews/pending', validatePagination, async (req, res) => {
+// Get reviews (with filtering)
+router.get('/reviews', validatePagination, async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 10, status, search } = req.query;
     const offset = (page - 1) * limit;
 
+    let whereConditions = [];
+    let queryParams = [];
+
+    if (status) {
+      whereConditions.push('r.status = ?');
+      queryParams.push(status);
+    }
+
+    if (search) {
+      whereConditions.push('(u.first_name LIKE ? OR u.last_name LIKE ? OR p.title LIKE ? OR b.booking_reference LIKE ?)');
+      queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
     // Get total count
-    const [countResult] = await pool.execute(
-      'SELECT COUNT(*) as total FROM reviews WHERE status = "pending"'
-    );
+    const [countResult] = await pool.execute(`
+      SELECT COUNT(*) as total 
+      FROM reviews r
+      JOIN users u ON r.guest_id = u.id
+      JOIN bookings b ON r.booking_id = b.id
+      JOIN properties p ON r.property_id = p.id
+      ${whereClause}
+    `, queryParams);
 
     const total = countResult[0].total;
 
-    // Get pending reviews
+    // Get reviews
     const [reviews] = await pool.execute(`
       SELECT 
         r.*,
         u.first_name, u.last_name,
         b.booking_reference,
-        p.title as property_title
+        p.title as property_title,
+        p.city as property_city
       FROM reviews r
       JOIN users u ON r.guest_id = u.id
       JOIN bookings b ON r.booking_id = b.id
       JOIN properties p ON r.property_id = p.id
-      WHERE r.status = 'pending'
+      ${whereClause}
       ORDER BY r.created_at DESC
       LIMIT ? OFFSET ?
-    `, [parseInt(limit), offset]);
+    `, [...queryParams, parseInt(limit), offset]);
 
     const pagination = generatePagination(parseInt(page), parseInt(limit), total);
 
     res.json(
-      formatResponse(true, 'Pending reviews retrieved successfully', {
+      formatResponse(true, 'Reviews retrieved successfully', {
         reviews,
         pagination
       })
     );
 
   } catch (error) {
-    console.error('Get pending reviews error:', error);
+    console.error('Get reviews error:', error);
     res.status(500).json(
-      formatResponse(false, 'Failed to retrieve pending reviews', null, error.message)
+      formatResponse(false, 'Failed to retrieve reviews', null, error.message)
     );
   }
 });
@@ -929,18 +964,18 @@ router.get('/display-categories/:id/properties', validateId, async (req, res) =>
           sort_order
         LIMIT 10
       `, [property.id]);
-      
+
       property.images = allImages;
-      
+
       // Set main_image for backward compatibility
       const mainImage = allImages.find(img => img.image_type === 'main') || allImages[0];
       property.main_image = mainImage || null;
     }
 
     res.json(
-      formatResponse(true, 'Properties retrieved successfully', { 
+      formatResponse(true, 'Properties retrieved successfully', {
         category: category[0],
-        properties 
+        properties
       })
     );
 
@@ -1289,7 +1324,7 @@ router.put('/amenities/:id', validateId, async (req, res) => {
     // Update amenity
     // Convert is_active boolean to 1 or 0 for MySQL
     const isActiveValue = is_active !== undefined ? (is_active === true || is_active === 1 || is_active === '1' ? 1 : 0) : 1;
-    
+
     const [result] = await pool.execute(
       'UPDATE amenities SET name = ?, icon = ?, category = ?, is_active = ? WHERE id = ?',
       [name, icon || null, category, isActiveValue, id]
@@ -1540,7 +1575,7 @@ router.put('/property-types/:id', validateId, async (req, res) => {
 
     // Update property type
     const isActiveValue = is_active !== undefined ? (is_active === true || is_active === 1 || is_active === '1' ? 1 : 0) : 1;
-    
+
     const [result] = await pool.execute(
       'UPDATE property_types SET name = ?, description = ?, sort_order = ?, is_active = ? WHERE id = ?',
       [name, description || null, sort_order || 0, isActiveValue, id]
@@ -1678,7 +1713,7 @@ router.get('/settings', async (req, res) => {
     const settingsObj = {};
     settings.forEach(setting => {
       let value = setting.setting_value;
-      
+
       // Convert value based on type
       if (setting.setting_type === 'number') {
         value = parseFloat(value);
@@ -1691,7 +1726,7 @@ router.get('/settings', async (req, res) => {
           value = value;
         }
       }
-      
+
       settingsObj[setting.setting_key] = {
         value,
         type: setting.setting_type,
@@ -1724,10 +1759,10 @@ router.put('/settings', async (req, res) => {
     }
 
     const updatePromises = [];
-    
+
     for (const [key, settingData] of Object.entries(settings)) {
       let value = settingData.value;
-      
+
       // Convert value to string for database storage
       if (typeof value === 'object') {
         value = JSON.stringify(value);
@@ -1782,7 +1817,7 @@ router.get('/settings/public', async (req, res) => {
     const settingsObj = {};
     settings.forEach(setting => {
       let value = setting.setting_value;
-      
+
       // Convert value based on type
       if (setting.setting_type === 'number') {
         value = parseFloat(value);
@@ -1795,7 +1830,7 @@ router.get('/settings/public', async (req, res) => {
           value = value;
         }
       }
-      
+
       settingsObj[setting.setting_key] = value;
     });
 
@@ -1900,7 +1935,7 @@ router.get('/bookings/:id/payments', validateId, async (req, res) => {
       WHERE booking_id = ?
       ORDER BY created_at ASC
     `, [id]);
-    
+
     // Calculate running balance for each transaction
     let runningBalance = 0;
     const paymentsWithBalance = payments.map(payment => {
@@ -1992,14 +2027,14 @@ router.get('/accounting/ledger', async (req, res) => {
     const totalDR = transactions.reduce((sum, txn) => sum + parseFloat(txn.dr_amount || 0), 0);
     const totalCR = transactions.reduce((sum, txn) => sum + parseFloat(txn.cr_amount || 0), 0);
     const outstanding = totalDR - totalCR;
-    
+
     const uniqueBookings = new Set(transactions.map(txn => txn.booking_id));
 
     // Get admin commission summary
     const commissionQueryParams = [];
     const commissionWhereClause = ['ae.status = ?'];
     commissionQueryParams.push('active');
-    
+
     if (start_date) {
       commissionWhereClause.push('ae.created_at >= ?');
       commissionQueryParams.push(start_date);
@@ -2008,7 +2043,7 @@ router.get('/accounting/ledger', async (req, res) => {
       commissionWhereClause.push('ae.created_at <= ?');
       commissionQueryParams.push(end_date + ' 23:59:59');
     }
-    
+
     const [commissionSummary] = await pool.execute(`
       SELECT 
         COALESCE(SUM(ae.commission_amount), 0) as total_commission_earned,
@@ -2024,7 +2059,7 @@ router.get('/accounting/ledger', async (req, res) => {
     const ownerEarningsQueryParams = [];
     const ownerEarningsWhereClause = ['b.status IN (?, ?, ?)'];
     ownerEarningsQueryParams.push('confirmed', 'checked_in', 'checked_out');
-    
+
     if (start_date) {
       ownerEarningsWhereClause.push('b.created_at >= ?');
       ownerEarningsQueryParams.push(start_date);
@@ -2033,7 +2068,7 @@ router.get('/accounting/ledger', async (req, res) => {
       ownerEarningsWhereClause.push('b.created_at <= ?');
       ownerEarningsQueryParams.push(end_date + ' 23:59:59');
     }
-    
+
     const [ownerEarningsSummary] = await pool.execute(`
       SELECT 
         COALESCE(SUM(b.property_owner_earnings), 0) as total_owner_earnings,
@@ -2047,7 +2082,7 @@ router.get('/accounting/ledger', async (req, res) => {
     // Get owner payouts summary
     const payoutQueryParams = [];
     const payoutWhereClause = [];
-    
+
     if (start_date) {
       payoutWhereClause.push('created_at >= ?');
       payoutQueryParams.push(start_date);
@@ -2056,9 +2091,9 @@ router.get('/accounting/ledger', async (req, res) => {
       payoutWhereClause.push('created_at <= ?');
       payoutQueryParams.push(end_date + ' 23:59:59');
     }
-    
+
     const payoutWhereClauseStr = payoutWhereClause.length > 0 ? `WHERE ${payoutWhereClause.join(' AND ')}` : '';
-    
+
     const [ownerPayoutsSummary] = await pool.execute(`
       SELECT 
         COALESCE(SUM(net_payout), 0) as total_payouts,
