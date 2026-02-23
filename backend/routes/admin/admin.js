@@ -1877,7 +1877,7 @@ router.get('/analytics', async (req, res) => {
         COUNT(*) as total_bookings,
         COUNT(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL ? DAY) AND status != 'cancelled' THEN 1 END) as new_bookings,
         COUNT(CASE WHEN status = 'confirmed' THEN 1 END) as confirmed_bookings,
-        SUM(CASE WHEN status = 'confirmed' THEN total_amount ELSE 0 END) as total_revenue
+        SUM(CASE WHEN payment_status = 'paid' AND status != 'cancelled' THEN total_amount ELSE 0 END) as total_revenue
       FROM bookings
       WHERE status != 'cancelled'
     `, [days]);
@@ -1898,7 +1898,7 @@ router.get('/analytics', async (req, res) => {
         COUNT(b.id) as total_bookings, 
         COALESCE(SUM(b.total_amount), 0) as total_revenue
       FROM properties p
-      LEFT JOIN bookings b ON p.id = b.property_id AND b.status = 'confirmed'
+      LEFT JOIN bookings b ON p.id = b.property_id AND b.status != 'cancelled'
       GROUP BY p.id, p.title, p.city
       ORDER BY total_revenue DESC
       LIMIT 5
@@ -1933,6 +1933,36 @@ router.get('/analytics', async (req, res) => {
       timestamp: new Date(item.timestamp).toLocaleString()
     }));
 
+    // Calculate Charts
+    const [dailyData] = await pool.execute(`
+      SELECT 
+        DATE_FORMAT(created_at, '%b %d') as date_formatted,
+        DATE(created_at) as raw_date,
+        COUNT(id) as count,
+        COALESCE(SUM(total_amount), 0) as amount
+      FROM bookings
+      WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+        AND status != 'cancelled' AND payment_status = 'paid'
+      GROUP BY DATE(created_at), DATE_FORMAT(created_at, '%b %d')
+      ORDER BY raw_date ASC
+    `, [days]);
+
+    const revenueChart = dailyData.map(d => ({ date: d.date_formatted, amount: parseFloat(d.amount) }));
+
+    // Calculate User Growth Chart
+    const [userData] = await pool.execute(`
+      SELECT 
+        DATE_FORMAT(created_at, '%b %d') as date_formatted,
+        DATE(created_at) as raw_date,
+        COUNT(id) as count
+      FROM users
+      WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+      GROUP BY DATE(created_at), DATE_FORMAT(created_at, '%b %d')
+      ORDER BY raw_date ASC
+    `, [days]);
+
+    const userChart = userData.map(d => ({ date: d.date_formatted, count: parseInt(d.count) }));
+
     res.json(
       formatResponse(true, 'Analytics retrieved successfully', {
         users: userStats[0],
@@ -1941,7 +1971,9 @@ router.get('/analytics', async (req, res) => {
         reviews: reviewStats[0],
         period: days,
         topProperties: topProperties,
-        recentActivity: formattedActivity
+        recentActivity: formattedActivity,
+        revenueChart,
+        userChart
       })
     );
 

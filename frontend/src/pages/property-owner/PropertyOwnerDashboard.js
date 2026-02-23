@@ -73,21 +73,21 @@ const PropertyOwnerDashboard = () => {
   const middleCards = [
     {
       title: 'Arrives Today',
-      value: 0,
+      value: analyticsData?.arrivesToday || 0,
       icon: FiLogIn,
       color: 'text-cyan-500',
       bg: 'bg-cyan-50'
     },
     {
       title: 'Departs Today',
-      value: 0,
+      value: analyticsData?.departsToday || 0,
       icon: FiLogOut,
       color: 'text-rose-500',
       bg: 'bg-rose-50'
     },
     {
       title: 'Stays Today',
-      value: 0,
+      value: analyticsData?.staysToday || 0,
       icon: FiMoon,
       color: 'text-indigo-500',
       bg: 'bg-indigo-50'
@@ -166,7 +166,7 @@ const PropertyOwnerDashboard = () => {
                     <td className="p-3 font-bold text-gray-800">BDT {booking.total_amount}</td>
                     <td className="p-3">
                       <span className={`px-2 py-1 rounded text-xs font-medium ${booking.status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                          booking.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
+                        booking.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
                         }`}>
                         {booking.status}
                       </span>

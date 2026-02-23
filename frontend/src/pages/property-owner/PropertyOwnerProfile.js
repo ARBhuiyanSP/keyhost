@@ -28,17 +28,19 @@ const PropertyOwnerProfile = () => {
     try {
       setLoading(true);
       const response = await api.get('/property-owner/profile');
-      setProfile(response.data.user);
-      
-      if (response.data.user.property_owner_info) {
+      const userData = response.data.data?.user;
+
+      setProfile(userData);
+
+      if (userData?.property_owner_info) {
         setFormData({
-          business_name: response.data.user.property_owner_info.business_name || '',
-          business_license: response.data.user.property_owner_info.business_license || '',
-          tax_id: response.data.user.property_owner_info.tax_id || '',
-          bank_account_number: response.data.user.property_owner_info.bank_account_number || '',
-          bank_name: response.data.user.property_owner_info.bank_name || '',
-          bank_routing_number: response.data.user.property_owner_info.bank_routing_number || '',
-          commission_rate: response.data.user.property_owner_info.commission_rate || 0
+          business_name: userData.property_owner_info.business_name || '',
+          business_license: userData.property_owner_info.business_license || '',
+          tax_id: userData.property_owner_info.tax_id || '',
+          bank_account_number: userData.property_owner_info.bank_account_number || '',
+          bank_name: userData.property_owner_info.bank_name || '',
+          bank_routing_number: userData.property_owner_info.bank_routing_number || '',
+          commission_rate: userData.property_owner_info.commission_rate || 0
         });
       }
     } catch (err) {
@@ -95,11 +97,10 @@ const PropertyOwnerProfile = () => {
                 </h3>
                 <p className="text-gray-600">{profile?.email}</p>
                 <div className="mt-4">
-                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                    profile?.property_owner_info?.is_verified 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-yellow-100 text-yellow-800'
-                  }`}>
+                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${profile?.property_owner_info?.is_verified
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-yellow-100 text-yellow-800'
+                    }`}>
                     {profile?.property_owner_info?.is_verified ? 'Verified' : 'Pending Verification'}
                   </span>
                 </div>
@@ -112,7 +113,7 @@ const PropertyOwnerProfile = () => {
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="bg-white rounded-lg shadow p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Business Information</h3>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -162,11 +163,12 @@ const PropertyOwnerProfile = () => {
                       type="number"
                       name="commission_rate"
                       value={formData.commission_rate}
-                      onChange={handleInputChange}
                       min="0"
                       max="100"
                       step="0.1"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed focus:outline-none"
+                      disabled
+                      readOnly
                     />
                   </div>
                 </div>
@@ -174,7 +176,7 @@ const PropertyOwnerProfile = () => {
 
               <div className="bg-white rounded-lg shadow p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Banking Information</h3>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">

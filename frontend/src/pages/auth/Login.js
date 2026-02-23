@@ -5,6 +5,8 @@ import { FiEye, FiEyeOff, FiMail, FiLock } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import useAuthStore from '../../store/authStore';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
+import { GoogleLogin } from '@react-oauth/google';
+import api from '../../utils/api';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -56,6 +58,52 @@ const Login = () => {
     // Initialize auth on component mount
     useAuthStore.getState().initializeAuth();
   }, []);
+
+  const handleGoogleSuccess = async (credentialResponse) => {
+    try {
+      useAuthStore.setState({ isLoading: true });
+      const response = await api.post('/auth/google', {
+        token: credentialResponse.credential,
+      });
+
+      if (response.data.success) {
+        toast.success(`Welcome ${response.data.data.user.first_name}!`);
+        // Complete the auth flow similar to what login Store does
+        const userData = response.data.data.user;
+        const tokens = {
+          token: response.data.data.token,
+          refreshToken: response.data.data.refreshToken
+        };
+        useAuthStore.setState({
+          user: userData,
+          isAuthenticated: true,
+          token: tokens.token,
+          refreshToken: tokens.refreshToken,
+          isLoading: false
+        });
+
+        // Save to localStorage directly to match what initializeAuth expects
+        localStorage.setItem('auth-storage', JSON.stringify({
+          state: {
+            user: userData,
+            isAuthenticated: true,
+            token: tokens.token,
+            refreshToken: tokens.refreshToken
+          },
+          version: 0
+        }));
+
+        const redirectPath = buildRedirectPath(userData);
+        navigate(redirectPath, { replace: true });
+      } else {
+        useAuthStore.setState({ isLoading: false });
+        toast.error(response.data.message || 'Google login failed');
+      }
+    } catch (error) {
+      useAuthStore.setState({ isLoading: false });
+      toast.error(error.response?.data?.message || 'Error occurred during Google Login');
+    }
+  };
 
   const onSubmit = async (data) => {
     const result = await login(data);
@@ -302,6 +350,29 @@ const Login = () => {
                   'Sign in'
                 )}
               </button>
+            </div>
+
+            <div className="mt-6">
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-2 bg-white text-gray-500">
+                    Or continue with
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-center">
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={() => {
+                    toast.error('Google Login Failed');
+                  }}
+                  useOneTap
+                />
+              </div>
             </div>
           </form>
 
