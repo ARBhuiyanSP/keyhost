@@ -38,8 +38,8 @@ const AdminUsers = () => {
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({
       ...prev,
-      [key]: value,
-      page: 1
+      page: 1,
+      [key]: value
     }));
   };
 

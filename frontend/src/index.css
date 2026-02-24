@@ -1174,14 +1174,66 @@ nav.sticky>div {
 }
 
 @keyframes shake-active {
-  0% { transform: rotate(0deg); }
-  25% { transform: rotate(-5deg); }
-  50% { transform: rotate(5deg); }
-  75% { transform: rotate(-5deg); }
-  100% { transform: rotate(0deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  25% {
+    transform: rotate(-5deg);
+  }
+
+  50% {
+    transform: rotate(5deg);
+  }
+
+  75% {
+    transform: rotate(-5deg);
+  }
+
+  100% {
+    transform: rotate(0deg);
+  }
 }
 
 .animate-shake-active {
   animation: shake-active 0.5s ease-in-out;
   transform-origin: center center;
+}
+
+/* Hide Google Translate top banner aggressively */
+.goog-te-banner-frame {
+  display: none !important;
+}
+
+.skiptranslate>iframe.goog-te-banner-frame {
+  display: none !important;
+}
+
+body {
+  top: 0px !important;
+  position: static !important;
+}
+
+#goog-gt-tt {
+  display: none !important;
+  top: 0px !important;
+}
+
+.goog-text-highlight {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Google Translate Widget Fixes */
+#google_translate_element {
+  border-radius: 8px !important;
+}
+
+#google_translate_element img[src*="cleardot.gif"] {
+  display: none !important;
+}
+
+.goog-te-gadget-simple {
+  border-radius: 4px !important;
+  padding: 4px 8px !important;
 }

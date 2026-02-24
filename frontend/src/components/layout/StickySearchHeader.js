@@ -1131,7 +1131,35 @@ const StickySearchHeader = ({
 
               {/* Globe icon */}
               <button
-                className="p-3 hover:bg-gray-100 rounded-full transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const el = document.getElementById('google_translate_element');
+                  if (el) {
+                    if (el.style.display === 'block') {
+                      el.style.display = 'none';
+                    } else {
+                      el.style.display = 'block';
+                      el.style.position = 'fixed';
+                      el.style.top = '70px';
+                      el.style.right = '155px';
+                      el.style.zIndex = '999999';
+                      el.style.background = 'white';
+                      el.style.padding = '8px';
+                      el.style.borderRadius = '8px';
+                      el.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+
+                      // Close widget if clicking outside
+                      const handleOutsideClick = (e2) => {
+                        if (!el.contains(e2.target)) {
+                          el.style.display = 'none';
+                          document.removeEventListener('click', handleOutsideClick);
+                        }
+                      };
+                      setTimeout(() => document.addEventListener('click', handleOutsideClick), 0);
+                    }
+                  }
+                }}
+                className="p-3 hover:bg-gray-100 rounded-full transition-colors relative"
                 aria-label="Choose language"
               >
                 <svg

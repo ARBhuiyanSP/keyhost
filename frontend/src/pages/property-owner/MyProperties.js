@@ -7,23 +7,35 @@ import LoadingSpinner from '../../components/common/LoadingSpinner';
 
 const MyProperties = () => {
   const navigate = useNavigate();
-  const [selectedStatus, setSelectedStatus] = useState('');
+  const [filters, setFilters] = useState({
+    status: '',
+    page: 1,
+    limit: 6
+  });
 
   // Fetch property owner's properties
   const { data: propertiesData, isLoading, refetch } = useQuery(
-    ['owner-properties', selectedStatus],
-    () => api.get(`/property-owner/properties${selectedStatus ? `?status=${selectedStatus}` : ''}`),
+    ['owner-properties', filters],
+    () => api.get(`/property-owner/properties?${new URLSearchParams(filters).toString()}`),
     {
       select: (response) => response.data?.data || { properties: [], pagination: {} },
     }
   );
+
+  const handleFilterChange = (key, value) => {
+    setFilters(prev => ({
+      ...prev,
+      page: 1,
+      [key]: value
+    }));
+  };
 
   const handleDeleteProperty = async (propertyId) => {
     if (window.confirm('Are you sure you want to delete this property? This action cannot be undone.')) {
       try {
         const response = await api.delete(`/property-owner/properties/${propertyId}`);
         console.log('Delete response:', response);
-        
+
         if (response.data?.success) {
           alert('Property deleted successfully!');
           refetch();
@@ -95,8 +107,8 @@ const MyProperties = () => {
                 Filter by Status
               </label>
               <select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
+                value={filters.status}
+                onChange={(e) => handleFilterChange('status', e.target.value)}
                 className="input-field w-auto"
               >
                 <option value="">All Properties</option>
@@ -150,7 +162,7 @@ const MyProperties = () => {
                   <h3 className="text-xl font-semibold text-gray-900 mb-2">
                     {property.title}
                   </h3>
-                  
+
                   <p className="text-gray-600 flex items-center mb-3">
                     <FiMapPin className="mr-1" />
                     {property.city}, {property.state}
@@ -207,8 +219,8 @@ const MyProperties = () => {
             <FiHome className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-gray-900 mb-2">No properties found</h3>
             <p className="text-gray-600 mb-6">
-              {selectedStatus 
-                ? `No properties with status "${selectedStatus}" found.`
+              {filters.status
+                ? `No properties with status "${filters.status}" found.`
                 : "You haven't added any properties yet."
               }
             </p>
@@ -227,23 +239,19 @@ const MyProperties = () => {
           <div className="flex justify-center mt-8">
             <div className="flex items-center space-x-2">
               <button
-                onClick={() => {
-                  // Handle pagination
-                }}
+                onClick={() => handleFilterChange('page', propertiesData.pagination.prevPage)}
                 disabled={!propertiesData.pagination.hasPrevPage}
                 className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Previous
               </button>
-              
+
               <span className="px-4 py-2 text-sm text-gray-700">
                 Page {propertiesData.pagination.currentPage} of {propertiesData.pagination.totalPages}
               </span>
-              
+
               <button
-                onClick={() => {
-                  // Handle pagination
-                }}
+                onClick={() => handleFilterChange('page', propertiesData.pagination.nextPage)}
                 disabled={!propertiesData.pagination.hasNextPage}
                 className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
               >
