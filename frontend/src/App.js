@@ -21,6 +21,11 @@ import FlightBooking from './components/booking/FlightBooking';
 import BookingSuccess from './components/booking/BookingSuccess';
 import TicketIssuePage from './components/booking/TicketIssuePage';
 import Help from './pages/Help';
+import Contact from './pages/Contact';
+import About from './pages/About';
+import FAQ from './pages/FAQ';
+import Terms from './pages/Terms';
+import Privacy from './pages/Privacy';
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
 import ForgotPassword from './pages/auth/ForgotPassword';
@@ -124,6 +129,12 @@ function App() {
         <Route path="/car-booking" element={<CarBooking />} />
         <Route path="/payment/:bookingId" element={<Payment />} />
         <Route path="/help" element={<Help />} />
+        <Route path="/contact" element={<Contact />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/faq" element={<FAQ />} />
+        <Route path="/faqs" element={<FAQ />} />
+        <Route path="/terms" element={<Terms />} />
+        <Route path="/privacy" element={<Privacy />} />
         <Route path="*" element={<NotFound />} />
 
         {/* Messages Routes - kept in Public Layout */}
