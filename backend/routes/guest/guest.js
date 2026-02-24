@@ -219,7 +219,7 @@ router.post('/bookings', verifyToken, requireGuest, validateBooking, async (req,
       AND (
         status IN ('confirmed', 'checked_in')
         OR (
-          status = 'pending' 
+          status = 'request_accepted' 
           AND confirmed_at IS NOT NULL 
           AND payment_deadline IS NOT NULL 
           AND payment_deadline > NOW()
@@ -1246,10 +1246,10 @@ router.patch('/bookings/:id/payment', verifyToken, requireGuest, validateId, asy
 
     const booking = bookings[0];
 
-    // Check if booking is pending and owner has accepted (confirmed_at is set)
-    if (booking.status !== 'pending') {
+    // Check if booking is request_accepted and owner has accepted (confirmed_at is set)
+    if (booking.status !== 'request_accepted') {
       return res.status(400).json(
-        formatResponse(false, 'Booking must be in pending status')
+        formatResponse(false, 'Booking must be accepted by the owner before payment')
       );
     }
 

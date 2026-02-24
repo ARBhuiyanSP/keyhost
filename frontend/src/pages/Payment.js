@@ -11,7 +11,7 @@ const Payment = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const { showSuccess, showError } = useToast();
-  
+
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -58,17 +58,17 @@ const Payment = () => {
       setFinalAmount(bookingAmount);
       return;
     }
-    
+
     const settings = pointsInfo.settings;
     const availablePoints = pointsInfo.points?.current_balance || 0;
-    
+
     // Calculate max redeemable points
     const maxFromBalance = availablePoints;
     const maxFromBooking = Math.floor(bookingAmount * settings.points_per_taka);
     const maxFromLimit = settings.max_points_per_booking || Infinity;
-    
+
     const maxRedeemable = Math.min(maxFromBalance, maxFromBooking, maxFromLimit);
-    
+
     if (maxRedeemable < (settings.min_points_to_redeem || 0)) {
       setPointsToRedeem(0);
       setPointsDiscount(0);
@@ -96,16 +96,16 @@ const Payment = () => {
       const response = await api.get(`/guest/bookings/${bookingId}`);
       const bookingData = response.data.data.booking;
       setBooking(bookingData);
-      
+
       // Calculate final amount after points discount
       if (pointsData) {
         calculatePointsDiscount(pointsData, bookingData.total_amount);
       } else {
         setFinalAmount(bookingData.total_amount);
       }
-      
+
       // Check if booking is pending and owner has accepted (confirmed_at is set)
-      if (bookingData.status !== 'pending') {
+      if (bookingData.status !== 'request_accepted') {
         if (bookingData.status === 'confirmed') {
           // Already confirmed, payment might be completed
           if (bookingData.payment_status !== 'paid') {
@@ -120,14 +120,14 @@ const Payment = () => {
         navigate(`/guest/bookings/${bookingId}`);
         return;
       }
-      
+
       // Check if owner has accepted the booking request
       if (!bookingData.confirmed_at) {
         showError('Property owner has not accepted this booking request yet. Please wait for owner approval.');
         navigate(`/guest/bookings/${bookingId}`);
         return;
       }
-      
+
       // Check if payment already completed
       if (bookingData.payment_status === 'paid') {
         showError('Payment has already been completed');
@@ -145,17 +145,17 @@ const Payment = () => {
   const handlePayment = async (paymentMethod) => {
     try {
       setProcessing(true);
-      
+
       // Handle bKash payment separately
       if (paymentMethod === 'bKash') {
         setShowBkashPayment(true);
         setProcessing(false);
         return;
       }
-      
+
       // For other payment methods, use existing logic
       await new Promise(resolve => setTimeout(resolve, 2000));
-      
+
       // Map display names to database ENUM values
       const paymentMethodMap = {
         'bKash': 'bkash',
@@ -164,28 +164,28 @@ const Payment = () => {
         'Bank Transfer': 'bank_transfer',
         'Credit Card': 'credit_card'
       };
-      
+
       const dbPaymentMethod = paymentMethodMap[paymentMethod] || paymentMethod.toLowerCase();
-      
+
       console.log('=== PAYMENT DEBUG ===');
       console.log('1. Payment Method (Display):', paymentMethod);
       console.log('2. Payment Method (DB):', dbPaymentMethod);
       console.log('3. Payment Status:', 'paid');
-      
+
       const requestPayload = {
         payment_method: dbPaymentMethod,
         payment_status: 'paid',
         points_to_redeem: (usePoints && pointsToRedeem > 0) ? pointsToRedeem : undefined
       };
-      
+
       console.log('4. Request Payload:', JSON.stringify(requestPayload));
-      
+
       // Update booking payment method and status (booking already confirmed by owner)
       const response = await api.patch(`/guest/bookings/${bookingId}/payment`, requestPayload);
-      
+
       console.log('5. Response:', response.data);
       console.log('===================');
-      
+
       showSuccess('Payment completed successfully! Booking is now confirmed.');
       // Refetch points data to show updated balance and new points earned
       await fetchPointsData();

@@ -75,6 +75,8 @@ const GuestBookings = () => {
     switch (status) {
       case 'confirmed':
         return 'bg-green-100 text-green-800';
+      case 'request_accepted':
+        return 'bg-blue-100 text-blue-800';
       case 'pending':
         return 'bg-yellow-100 text-yellow-800';
       case 'cancelled':
@@ -113,6 +115,7 @@ const GuestBookings = () => {
               {[
                 { key: 'all', label: 'All Bookings' },
                 { key: 'pending', label: 'Pending' },
+                { key: 'request_accepted', label: 'Request Accepted' },
                 { key: 'confirmed', label: 'Confirmed' },
                 { key: 'checked_in', label: 'Active' },
                 { key: 'cancelled', label: 'Cancelled' }
@@ -121,8 +124,8 @@ const GuestBookings = () => {
                   key={tab.key}
                   onClick={() => setFilter(tab.key)}
                   className={`py-2 px-1 border-b-2 font-medium text-xs md:text-sm whitespace-nowrap flex-shrink-0 ${filter === tab.key
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                     }`}
                 >
                   {tab.label}
@@ -220,8 +223,17 @@ const GuestBookings = () => {
                       )
                     )}
 
+                    {booking.status === 'request_accepted' && booking.payment_status !== 'paid' && (
+                      <button
+                        onClick={() => navigate(`/payment/${booking.id}`)}
+                        className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors"
+                      >
+                        Make Payment
+                      </button>
+                    )}
+
                     {(() => {
-                      const canCancel = (booking.status === 'confirmed' || booking.status === 'pending') &&
+                      const canCancel = ['confirmed', 'pending', 'request_accepted'].includes(booking.status) &&
                         new Date(booking.check_in_date).setHours(0, 0, 0, 0) > new Date().setHours(0, 0, 0, 0);
                       return canCancel;
                     })() && (
@@ -261,8 +273,8 @@ const GuestBookings = () => {
                   key={page}
                   onClick={() => setPagination(prev => ({ ...prev, currentPage: page }))}
                   className={`px-3 py-2 text-sm font-medium rounded-lg ${page === pagination.currentPage
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-500 bg-white border border-gray-300 hover:bg-gray-50'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-500 bg-white border border-gray-300 hover:bg-gray-50'
                     }`}
                 >
                   {page}

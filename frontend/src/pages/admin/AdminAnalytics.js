@@ -62,7 +62,7 @@ const AdminAnalytics = () => {
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Total Users</p>
-                <p className="text-2xl font-semibold text-gray-900">{analytics?.statistics?.totalUsers || 0}</p>
+                <p className="text-2xl font-semibold text-gray-900">{analytics?.data?.users?.total_users || 0}</p>
               </div>
             </div>
           </div>
@@ -76,7 +76,7 @@ const AdminAnalytics = () => {
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Total Properties</p>
-                <p className="text-2xl font-semibold text-gray-900">{analytics?.statistics?.totalProperties || 0}</p>
+                <p className="text-2xl font-semibold text-gray-900">{analytics?.data?.properties?.total_properties || 0}</p>
               </div>
             </div>
           </div>
@@ -90,7 +90,7 @@ const AdminAnalytics = () => {
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Total Bookings</p>
-                <p className="text-2xl font-semibold text-gray-900">{analytics?.statistics?.totalBookings || 0}</p>
+                <p className="text-2xl font-semibold text-gray-900">{analytics?.data?.bookings?.total_bookings || 0}</p>
               </div>
             </div>
           </div>
@@ -105,7 +105,7 @@ const AdminAnalytics = () => {
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Total Revenue</p>
                 <p className="text-2xl font-semibold text-gray-900">
-                  ${analytics?.statistics?.totalRevenue?.toLocaleString() || 0}
+                  BDT {analytics?.data?.bookings?.total_revenue?.toLocaleString() || 0}
                 </p>
               </div>
             </div>
@@ -113,28 +113,62 @@ const AdminAnalytics = () => {
         </div>
 
         {/* Charts and Detailed Analytics */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           {/* Revenue Chart */}
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Revenue Trend</h3>
-            <div className="h-64 flex items-center justify-center text-gray-500">
-              <p>Revenue chart would be implemented here</p>
-            </div>
+            {analytics?.data?.revenueChart?.length > 0 ? (
+              <div className="h-64 flex items-end justify-between space-x-2">
+                {analytics.data.revenueChart.map((item, index) => (
+                  <div key={index} className="flex flex-col items-center flex-1">
+                    <div
+                      className="bg-blue-500 rounded-t w-full mb-2"
+                      style={{ height: `${Math.max(4, (item.amount / Math.max(...analytics.data.revenueChart.map(r => r.amount))) * 200)}px` }}
+                    ></div>
+                    <span className="text-xs text-gray-500 truncate w-full text-center">{item.date}</span>
+                    <span className="text-[10px] font-bold text-gray-900" title={`BDT ${item.amount}`}>
+                      {item.amount < 1000 ? item.amount : (item.amount / 1000).toFixed(1) + 'k'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="h-64 flex items-center justify-center text-gray-500">
+                No revenue data available
+              </div>
+            )}
           </div>
 
           {/* User Growth Chart */}
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">User Growth</h3>
-            <div className="h-64 flex items-center justify-center text-gray-500">
-              <p>User growth chart would be implemented here</p>
-            </div>
+            {analytics?.data?.userChart?.length > 0 ? (
+              <div className="h-64 flex items-end justify-between space-x-2">
+                {analytics.data.userChart.map((item, index) => (
+                  <div key={index} className="flex flex-col items-center flex-1">
+                    <div
+                      className="bg-green-500 rounded-t w-full mb-2"
+                      style={{ height: `${Math.max(4, (item.count / Math.max(...analytics.data.userChart.map(r => r.count))) * 200)}px` }}
+                    ></div>
+                    <span className="text-xs text-gray-500 truncate w-full text-center">{item.date}</span>
+                    <span className="text-[10px] font-bold text-gray-900">{item.count}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="h-64 flex items-center justify-center text-gray-500">
+                No user growth data available
+              </div>
+            )}
           </div>
+        </div>
 
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Top Properties */}
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Performing Properties</h3>
             <div className="space-y-4">
-              {analytics?.topProperties?.slice(0, 5).map((property, index) => (
+              {analytics?.data?.topProperties?.slice(0, 5).map((property, index) => (
                 <div key={property.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                   <div className="flex items-center">
                     <span className="w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-sm font-medium">
@@ -146,7 +180,7 @@ const AdminAnalytics = () => {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="font-medium text-gray-900">${property.total_revenue?.toLocaleString() || 0}</p>
+                    <p className="font-medium text-gray-900">BDT {parseFloat(property.total_revenue || 0).toLocaleString()}</p>
                     <p className="text-sm text-gray-600">{property.total_bookings} bookings</p>
                   </div>
                 </div>
@@ -158,9 +192,9 @@ const AdminAnalytics = () => {
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Activity</h3>
             <div className="space-y-4">
-              {analytics?.recentActivity?.slice(0, 5).map((activity, index) => (
+              {analytics?.data?.recentActivity?.slice(0, 5).map((activity, index) => (
                 <div key={index} className="flex items-center p-3 bg-gray-50 rounded-lg">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mr-3"></div>
+                  <div className={`w-2 h-2 rounded-full mr-3 ${activity.type === 'booking' ? 'bg-green-500' : 'bg-blue-500'}`}></div>
                   <div>
                     <p className="text-sm text-gray-900">{activity.description}</p>
                     <p className="text-xs text-gray-600">{activity.timestamp}</p>
@@ -171,7 +205,7 @@ const AdminAnalytics = () => {
           </div>
         </div>
       </div>
-    </div>
+    </div >
   );
 };
 

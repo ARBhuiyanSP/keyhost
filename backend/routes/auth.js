@@ -5,7 +5,8 @@ const {
   comparePassword,
   generateToken,
   generateRefreshToken,
-  formatResponse
+  formatResponse,
+  generateRandomString
 } = require('../utils/helpers');
 const {
   validateUserRegistration,
@@ -303,6 +304,125 @@ router.post('/register', validateUserRegistration, async (req, res) => {
     console.error('Registration error:', error);
     res.status(500).json(
       formatResponse(false, 'Registration failed', null, error.message)
+    );
+  }
+});
+
+const { OAuth2Client } = require('google-auth-library');
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+// Google Sign-In
+router.post('/google', async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    // Verify Google Token
+    const ticket = await googleClient.verifyIdToken({
+      idToken: token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    const { sub: google_id, email, given_name, family_name, picture } = payload;
+
+    // Check if user exists by google_id or email
+    const [existingUsers] = await pool.execute(
+      'SELECT * FROM users WHERE google_id = ? OR email = ?',
+      [google_id, email]
+    );
+
+    let user;
+    let userId;
+
+    if (existingUsers.length > 0) {
+      user = existingUsers[0];
+      userId = user.id;
+
+      // Update google_id and photo if they logged in with email before
+      if (!user.google_id) {
+        await pool.execute(
+          'UPDATE users SET google_id = ?, profile_image = COALESCE(profile_image, ?), email_verified_at = COALESCE(email_verified_at, NOW()) WHERE id = ?',
+          [google_id, picture, userId]
+        );
+      }
+
+      // Check if locked
+      if (user.locked_until && new Date() < new Date(user.locked_until)) {
+        return res.status(423).json(
+          formatResponse(false, 'Account is temporarily locked. Please try again later.')
+        );
+      }
+      if (!user.is_active) {
+        return res.status(403).json(
+          formatResponse(false, 'Account is deactivated. Please contact support.')
+        );
+      }
+
+      // Update login info
+      await pool.execute(
+        'UPDATE users SET login_attempts = 0, locked_until = NULL, last_login_at = NOW() WHERE id = ?',
+        [userId]
+      );
+
+    } else {
+      // Create new user record
+      const defaultPassword = await hashPassword(generateRandomString(16)); // Random unseen password
+
+      const insertParams = [
+        given_name || 'Google',
+        family_name || 'User',
+        email,
+        picture || null,
+        google_id,
+        defaultPassword,
+        'guest' // default user type
+      ];
+
+      const [result] = await pool.execute(
+        `INSERT INTO users (
+          first_name, last_name, email, profile_image, google_id, password, user_type,
+          email_verified_at, created_at, phone
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), '')`,
+        insertParams
+      );
+
+      userId = result.insertId;
+
+      const [newUsers] = await pool.execute(
+        `SELECT * FROM users WHERE id = ?`,
+        [userId]
+      );
+      user = newUsers[0];
+    }
+
+    // Generate our system's JWTS
+    const jwtToken = generateToken(userId, user.user_type);
+    const refreshToken = generateRefreshToken(userId);
+
+    // Save session
+    await pool.execute(
+      `INSERT INTO user_sessions (user_id, session_token, refresh_token, expires_at, created_at) 
+       VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY), NOW())`,
+      [userId, jwtToken, refreshToken]
+    );
+
+    // Strip password from response
+    delete user.password;
+    delete user.login_attempts;
+    delete user.locked_until;
+
+    res.status(200).json(
+      formatResponse(true, 'Google login successful', {
+        user,
+        token: jwtToken,
+        refreshToken
+      })
+    );
+
+  } catch (error) {
+    console.error('Google Auth Error:', error);
+    res.status(500).json(
+      formatResponse(false, 'Google authentication failed', null, error.message)
     );
   }
 });
