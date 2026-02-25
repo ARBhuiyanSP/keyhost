@@ -1226,7 +1226,10 @@ body {
 
 /* Google Translate Widget Fixes */
 #google_translate_element {
-  border-radius: 8px !important;
+  position: absolute !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  z-index: -1 !important;
 }
 
 #google_translate_element img[src*="cleardot.gif"] {
@@ -1234,6 +1237,56 @@ body {
 }
 
 .goog-te-gadget-simple {
-  border-radius: 4px !important;
-  padding: 4px 8px !important;
+  background-color: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 8px !important;
+  padding: 8px 12px 8px 10px !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease-in-out !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+  min-width: 140px !important;
+}
+
+.goog-te-gadget-simple:hover {
+  border-color: #e41d57 !important;
+  box-shadow: 0 4px 12px rgba(228, 29, 87, 0.1) !important;
+  transform: translateY(-1px);
+}
+
+.goog-te-menu-value {
+  display: flex !important;
+  align-items: center !important;
+  font-weight: 500 !important;
+  color: #1e293b !important;
+  width: 100% !important;
+}
+
+/* Remove default separator bars Google injects */
+.goog-te-menu-value span {
+  border-left: none !important;
+  color: #1e293b !important;
+}
+
+/* The selected language text */
+.goog-te-menu-value span:first-child {
+  flex-grow: 1 !important;
+  text-align: left !important;
+  padding-left: 6px !important;
+}
+
+/* Fix Google logo spacing */
+.goog-te-gadget-icon {
+  width: 16px !important;
+  height: 16px !important;
+  margin-right: 4px !important;
+}
+
+/* Fix right dropdown arrow spacing */
+.goog-te-menu-value img {
+  margin-left: auto !important;
 }

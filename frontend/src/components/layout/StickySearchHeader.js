@@ -76,6 +76,8 @@ const StickySearchHeader = ({
   const [searchData, setSearchData] = useState(loadSearchState);
   const [activePropertyType, setActivePropertyType] = useState(initialPropertyType || searchData.propertyType || '');
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
+  const [showLangMenu, setShowLangMenu] = useState(false);
+  const [langSearchQuery, setLangSearchQuery] = useState('');
 
   // Flight Search State
   const [flightSearchData, setFlightSearchData] = useState({
@@ -1129,51 +1131,102 @@ const StickySearchHeader = ({
                 Become a host
               </Link>
 
-              {/* Globe icon */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const el = document.getElementById('google_translate_element');
-                  if (el) {
-                    if (el.style.display === 'block') {
-                      el.style.display = 'none';
-                    } else {
-                      el.style.display = 'block';
-                      el.style.position = 'fixed';
-                      el.style.top = '70px';
-                      el.style.right = '155px';
-                      el.style.zIndex = '999999';
-                      el.style.background = 'white';
-                      el.style.padding = '8px';
-                      el.style.borderRadius = '8px';
-                      el.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-
-                      // Close widget if clicking outside
-                      const handleOutsideClick = (e2) => {
-                        if (!el.contains(e2.target)) {
-                          el.style.display = 'none';
-                          document.removeEventListener('click', handleOutsideClick);
-                        }
-                      };
-                      setTimeout(() => document.addEventListener('click', handleOutsideClick), 0);
-                    }
-                  }
-                }}
-                className="p-3 hover:bg-gray-100 rounded-full transition-colors relative"
-                aria-label="Choose language"
-              >
-                <svg
-                  viewBox="0 0 16 16"
-                  xmlns="http://www.w3.org/2000/svg"
-                  aria-hidden="true"
-                  role="presentation"
-                  focusable="false"
-                  className="w-4 h-4"
-                  style={{ display: 'block', fill: 'none', stroke: 'currentColor', strokeWidth: '2', overflow: 'visible' }}
+              {/* Globe icon and Custom Language Menu */}
+              <div className="relative">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowLangMenu(!showLangMenu);
+                    if (!showLangMenu) setLangSearchQuery('');
+                  }}
+                  className="p-3 hover:bg-gray-100 rounded-full transition-colors relative flex items-center justify-center"
+                  aria-label="Choose language"
                 >
-                  <path d="M8 .25a7.77 7.77 0 0 1 7.75 7.78 7.75 7.75 0 0 1-7.52 7.72h-.25A7.75 7.75 0 0 1 .25 8.24v-.25A7.75 7.75 0 0 1 8 .25zm1.95 8.5h-3.9c.15 2.9 1.17 5.34 1.88 5.5H8c.68 0 1.72-2.37 1.93-5.23zm4.26 0h-2.76c-.09 1.96-.53 3.78-1.18 5.08A6.26 6.26 0 0 0 14.17 9zm-9.67 0H1.8a6.26 6.26 0 0 0 3.94 5.08 12.59 12.59 0 0 1-1.16-4.7l-.03-.38zm1.2-6.58-.12.05a6.26 6.26 0 0 0-3.83 5.03h2.75c.09-1.83.48-3.54 1.06-4.81zm2.25-.42c-.7 0-1.78 2.51-1.94 5.5h3.9c-.15-2.9-1.18-5.34-1.89-5.5h-.07zm2.28.43.03.05a12.95 12.95 0 0 1 1.15 5.02h2.75a6.28 6.28 0 0 0-3.93-5.07z"></path>
-                </svg>
-              </button>
+                  <svg
+                    viewBox="0 0 16 16"
+                    xmlns="http://www.w3.org/2000/svg"
+                    aria-hidden="true"
+                    role="presentation"
+                    focusable="false"
+                    className="w-4 h-4"
+                    style={{ display: 'block', fill: 'none', stroke: 'currentColor', strokeWidth: '2', overflow: 'visible' }}
+                  >
+                    <path d="M8 .25a7.77 7.77 0 0 1 7.75 7.78 7.75 7.75 0 0 1-7.52 7.72h-.25A7.75 7.75 0 0 1 .25 8.24v-.25A7.75 7.75 0 0 1 8 .25zm1.95 8.5h-3.9c.15 2.9 1.17 5.34 1.88 5.5H8c.68 0 1.72-2.37 1.93-5.23zm4.26 0h-2.76c-.09 1.96-.53 3.78-1.18 5.08A6.26 6.26 0 0 0 14.17 9zm-9.67 0H1.8a6.26 6.26 0 0 0 3.94 5.08 12.59 12.59 0 0 1-1.16-4.7l-.03-.38zm1.2-6.58-.12.05a6.26 6.26 0 0 0-3.83 5.03h2.75c.09-1.83.48-3.54 1.06-4.81zm2.25-.42c-.7 0-1.78 2.51-1.94 5.5h3.9c-.15-2.9-1.18-5.34-1.89-5.5h-.07zm2.28.43.03.05a12.95 12.95 0 0 1 1.15 5.02h2.75a6.28 6.28 0 0 0-3.93-5.07z"></path>
+                  </svg>
+                </button>
+
+                {showLangMenu && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-[999998]"
+                      onClick={() => setShowLangMenu(false)}
+                    ></div>
+                    <div className="absolute top-full right-0 mt-3 w-64 bg-white rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.15)] border border-gray-100 overflow-hidden z-[999999] py-2 flex flex-col">
+                      <div className="px-3 pb-2 mb-2 border-b border-gray-100">
+                        <div className="relative">
+                          <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                          <input
+                            type="text"
+                            placeholder="Search language..."
+                            value={langSearchQuery}
+                            onChange={(e) => setLangSearchQuery(e.target.value)}
+                            className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500 transition-colors"
+                            onClick={(e) => e.stopPropagation()}
+                            autoFocus
+                          />
+                        </div>
+                      </div>
+
+                      <div className="max-h-64 overflow-y-auto">
+                        {[
+                          { code: 'en', name: 'English', flag: '🇬🇧' },
+                          { code: 'bn', name: 'Bengali', flag: '🇧🇩' },
+                          { code: 'ar', name: 'Arabic', flag: '🇸🇦' },
+                          { code: 'fr', name: 'French', flag: '🇫🇷' },
+                          { code: 'es', name: 'Spanish', flag: '🇪🇸' },
+                        ].filter(l => l.name.toLowerCase().includes(langSearchQuery.toLowerCase())).map((lang) => (
+                          <button
+                            key={lang.code}
+                            onClick={() => {
+                              const langCode = lang.code;
+                              const select = document.querySelector('.goog-te-combo');
+                              if (select) {
+                                select.value = langCode;
+                                select.dispatchEvent(new Event('change', { bubbles: true }));
+                              }
+                              // Robust pattern for Google Translate
+                              document.cookie = `googtrans=/en/${langCode}; path=/;`;
+                              document.cookie = `googtrans=/en/${langCode}; domain=.${window.location.hostname}; path=/;`;
+
+                              setTimeout(() => {
+                                window.location.reload();
+                              }, 100);
+
+                              setShowLangMenu(false);
+                            }}
+                            className="w-full text-left px-5 py-2.5 hover:bg-gray-50 flex items-center gap-3 transition-colors"
+                          >
+                            <span className="text-xl leading-none">{lang.flag}</span>
+                            <span className="font-medium text-gray-700 text-sm">{lang.name}</span>
+                          </button>
+                        ))}
+                        {/* Show message if no results */}
+                        {[
+                          { code: 'en', name: 'English', flag: '🇬🇧' },
+                          { code: 'bn', name: 'Bengali', flag: '🇧🇩' },
+                          { code: 'ar', name: 'Arabic', flag: '🇸🇦' },
+                          { code: 'fr', name: 'French', flag: '🇫🇷' },
+                          { code: 'es', name: 'Spanish', flag: '🇪🇸' },
+                        ].filter(l => l.name.toLowerCase().includes(langSearchQuery.toLowerCase())).length === 0 && (
+                            <div className="px-5 py-3 text-sm text-gray-500 text-center">
+                              No languages found
+                            </div>
+                          )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
 
               {/* Menu button with 3 bars and profile icon - wrapped in relative container */}
               <div className="relative" ref={dropdownRef}>
