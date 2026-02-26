@@ -12,6 +12,7 @@ const {
   validateUserRegistration,
   validateUserLogin
 } = require('../middleware/validation');
+const { sendEmail } = require('../utils/email');
 
 const router = express.Router();
 
@@ -339,7 +340,8 @@ router.post('/google', async (req, res) => {
     });
 
     const payload = ticket.getPayload();
-    const { sub: google_id, email, given_name, family_name, picture } = payload;
+    const { sub: google_id, email: rawEmail, given_name, family_name, picture } = payload;
+    const email = rawEmail ? String(rawEmail).toLowerCase() : null;
 
     // Check if user exists by google_id or email
     const [existingUsers] = await pool.execute(
@@ -384,6 +386,8 @@ router.post('/google', async (req, res) => {
       // Create new user record
       const defaultPassword = await hashPassword(generateRandomString(16)); // Random unseen password
 
+      const dummyPhone = `G-${Date.now()}`;
+
       const insertParams = [
         given_name || 'Google',
         family_name || 'User',
@@ -391,14 +395,15 @@ router.post('/google', async (req, res) => {
         picture || null,
         google_id,
         defaultPassword,
-        'guest' // default user type
+        'guest', // default user type
+        dummyPhone
       ];
 
       const [result] = await pool.execute(
         `INSERT INTO users (
           first_name, last_name, email, profile_image, google_id, password, user_type,
           email_verified_at, created_at, phone
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), '')`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?)`,
         insertParams
       );
 
@@ -678,14 +683,34 @@ router.post('/forgot-password', async (req, res) => {
 
     const user = users[0];
 
-    // Generate reset token (in a real app, you'd send this via email)
+    // Generate reset token
     const resetToken = generateRandomString(32);
 
-    // Store reset token (you'd typically store this with expiration)
-    // For now, we'll just return success
+    // Store reset token 
+    await pool.execute(
+      'INSERT INTO password_resets (email, token, created_at) VALUES (?, ?, NOW())',
+      [user.email, resetToken]
+    );
 
-    // TODO: Send email with reset link
-    // await sendPasswordResetEmail(user.email, resetToken);
+    // Try to get frontend URL from headers or use default localhost
+    const frontendUrl = req.headers.origin || 'http://localhost:3000';
+    const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
+
+    const message = `Halo ${user.first_name},\n\nYou requested a password reset. Please click on the following link or paste it in your browser to reset your password:\n\n${resetUrl}\n\nThis link will expire in 1 hour. If you did not request this, please ignore this email.`;
+
+    // Send email with reset link
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: 'Password Reset Request - Keyhost Homes',
+        message
+      });
+    } catch (emailError) {
+      console.error('Failed to send reset email:', emailError);
+      return res.status(500).json(
+        formatResponse(false, 'There was an error sending the reset email. Try again later.')
+      );
+    }
 
     res.json(
       formatResponse(true, 'If the email exists, a password reset link has been sent')
@@ -695,6 +720,60 @@ router.post('/forgot-password', async (req, res) => {
     console.error('Forgot password error:', error);
     res.status(500).json(
       formatResponse(false, 'Password reset request failed', null, error.message)
+    );
+  }
+});
+
+// Reset password
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json(
+        formatResponse(false, 'Token and new password are required')
+      );
+    }
+
+    // Verify token (Valid for 1 hour)
+    const [validTokens] = await pool.execute(
+      `SELECT email FROM password_resets 
+       WHERE token = ? AND created_at >= NOW() - INTERVAL 1 HOUR 
+       ORDER BY created_at DESC LIMIT 1`,
+      [token]
+    );
+
+    if (validTokens.length === 0) {
+      return res.status(400).json(
+        formatResponse(false, 'Password reset token is invalid or has expired')
+      );
+    }
+
+    const email = validTokens[0].email;
+
+    // Hash new password
+    const hashedPassword = await hashPassword(password);
+
+    // Update user's password
+    await pool.execute(
+      'UPDATE users SET password = ? WHERE email = ?',
+      [hashedPassword, email]
+    );
+
+    // Clear all reset tokens for this user
+    await pool.execute(
+      'DELETE FROM password_resets WHERE email = ?',
+      [email]
+    );
+
+    res.json(
+      formatResponse(true, 'Password has been successfully updated')
+    );
+
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json(
+      formatResponse(false, 'Password reset failed', null, error.message)
     );
   }
 });

@@ -6,7 +6,8 @@ const {
   comparePassword
 } = require('../utils/helpers');
 const {
-  validateId
+  validateId,
+  validatePropertyId
 } = require('../middleware/validation');
 
 const router = express.Router();
@@ -224,7 +225,7 @@ router.get('/favorites', async (req, res) => {
 });
 
 // Add property to favorites
-router.post('/favorites/:propertyId', validateId, async (req, res) => {
+router.post('/favorites/:propertyId', validatePropertyId, async (req, res) => {
   try {
     const { propertyId } = req.params;
 
@@ -271,7 +272,7 @@ router.post('/favorites/:propertyId', validateId, async (req, res) => {
 });
 
 // Remove property from favorites
-router.delete('/favorites/:propertyId', validateId, async (req, res) => {
+router.delete('/favorites/:propertyId', validatePropertyId, async (req, res) => {
   try {
     const { propertyId } = req.params;
 

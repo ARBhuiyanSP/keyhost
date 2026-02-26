@@ -218,6 +218,7 @@ router.get('/:id', optionalAuth, validateId, async (req, res) => {
     const [properties] = await pool.execute(`
       SELECT 
         p.*,
+        po.user_id as po_user_id,
         u.first_name as owner_first_name,
         u.last_name as owner_last_name,
         u.email as owner_email,
@@ -234,7 +235,7 @@ router.get('/:id', optionalAuth, validateId, async (req, res) => {
       FROM properties p
       JOIN property_owners po ON p.owner_id = po.id
       JOIN users u ON po.user_id = u.id
-      WHERE p.id = ? AND p.status = 'active'
+      WHERE p.id = ?
     `, [id]);
 
     if (properties.length === 0) {
@@ -244,6 +245,18 @@ router.get('/:id', optionalAuth, validateId, async (req, res) => {
     }
 
     const property = properties[0];
+
+    // Access control for non-active properties
+    if (property.status !== 'active') {
+      const isOwner = req.user && req.user.id === property.po_user_id;
+      const isAdmin = req.user && req.user.role === 'admin';
+
+      if (!isOwner && !isAdmin) {
+        return res.status(404).json(
+          formatResponse(false, 'Property not found or is currently inactive')
+        );
+      }
+    }
 
     // Get amenities
     const [amenities] = await pool.execute(`

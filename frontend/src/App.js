@@ -29,6 +29,7 @@ import Privacy from './pages/Privacy';
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
 import ForgotPassword from './pages/auth/ForgotPassword';
+import ResetPassword from './pages/auth/ResetPassword';
 import NotFound from './pages/NotFound';
 import ContactHost from './pages/ContactHost';
 import Messages from './pages/Messages';
@@ -126,6 +127,7 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password/:token" element={<ResetPassword />} />
         <Route path="/car-booking" element={<CarBooking />} />
         <Route path="/payment/:bookingId" element={<Payment />} />
         <Route path="/help" element={<Help />} />

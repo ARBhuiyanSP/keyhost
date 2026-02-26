@@ -12,6 +12,9 @@ import LoadingSpinner from '../../components/common/LoadingSpinner';
 import ImageUpload from '../../components/common/ImageUpload';
 import LocationPicker from '../../components/common/LocationPicker';
 import { sanitizeText } from '../../utils/textUtils';
+import Select from 'react-select';
+import { Country, State, City } from 'country-state-city';
+import { getStatesForCountry, getCitiesForState } from '../../utils/locationUtils';
 
 const EditProperty = () => {
   const { id } = useParams();
@@ -42,6 +45,10 @@ const EditProperty = () => {
     check_in_time: '15:00',
     check_out_time: '11:00'
   });
+
+  const [selectedCountry, setSelectedCountry] = useState(null);
+  const [selectedState, setSelectedState] = useState(null);
+  const [selectedCity, setSelectedCity] = useState(null);
 
   // Create update mutation first
   const updatePropertyMutation = useMutation(
@@ -109,6 +116,26 @@ const EditProperty = () => {
           check_in_time: property.check_in_time || '15:00',
           check_out_time: property.check_out_time || '11:00'
         });
+
+        // Setup dropdown state from fetched property
+        if (property.country) {
+          const countryMatch = Country.getAllCountries().find(c => c.name === property.country);
+          if (countryMatch) {
+            setSelectedCountry({ value: countryMatch.isoCode, label: countryMatch.name });
+
+            if (property.state) {
+              const statesList = getStatesForCountry(countryMatch.isoCode);
+              const stateMatch = statesList.find(s => s.label === property.state);
+              if (stateMatch) {
+                setSelectedState(stateMatch);
+
+                if (property.city) {
+                  setSelectedCity({ value: property.city, label: property.city });
+                }
+              }
+            }
+          }
+        }
 
         // Load existing images if any
         if (property.images && property.images.length > 0) {
@@ -269,10 +296,11 @@ const EditProperty = () => {
       images: images.map(img => img.preview) // Base64 strings
     };
 
-    console.log('Updating property with', images.length, 'images');
-    console.log('Image data sample:', images[0]?.preview?.substring(0, 50));
+    console.log('Update Data', propertyData);
     updatePropertyMutation.mutate(propertyData);
   };
+
+  const currentSearchAddress = [formData.address, formData.city, formData.state, formData.country].filter(Boolean).join(', ');
 
   if (isLoading) return <LoadingSpinner />;
 
@@ -407,15 +435,35 @@ const EditProperty = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    City *
+                    Country *
                   </label>
-                  <input
-                    type="text"
-                    name="city"
-                    value={formData.city}
-                    onChange={handleInputChange}
-                    className="input-field"
+                  <Select
+                    options={Country.getAllCountries().map(c => ({ value: c.isoCode, label: c.name }))}
+                    value={selectedCountry}
+                    onChange={(option) => {
+                      setSelectedCountry(option);
+                      setSelectedState(null);
+                      setSelectedCity(null);
+                      setFormData(prev => ({
+                        ...prev,
+                        country: option ? option.label : '',
+                        state: '',
+                        city: ''
+                      }));
+                    }}
+                    placeholder="Search Country"
+                    isClearable
                     required
+                    styles={{
+                      control: (baseStyles, state) => ({
+                        ...baseStyles,
+                        padding: '0.3rem',
+                        borderRadius: '0.75rem',
+                        borderColor: state.isFocused ? '#3b82f6' : '#e5e7eb',
+                        boxShadow: state.isFocused ? '0 0 0 2px rgba(59, 130, 246, 0.2)' : '2px 2px 0px rgba(0,0,0,0.04)',
+                        backgroundColor: '#f9fafb',
+                      }),
+                    }}
                   />
                 </div>
 
@@ -423,27 +471,63 @@ const EditProperty = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     State/Division *
                   </label>
-                  <input
-                    type="text"
-                    name="state"
-                    value={formData.state}
-                    onChange={handleInputChange}
-                    className="input-field"
+                  <Select
+                    options={selectedCountry ? getStatesForCountry(selectedCountry.value) : []}
+                    value={selectedState}
+                    onChange={(option) => {
+                      setSelectedState(option);
+                      setSelectedCity(null);
+                      setFormData(prev => ({
+                        ...prev,
+                        state: option ? option.label : '',
+                        city: ''
+                      }));
+                    }}
+                    placeholder={selectedCountry ? "Search State/Division" : "Select Country First"}
+                    isDisabled={!selectedCountry}
+                    isClearable
                     required
+                    styles={{
+                      control: (baseStyles, state) => ({
+                        ...baseStyles,
+                        padding: '0.3rem',
+                        borderRadius: '0.75rem',
+                        borderColor: state.isFocused ? '#3b82f6' : '#e5e7eb',
+                        boxShadow: state.isFocused ? '0 0 0 2px rgba(59, 130, 246, 0.2)' : '2px 2px 0px rgba(0,0,0,0.04)',
+                        backgroundColor: '#f9fafb',
+                      }),
+                    }}
                   />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Country *
+                    City *
                   </label>
-                  <input
-                    type="text"
-                    name="country"
-                    value={formData.country}
-                    onChange={handleInputChange}
-                    className="input-field"
+                  <Select
+                    options={selectedState ? getCitiesForState(selectedCountry.value, selectedState.value) : []}
+                    value={selectedCity}
+                    onChange={(option) => {
+                      setSelectedCity(option);
+                      setFormData(prev => ({
+                        ...prev,
+                        city: option ? option.label : ''
+                      }));
+                    }}
+                    placeholder={selectedState ? "Search City" : "Select State First"}
+                    isDisabled={!selectedState}
+                    isClearable
                     required
+                    styles={{
+                      control: (baseStyles, state) => ({
+                        ...baseStyles,
+                        padding: '0.3rem',
+                        borderRadius: '0.75rem',
+                        borderColor: state.isFocused ? '#3b82f6' : '#e5e7eb',
+                        boxShadow: state.isFocused ? '0 0 0 2px rgba(59, 130, 246, 0.2)' : '2px 2px 0px rgba(0,0,0,0.04)',
+                        backgroundColor: '#f9fafb',
+                      }),
+                    }}
                   />
                 </div>
 
@@ -471,6 +555,7 @@ const EditProperty = () => {
                 <LocationPicker
                   initialLat={formData.latitude}
                   initialLng={formData.longitude}
+                  searchAddress={currentSearchAddress}
                   onLocationSelect={(lat, lng) => {
                     setFormData(prev => ({
                       ...prev,
@@ -641,6 +726,14 @@ const EditProperty = () => {
                       {amenities.map((amenity) => (
                         <label
                           key={amenity.id}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            if (selectedAmenities.includes(amenity.id)) {
+                              setSelectedAmenities(selectedAmenities.filter(id => id !== amenity.id));
+                            } else {
+                              setSelectedAmenities([...selectedAmenities, amenity.id]);
+                            }
+                          }}
                           className={`flex items-center p-3 rounded-lg border-2 cursor-pointer transition-colors ${selectedAmenities.includes(amenity.id)
                             ? 'border-primary-500 bg-primary-50'
                             : 'border-gray-200 hover:border-gray-300'
@@ -649,13 +742,7 @@ const EditProperty = () => {
                           <input
                             type="checkbox"
                             checked={selectedAmenities.includes(amenity.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedAmenities([...selectedAmenities, amenity.id]);
-                              } else {
-                                setSelectedAmenities(selectedAmenities.filter(id => id !== amenity.id));
-                              }
-                            }}
+                            readOnly
                             className="sr-only"
                           />
                           <div className="flex items-center w-full">

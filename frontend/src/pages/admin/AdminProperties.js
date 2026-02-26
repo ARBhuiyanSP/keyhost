@@ -6,6 +6,30 @@ import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import useToast from '../../hooks/useToast';
 
+const ExpandablePropertyTitle = ({ title, maxLength = 25 }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  if (!title || title.length <= maxLength) {
+    return <div className="text-sm font-bold text-gray-900 leading-tight break-words">{title}</div>;
+  }
+
+  return (
+    <div className="flex flex-col">
+      <div className="text-sm font-bold text-gray-900 leading-tight whitespace-normal break-words">
+        {isExpanded ? title : `${title.substring(0, maxLength)}...`}
+      </div>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsExpanded(!isExpanded);
+        }}
+        className="text-primary-600 font-medium text-[11px] hover:underline focus:outline-none text-left mt-0.5 self-start"
+      >
+        {isExpanded ? 'View Less' : 'View More'}
+      </button>
+    </div>
+  );
+};
+
 const AdminProperties = () => {
   const navigate = useNavigate();
   const { showSuccess, showError } = useToast();
@@ -42,7 +66,7 @@ const AdminProperties = () => {
   // Fetch property's assigned categories
   const { data: propertyCategories } = useQuery(
     ['property-categories', selectedProperty?.id],
-    () => api.get(`/admin/properties/${selectedProperty?.id}/display-categories`),
+    () => api.get(`/ admin / properties / ${selectedProperty?.id}/display-categories`),
     {
       select: (response) => response.data?.data?.categories || [],
       enabled: showCategoryModal && !!selectedProperty?.id,
@@ -341,7 +365,7 @@ const AdminProperties = () => {
 
         {/* Filters */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Search Properties
@@ -418,124 +442,50 @@ const AdminProperties = () => {
             </div>
           ) : propertiesData?.properties?.length > 0 ? (
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 table-fixed">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Property</th>
-                    <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Owner</th>
-                    <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
-                    <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                    <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Price</th>
-                    <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Stats</th>
-                    <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Categories</th>
-                    <th scope="col" className="px-6 py-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                    <th scope="col" className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-48">Actions</th>
+                    <th scope="col" className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Property</th>
+                    <th scope="col" className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Owner</th>
+                    <th scope="col" className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-20">Type</th>
+                    <th scope="col" className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-24">Status</th>
+                    <th scope="col" className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-24">Price</th>
+                    <th scope="col" className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-24">Stats</th>
+                    <th scope="col" className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-32">Categories</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {propertiesData.properties.map((property) => (
                     <tr key={property.id} className="hover:bg-gray-50 transition-colors duration-150">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center group">
-                          <div className="relative h-12 w-16 flex-shrink-0 overflow-hidden rounded-lg border border-gray-200">
-                            <img
-                              src={property.main_image?.image_url || '/images/placeholder.svg'}
-                              alt={property.title}
-                              className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            />
-                            {property.is_featured && (
-                              <div className="absolute top-0 right-0 p-0.5 bg-yellow-400 rounded-bl-lg shadow-sm">
-                                <FiStar className="w-2.5 h-2.5 text-white fill-current" />
-                              </div>
-                            )}
-                          </div>
-                          <div className="ml-4">
-                            <div className="text-sm font-bold text-gray-900 line-clamp-1 max-w-[200px]" title={property.title}>
-                              {property.title}
-                            </div>
-                            <div className="text-xs text-gray-500 flex items-center mt-0.5">
-                              <FiMapPin className="w-3 h-3 mr-1 flex-shrink-0" />
-                              <span className="truncate max-w-[180px]">{property.city}, {property.state}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">
-                          {property.owner_first_name} {property.owner_last_name}
-                        </div>
-                        <div className="text-xs text-gray-500">{property.owner_email}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${getPropertyTypeColor(property.property_type)}`}>
-                          {property.property_type}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize border ${getStatusColor(property.status)}`}>
-                          {property.status?.replace('_', ' ')}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-bold text-gray-900">৳{property.base_price}</div>
-                        <div className="text-xs text-gray-500">per night</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex flex-col space-y-1">
-                          <div className="flex items-center text-xs text-gray-700">
-                            <FiStar className="w-3.5 h-3.5 text-yellow-400 mr-1 fill-current" />
-                            <span className="font-medium">{property.average_rating || 0}</span>
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {property.total_reviews || 0} reviews
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-wrap gap-1 max-w-[200px]">
-                          {property.display_categories && property.display_categories.length > 0 ? (
-                            property.display_categories.slice(0, 2).map(cat => (
-                              <span key={cat.id} className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-800 border border-gray-200">
-                                {cat.name}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-xs text-gray-400 italic">None</span>
-                          )}
-                          {property.display_categories?.length > 2 && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-50 text-gray-500">
-                              +{property.display_categories.length - 2}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex items-center justify-end space-x-2">
+                      <td className="px-3 py-3 whitespace-nowrap text-left text-sm font-medium">
+                        <div className="flex items-center justify-start space-x-1 flex-nowrap">
                           {/* Standard Actions */}
-                          <div className="flex space-x-1 bg-gray-50 p-1 rounded-lg border border-gray-100">
+                          <div className="flex space-x-1 bg-gray-50 p-1 rounded-lg border border-gray-100 flex-nowrap">
                             <button
                               onClick={() => navigate(`/property/${property.id}`)}
-                              className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-white rounded shadow-sm transition-all"
+                              className="p-1 px-1.5 text-gray-500 hover:text-blue-600 hover:bg-white rounded shadow-sm transition-all"
                               title="View Details"
                             >
                               <FiEye className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => handleEditProperty(property)}
-                              className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-white rounded shadow-sm transition-all"
+                              className="p-1 px-1.5 text-gray-500 hover:text-green-600 hover:bg-white rounded shadow-sm transition-all"
                               title="Edit Property"
                             >
                               <FiEdit className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => handleAssignCategories(property)}
-                              className="p-1.5 text-gray-500 hover:text-purple-600 hover:bg-white rounded shadow-sm transition-all"
+                              className="p-1 px-1.5 text-gray-500 hover:text-purple-600 hover:bg-white rounded shadow-sm transition-all"
                               title="Manage Categories"
                             >
                               <FiGrid className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => handleFeaturedToggle(property.id, !property.is_featured)}
-                              className={`p-1.5 rounded shadow-sm transition-all ${property.is_featured ? 'text-yellow-500 bg-white' : 'text-gray-400 hover:text-yellow-500 hover:bg-white'}`}
+                              className={`p-1 px-1.5 rounded shadow-sm transition-all ${property.is_featured ? 'text-yellow-500 bg-white' : 'text-gray-400 hover:text-yellow-500 hover:bg-white'}`}
                               title={property.is_featured ? 'Unfeature' : 'Feature'}
                             >
                               <FiHeart className={`w-4 h-4 ${property.is_featured ? 'fill-current' : ''}`} />
@@ -546,7 +496,7 @@ const AdminProperties = () => {
                           {(property.status === 'pending_approval' || property.status === 'suspended') && (
                             <button
                               onClick={() => handleStatusChange(property.id, 'active')}
-                              className="p-1.5 bg-green-50 text-green-600 hover:bg-green-100 rounded-md border border-green-200 transition-colors"
+                              className="p-1 px-1.5 bg-green-50 text-green-600 hover:bg-green-100 rounded-md border border-green-200 transition-colors"
                               title="Approve/Activate"
                             >
                               <FiCheck className="w-4 h-4" />
@@ -556,14 +506,72 @@ const AdminProperties = () => {
                           {(property.status === 'pending_approval' || property.status === 'active') && (
                             <button
                               onClick={() => handleStatusChange(property.id, 'suspended')}
-                              className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-md border border-red-200 transition-colors"
+                              className="p-1 px-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-md border border-red-200 transition-colors"
                               title="Suspend/Reject"
                             >
                               <FiX className="w-4 h-4" />
                             </button>
                           )}
-
-
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 whitespace-normal break-words">
+                        <div className="flex items-center">
+                          <div className="min-w-0 max-w-[160px]">
+                            <ExpandablePropertyTitle title={property.title} maxLength={22} />
+                            <div className="text-xs text-gray-500 flex items-center mt-1">
+                              <FiMapPin className="w-3 h-3 mr-1 flex-shrink-0" />
+                              <span className="break-words leading-tight">{property.city}, {property.state}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 whitespace-normal break-words">
+                        <div className="text-sm font-medium text-gray-900 leading-tight">
+                          {property.owner_first_name} {property.owner_last_name}
+                        </div>
+                        <div className="text-xs text-gray-500 break-all leading-tight mt-1">{property.owner_email}</div>
+                      </td>
+                      <td className="px-3 py-3 whitespace-normal">
+                        <span className={`inline-flex items-center px-2 py-0.5 text-center rounded text-[10px] font-medium capitalize ${getPropertyTypeColor(property.property_type)}`}>
+                          {property.property_type}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 whitespace-normal">
+                        <span className={`inline-flex items-center px-2 py-0.5 text-center rounded text-[10px] font-medium capitalize border ${getStatusColor(property.status)}`}>
+                          {property.status?.replace('_', ' ')}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 whitespace-normal">
+                        <div className="text-sm font-bold text-gray-900 break-words leading-tight">৳{property.base_price}</div>
+                        <div className="text-[10px] text-gray-500 mt-0.5 leading-tight">per night</div>
+                      </td>
+                      <td className="px-3 py-3 whitespace-normal">
+                        <div className="flex flex-col space-y-1">
+                          <div className="flex items-center text-xs text-gray-700">
+                            <FiStar className="w-3.5 h-3.5 text-yellow-400 mr-1 fill-current shrink-0" />
+                            <span className="font-medium truncate">{property.average_rating || 0}</span>
+                          </div>
+                          <div className="text-[10px] text-gray-500 truncate leading-tight">
+                            {property.total_reviews || 0} reviews
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 whitespace-normal break-words">
+                        <div className="flex flex-wrap gap-1 leading-tight">
+                          {property.display_categories && property.display_categories.length > 0 ? (
+                            property.display_categories.slice(0, 2).map(cat => (
+                              <span key={cat.id} className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-gray-100 text-gray-800 border border-gray-200">
+                                {cat.name}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-[10px] text-gray-400 italic">None</span>
+                          )}
+                          {property.display_categories?.length > 2 && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-gray-50 text-gray-500">
+                              +{property.display_categories.length - 2}
+                            </span>
+                          )}
                         </div>
                       </td>
                     </tr>

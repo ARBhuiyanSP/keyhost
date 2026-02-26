@@ -25,7 +25,8 @@ const validateUserRegistration = [
     .withMessage('Last name must be between 2 and 100 characters'),
   body('email')
     .isEmail()
-    .normalizeEmail()
+    .trim()
+    .toLowerCase()
     .withMessage('Please provide a valid email address'),
   body('phone')
     .isMobilePhone('any')
@@ -44,7 +45,8 @@ const validateUserRegistration = [
 const validateUserLogin = [
   body('email')
     .isEmail()
-    .normalizeEmail()
+    .trim()
+    .toLowerCase()
     .withMessage('Please provide a valid email address'),
   body('password')
     .notEmpty()

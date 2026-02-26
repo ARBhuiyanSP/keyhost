@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -35,7 +35,7 @@ function LocationMarker({ position, setPosition, onLocationSelect }) {
     return position ? <Marker position={[position.lat, position.lng]} /> : null;
 }
 
-const LocationPicker = ({ initialLat, initialLng, onLocationSelect }) => {
+const LocationPicker = ({ initialLat, initialLng, onLocationSelect, searchAddress }) => {
     // Default to Dhaka, Bangladesh coordinates
     const defaultCenter = [23.8103, 90.4125];
 
@@ -45,12 +45,49 @@ const LocationPicker = ({ initialLat, initialLng, onLocationSelect }) => {
             : null
     );
 
+    // Save previous address to prevent loop on initial load
+    const prevSearchAddressRef = useRef(searchAddress);
+
     // Update internal state if props change significantly (optional, but good for edits)
     useEffect(() => {
         if (initialLat && initialLng) {
             setPosition({ lat: parseFloat(initialLat), lng: parseFloat(initialLng) });
         }
     }, [initialLat, initialLng]);
+
+    // Auto-geocoding effect
+    useEffect(() => {
+        if (!searchAddress || searchAddress.length < 5) return;
+        if (searchAddress === prevSearchAddressRef.current) return;
+
+        prevSearchAddressRef.current = searchAddress;
+
+        const timeoutId = setTimeout(async () => {
+            try {
+                // Optimize search string for OpenStreetMap by removing hyphens and generic keywords
+                const cleanQuery = searchAddress
+                    .replace(/-/g, ' ')
+                    .replace(/\b(Division|District)\b/gi, '')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(cleanQuery)}`);
+                const data = await response.json();
+
+                if (data && data.length > 0) {
+                    const newLat = parseFloat(data[0].lat);
+                    const newLng = parseFloat(data[0].lon);
+
+                    setPosition({ lat: newLat, lng: newLng });
+                    onLocationSelect(newLat, newLng);
+                }
+            } catch (err) {
+                console.error("Geocoding failed:", err);
+            }
+        }, 1500); // 1.5s debounce to respect Nominatim limits
+
+        return () => clearTimeout(timeoutId);
+    }, [searchAddress, onLocationSelect]);
 
     return (
         <div className="h-[400px] w-full rounded-lg overflow-hidden border border-gray-300 relative z-0">

@@ -4,6 +4,30 @@ import { FiCalendar, FiSearch, FiFilter, FiEye, FiUser, FiHome, FiDollarSign, Fi
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 
+const ExpandablePropertyTitle = ({ title, maxLength = 25 }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  if (!title || title.length <= maxLength) {
+    return <div className="text-sm font-medium text-gray-900 leading-tight">{title}</div>;
+  }
+
+  return (
+    <div className="flex flex-col">
+      <div className="text-sm font-medium text-gray-900 leading-tight whitespace-normal break-words">
+        {isExpanded ? title : `${title.substring(0, maxLength)}...`}
+      </div>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsExpanded(!isExpanded);
+        }}
+        className="text-primary-600 font-medium text-[11px] hover:underline focus:outline-none text-left mt-0.5 self-start"
+      >
+        {isExpanded ? 'View Less' : 'View More'}
+      </button>
+    </div>
+  );
+};
+
 const AdminBookings = () => {
   const [filters, setFilters] = useState({
     status: '',
@@ -411,107 +435,105 @@ const AdminBookings = () => {
             </div>
           ) : bookingsData?.bookings?.length > 0 ? (
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 table-fixed">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
+                      Actions
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Booking
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Guest
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Property
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                       Dates
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                       Status
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
                       Amount
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
                     </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {bookingsData.bookings.map((booking) => (
                     <tr key={booking.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
-                            {booking.booking_reference}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {new Date(booking.created_at).toLocaleDateString()}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
-                            <span className="text-primary-600 font-medium text-xs">
-                              {booking.guest_first_name?.[0]}{booking.guest_last_name?.[0]}
-                            </span>
-                          </div>
-                          <div className="ml-3">
-                            <div className="text-sm font-medium text-gray-900">
-                              {booking.guest_first_name} {booking.guest_last_name}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              {booking.guest_email}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
-                            {booking.property_title}
-                          </div>
-                          <div className="text-sm text-gray-500 flex items-center">
-                            <FiMapPin className="w-3 h-3 mr-1" />
-                            {booking.property_city}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {new Date(booking.check_in_date).toLocaleDateString()}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          to {new Date(booking.check_out_date).toLocaleDateString()}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {booking.number_of_guests} guests
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(booking.status)}`}>
-                          {booking.status?.replace('_', ' ')}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900 flex items-center">
-                          <FiDollarSign className="w-3 h-3 mr-1" />
-                          <span className="font-bold text-red-600">BDT {booking.total_amount}</span>
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          {booking.payment_status || 'Pending'}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <td className="px-3 py-4 whitespace-normal text-left text-sm font-medium">
                         <button
                           onClick={() => handleViewBooking(booking)}
-                          className="text-primary-600 hover:text-primary-900 inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md hover:bg-primary-50 transition-colors"
+                          className="text-primary-600 hover:text-primary-900 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md hover:bg-primary-50 transition-colors"
                           title="View Details"
                         >
                           <FiEye className="w-4 h-4 mr-1" />
                           View
                         </button>
+                      </td>
+                      <td className="px-3 py-4 whitespace-normal break-all">
+                        <div>
+                          <div className="text-sm font-medium text-gray-900 leading-tight">
+                            {booking.booking_reference}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {new Date(booking.created_at).toLocaleDateString()}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-4 whitespace-normal break-words">
+                        <div className="flex items-center">
+                          <div className="hidden sm:flex w-8 h-8 bg-primary-100 rounded-full items-center justify-center shrink-0">
+                            <span className="text-primary-600 font-medium text-xs">
+                              {booking.guest_first_name?.[0]}{booking.guest_last_name?.[0]}
+                            </span>
+                          </div>
+                          <div className="sm:ml-3">
+                            <div className="text-sm font-medium text-gray-900 leading-tight">
+                              {booking.guest_first_name} {booking.guest_last_name}
+                            </div>
+                            <div className="text-xs text-gray-500 break-all">
+                              {booking.guest_email}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-4 whitespace-normal align-top">
+                        <div className="w-40 max-w-[180px]">
+                          <ExpandablePropertyTitle title={booking.property_title} maxLength={22} />
+                          <div className="text-xs text-gray-500 flex items-center mt-1.5">
+                            <FiMapPin className="w-3 h-3 mr-1 shrink-0" />
+                            <span className="truncate whitespace-normal" title={booking.property_city}>{booking.property_city}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-4 whitespace-normal break-words">
+                        <div className="text-xs text-gray-900">
+                          {new Date(booking.check_in_date).toLocaleDateString()}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          to {new Date(booking.check_out_date).toLocaleDateString()}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {booking.number_of_guests} guests
+                        </div>
+                      </td>
+                      <td className="px-3 py-4 whitespace-normal">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium text-center ${getStatusColor(booking.status)}`}>
+                          {booking.status?.replace('_', ' ')}
+                        </span>
+                      </td>
+                      <td className="px-3 py-4 whitespace-normal">
+                        <div className="text-sm font-medium text-gray-900 flex items-center flex-wrap leading-tight">
+                          <FiDollarSign className="w-3 h-3 shrink-0" />
+                          <span className="font-bold text-red-600 break-all">{booking.total_amount}</span>
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {booking.payment_status || 'Pending'}
+                        </div>
                       </td>
                     </tr>
                   ))}
