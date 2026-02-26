@@ -6,7 +6,7 @@ import { toast } from 'react-toastify';
 import useAuthStore from '../../store/authStore';
 import useSettingsStore from '../../store/settingsStore';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
-import { GoogleLogin } from '@react-oauth/google';
+import { GoogleLogin, GoogleOAuthProvider } from '@react-oauth/google';
 import api from '../../utils/api';
 
 const Register = () => {
@@ -443,13 +443,21 @@ const Register = () => {
               </div>
 
               <div className="mt-6 flex justify-center">
-                <GoogleLogin
-                  onSuccess={handleGoogleSuccess}
-                  onError={() => {
-                    toast.error('Google Registration Failed');
-                  }}
-                  useOneTap
-                />
+                {(() => {
+                  const googleClientId = settings?.google_client_id || process.env.REACT_APP_GOOGLE_CLIENT_ID;
+                  if (!googleClientId) return null;
+                  return (
+                    <GoogleOAuthProvider clientId={googleClientId}>
+                      <GoogleLogin
+                        onSuccess={handleGoogleSuccess}
+                        onError={() => {
+                          toast.error('Google Registration Failed');
+                        }}
+                        useOneTap
+                      />
+                    </GoogleOAuthProvider>
+                  );
+                })()}
               </div>
             </div>
 

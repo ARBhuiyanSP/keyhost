@@ -309,17 +309,33 @@ router.post('/register', validateUserRegistration, async (req, res) => {
 });
 
 const { OAuth2Client } = require('google-auth-library');
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Google Sign-In
 router.post('/google', async (req, res) => {
   try {
     const { token } = req.body;
 
+    // Fetch Google Client ID from database settings
+    const [settingsResult] = await pool.execute(
+      'SELECT setting_value FROM system_settings WHERE setting_key = ?',
+      ['google_client_id']
+    );
+
+    const dbClientId = settingsResult.length > 0 ? settingsResult[0].setting_value : null;
+    const googleClientId = dbClientId || process.env.GOOGLE_CLIENT_ID;
+
+    if (!googleClientId) {
+      return res.status(500).json(
+        formatResponse(false, 'Google Client ID is not configured on the server')
+      );
+    }
+
+    const googleClient = new OAuth2Client(googleClientId);
+
     // Verify Google Token
     const ticket = await googleClient.verifyIdToken({
       idToken: token,
-      audience: process.env.GOOGLE_CLIENT_ID,
+      audience: googleClientId,
     });
 
     const payload = ticket.getPayload();

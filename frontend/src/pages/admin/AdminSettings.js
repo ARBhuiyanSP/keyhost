@@ -36,8 +36,24 @@ const AdminSettings = () => {
           setLogoPreview(formattedSettings.site_logo);
         }
         if (formattedSettings.site_favicon) {
-          setFaviconPreview(formattedSettings.site_favicon);
         }
+      }
+    }
+  );
+
+  // Fetch SSL settings
+  const { data: sslSettingsData, isLoading: isSslLoading } = useQuery(
+    'sslcommerz-settings',
+    () => api.get('/sslcommerz/settings'),
+    {
+      onSuccess: (data) => {
+        const d = data.data?.data || {};
+        setSettings(prev => ({
+          ...prev,
+          sslcommerz_store_id: d.store_id || '',
+          sslcommerz_store_password: d.store_password || '',
+          sslcommerz_is_live: d.is_live || false
+        }));
       }
     }
   );
@@ -55,7 +71,8 @@ const AdminSettings = () => {
         'support_phone', 'site_address', 'currency', 'timezone',
         'registration_enabled', 'facebook_url', 'twitter_url', 'instagram_url',
         'linkedin_url', 'youtube_url', 'tiktok_url', 'google_analytics_id',
-        'seo_meta_title', 'seo_meta_description', 'seo_keywords', 'seo_og_image'
+        'seo_meta_title', 'seo_meta_description', 'seo_keywords', 'seo_og_image',
+        'google_client_id'
       ];
 
       Object.keys(updatedSettings).forEach(key => {
@@ -71,7 +88,16 @@ const AdminSettings = () => {
 
       console.log('Saving settings:', backendFormat); // Debug log
 
-      return api.put('/admin/settings', { settings: backendFormat });
+      const sslPromise = api.post('/sslcommerz/settings', {
+        store_id: updatedSettings.sslcommerz_store_id || '',
+        store_password: updatedSettings.sslcommerz_store_password || '',
+        is_live: updatedSettings.sslcommerz_is_live || false
+      }).catch(err => console.error('Failed to save SSL settings:', err));
+
+      return Promise.all([
+        sslPromise,
+        api.put('/admin/settings', { settings: backendFormat })
+      ]);
     },
     {
       onSuccess: async () => {
@@ -125,7 +151,7 @@ const AdminSettings = () => {
     updateMutation.mutate(settings);
   };
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading || isSslLoading) return <LoadingSpinner />;
 
   const tabs = [
     { id: 'general', name: 'General', icon: FiGlobe },
@@ -1052,8 +1078,63 @@ const AdminSettings = () => {
                             Enable Stripe Payment
                           </label>
                         </div>
+
+                        <div className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={settings.enable_sslcommerz || false}
+                            onChange={(e) => handleInputChange('enable_sslcommerz', e.target.checked)}
+                            className="h-5 w-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 transition-colors cursor-pointer"
+                          />
+                          <label className="ml-3 text-sm font-semibold text-gray-800 cursor-pointer">
+                            Enable SSLCommerz Payment
+                          </label>
+                        </div>
                       </div>
                     </div>
+
+                    {settings.enable_sslcommerz && (
+                      <div className="border-t pt-6">
+                        <h3 className="text-lg font-medium text-gray-900 mb-4">SSLCommerz Credentials</h3>
+                        <div className="space-y-4">
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={settings.sslcommerz_is_live || false}
+                              onChange={(e) => handleInputChange('sslcommerz_is_live', e.target.checked)}
+                              className="h-5 w-5 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500 focus:ring-2 transition-colors cursor-pointer"
+                            />
+                            <label className="ml-3 text-sm font-semibold text-gray-800 cursor-pointer">
+                              Live Mode (Uncheck for Sandbox)
+                            </label>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                              Store ID *
+                            </label>
+                            <input
+                              type="text"
+                              value={settings.sslcommerz_store_id || ''}
+                              onChange={(e) => handleInputChange('sslcommerz_store_id', e.target.value)}
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="e.g. testbox"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                              Store Password *
+                            </label>
+                            <input
+                              type="password"
+                              value={settings.sslcommerz_store_password || ''}
+                              onChange={(e) => handleInputChange('sslcommerz_store_password', e.target.value)}
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="e.g. qwerty"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1231,6 +1312,43 @@ const AdminSettings = () => {
                         className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
                         placeholder="Enter your refund policy..."
                       />
+                    </div>
+
+                    <div className="pt-6 border-t">
+                      <h3 className="text-lg font-medium text-gray-900 mb-4">Authentication & APIs</h3>
+                      <div className="space-y-6">
+                        <div>
+                          <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                            Google Login Client ID
+                          </label>
+                          <input
+                            type="text"
+                            value={settings.google_client_id || ''}
+                            onChange={(e) => handleInputChange('google_client_id', e.target.value)}
+                            className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                            placeholder="Your Google Client ID from Google Cloud Console"
+                          />
+                          <p className="mt-1.5 text-xs text-gray-500 font-medium">
+                            Enables "Login with Google" if provided.
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                            Google Login Client Secret
+                          </label>
+                          <input
+                            type="password"
+                            value={settings.google_client_secret || ''}
+                            onChange={(e) => handleInputChange('google_client_secret', e.target.value)}
+                            className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                            placeholder="Your Google Client Secret from Google Cloud Console"
+                          />
+                          <p className="mt-1.5 text-xs text-gray-500 font-medium">
+                            Required on the server to authenticate sessions securely.
+                          </p>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}

@@ -16,6 +16,7 @@ const propertiesRoutes = require('./routes/properties');
 const bkashPaymentRoutes = require('./routes/bkash-payment');
 const reportRoutes = require('./routes/reports');
 const messagesRoutes = require('./routes/messages');
+const sslCommerzRoutes = require('./routes/sslcommerz');
 
 // Import role-based routes
 const adminRoutes = require('./routes/admin/admin');
@@ -109,7 +110,8 @@ const apiRoutes = [
   { path: '/property-owner', route: propertyOwnerRoutes },
   { path: '/guest', route: guestRoutes },
   { path: '/settings', route: settingsRoutes },
-  { path: '/rewards-points', route: rewardsPointsRoutes }
+  { path: '/rewards-points', route: rewardsPointsRoutes },
+  { path: '/sslcommerz', route: sslCommerzRoutes }
 ];
 
 // Mount routes

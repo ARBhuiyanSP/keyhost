@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { FiSearch, FiUser, FiLogOut, FiSettings, FiHeart, FiBookOpen, FiChevronDown, FiDollarSign, FiChevronLeft, FiMinus, FiPlus, FiMapPin, FiX } from 'react-icons/fi';
+import { FiSearch, FiUser, FiLogOut, FiSettings, FiHeart, FiBookOpen, FiChevronDown, FiDollarSign, FiChevronLeft, FiMinus, FiPlus, FiMapPin, FiX, FiGlobe } from 'react-icons/fi';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { useQuery } from 'react-query';
@@ -78,6 +78,15 @@ const StickySearchHeader = ({
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [langSearchQuery, setLangSearchQuery] = useState('');
+  const [currentLangCode, setCurrentLangCode] = useState('EN');
+
+  useEffect(() => {
+    // Check googtrans cookie on mount
+    const match = document.cookie.match(/googtrans=\/en\/([a-z]{2})/i);
+    if (match) {
+      setCurrentLangCode(match[1].toUpperCase());
+    }
+  }, []);
 
   // Flight Search State
   const [flightSearchData, setFlightSearchData] = useState({
@@ -1139,20 +1148,14 @@ const StickySearchHeader = ({
                     setShowLangMenu(!showLangMenu);
                     if (!showLangMenu) setLangSearchQuery('');
                   }}
-                  className="p-3 hover:bg-gray-100 rounded-full transition-colors relative flex items-center justify-center"
+                  className="p-0 bg-transparent border-none appearance-none cursor-pointer"
                   aria-label="Choose language"
                 >
-                  <svg
-                    viewBox="0 0 16 16"
-                    xmlns="http://www.w3.org/2000/svg"
-                    aria-hidden="true"
-                    role="presentation"
-                    focusable="false"
-                    className="w-4 h-4"
-                    style={{ display: 'block', fill: 'none', stroke: 'currentColor', strokeWidth: '2', overflow: 'visible' }}
-                  >
-                    <path d="M8 .25a7.77 7.77 0 0 1 7.75 7.78 7.75 7.75 0 0 1-7.52 7.72h-.25A7.75 7.75 0 0 1 .25 8.24v-.25A7.75 7.75 0 0 1 8 .25zm1.95 8.5h-3.9c.15 2.9 1.17 5.34 1.88 5.5H8c.68 0 1.72-2.37 1.93-5.23zm4.26 0h-2.76c-.09 1.96-.53 3.78-1.18 5.08A6.26 6.26 0 0 0 14.17 9zm-9.67 0H1.8a6.26 6.26 0 0 0 3.94 5.08 12.59 12.59 0 0 1-1.16-4.7l-.03-.38zm1.2-6.58-.12.05a6.26 6.26 0 0 0-3.83 5.03h2.75c.09-1.83.48-3.54 1.06-4.81zm2.25-.42c-.7 0-1.78 2.51-1.94 5.5h3.9c-.15-2.9-1.18-5.34-1.89-5.5h-.07zm2.28.43.03.05a12.95 12.95 0 0 1 1.15 5.02h2.75a6.28 6.28 0 0 0-3.93-5.07z"></path>
-                  </svg>
+                  <div className="flex items-center gap-2 hover:bg-gray-100 px-3 py-2 rounded-full transition-all duration-200">
+                    <FiGlobe className="w-[18px] h-[18px] text-gray-700" />
+                    <span className="text-sm font-semibold text-gray-800">{currentLangCode}</span>
+                    <FiChevronDown className="w-4 h-4 text-gray-600" />
+                  </div>
                 </button>
 
                 {showLangMenu && (
@@ -1400,7 +1403,7 @@ const StickySearchHeader = ({
             </div>
           )}
         </div>
-      </div>
+      </div >
     </>
   );
 };

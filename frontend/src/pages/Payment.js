@@ -153,6 +153,28 @@ const Payment = () => {
         return;
       }
 
+      // Handle SSLCommerz payment separately
+      if (paymentMethod === 'SSLCommerz') {
+        const { data: sslSettings } = await api.get('/sslcommerz/settings');
+        if (sslSettings) {
+          const sslRes = await api.post('/sslcommerz/ssl-request', {
+            booking_id: bookingId,
+            amount: usePoints ? (finalAmount || booking.total_amount) : booking.total_amount,
+            customer_name: user?.name,
+            customer_email: user?.email,
+            customer_phone: user?.phone
+          });
+          if (sslRes.data.success) {
+            window.location.replace(sslRes.data.data.url);
+            return;
+          } else {
+            showError('Failed to initialize SSLCommerz gateway');
+            setProcessing(false);
+            return;
+          }
+        }
+      }
+
       // For other payment methods, use existing logic
       await new Promise(resolve => setTimeout(resolve, 2000));
 
@@ -162,7 +184,8 @@ const Payment = () => {
         'Nagad': 'nagad',
         'Rocket': 'rocket',
         'Bank Transfer': 'bank_transfer',
-        'Credit Card': 'credit_card'
+        'Credit Card': 'credit_card',
+        'SSLCommerz': 'sslcommerz'
       };
 
       const dbPaymentMethod = paymentMethodMap[paymentMethod] || paymentMethod.toLowerCase();
@@ -381,6 +404,22 @@ const Payment = () => {
                       <div>
                         <div className="font-medium">Bank Transfer</div>
                         <div className="text-sm text-gray-500">Direct Bank Transfer</div>
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => handlePayment('SSLCommerz')}
+                    disabled={processing}
+                    className="w-full p-4 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <div className="flex items-center">
+                      <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center text-white font-bold mr-3">
+                        S
+                      </div>
+                      <div>
+                        <div className="font-medium">SSLCommerz</div>
+                        <div className="text-sm text-gray-500">Pay with Card/MFS</div>
                       </div>
                     </div>
                   </button>

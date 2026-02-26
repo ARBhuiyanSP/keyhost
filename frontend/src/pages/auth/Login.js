@@ -5,13 +5,15 @@ import { FiEye, FiEyeOff, FiMail, FiLock } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import useAuthStore from '../../store/authStore';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
-import { GoogleLogin } from '@react-oauth/google';
+import { GoogleLogin, GoogleOAuthProvider } from '@react-oauth/google';
 import api from '../../utils/api';
+import useSettingsStore from '../../store/settingsStore';
 
 const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { login, isLoading } = useAuthStore();
+  const { settings } = useSettingsStore();
   const [showPassword, setShowPassword] = useState(false);
 
   const {
@@ -365,13 +367,21 @@ const Login = () => {
               </div>
 
               <div className="mt-6 flex justify-center">
-                <GoogleLogin
-                  onSuccess={handleGoogleSuccess}
-                  onError={() => {
-                    toast.error('Google Login Failed');
-                  }}
-                  useOneTap
-                />
+                {(() => {
+                  const googleClientId = settings?.google_client_id || process.env.REACT_APP_GOOGLE_CLIENT_ID;
+                  if (!googleClientId) return null;
+                  return (
+                    <GoogleOAuthProvider clientId={googleClientId}>
+                      <GoogleLogin
+                        onSuccess={handleGoogleSuccess}
+                        onError={() => {
+                          toast.error('Google Login Failed');
+                        }}
+                        useOneTap
+                      />
+                    </GoogleOAuthProvider>
+                  );
+                })()}
               </div>
             </div>
           </form>
