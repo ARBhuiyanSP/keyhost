@@ -653,7 +653,8 @@ router.get('/bookings', validatePagination, async (req, res) => {
       page = 1,
       limit = 10,
       status,
-      search
+      search,
+      property_id
     } = req.query;
     const offset = (page - 1) * limit;
 
@@ -683,6 +684,11 @@ router.get('/bookings', validatePagination, async (req, res) => {
       whereClause += ' AND (b.booking_reference LIKE ? OR p.title LIKE ? OR b.guest_name LIKE ?)';
       const searchTerm = `%${search}%`;
       queryParams.push(searchTerm, searchTerm, searchTerm);
+    }
+
+    if (property_id && property_id !== 'all') {
+      whereClause += ' AND b.property_id = ?';
+      queryParams.push(property_id);
     }
 
     // Get total count

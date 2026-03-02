@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { FiSearch, FiUser, FiLogOut, FiSettings, FiHeart, FiBookOpen, FiChevronDown, FiDollarSign, FiChevronLeft, FiMinus, FiPlus, FiMapPin, FiX, FiGlobe } from 'react-icons/fi';
+import { FiSearch, FiUser, FiLogOut, FiSettings, FiHeart, FiBookOpen, FiChevronDown, FiDollarSign, FiChevronLeft, FiMinus, FiPlus, FiMapPin, FiX, FiGlobe, FiCalendar } from 'react-icons/fi';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { useQuery } from 'react-query';
@@ -281,6 +281,7 @@ const StickySearchHeader = ({
         { name: 'Owner Dashboard', path: '/property-owner', icon: FiSettings },
         { name: 'My Properties', path: '/property-owner/properties', icon: FiBookOpen },
         { name: 'Bookings', path: '/property-owner/bookings', icon: FiBookOpen },
+        { name: 'Calendar Sync', path: '/property-owner/calendar', icon: FiCalendar },
         { name: 'Analytics', path: '/property-owner/analytics', icon: FiSettings },
         { name: 'Earnings', path: '/property-owner/earnings', icon: FiDollarSign },
         { name: 'Profile', path: '/property-owner/profile', icon: FiUser },

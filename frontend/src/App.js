@@ -60,6 +60,7 @@ import Analytics from './pages/property-owner/Analytics';
 import EarningsSummary from './pages/property-owner/EarningsSummary';
 import PropertyOwnerEarnings from './pages/property-owner/PropertyOwnerEarnings';
 import PropertyOwnerProfile from './pages/property-owner/PropertyOwnerProfile';
+import PropertyOwnerCalendar from './pages/property-owner/PropertyOwnerCalendar';
 
 // Guest Pages
 import GuestDashboard from './pages/guest/GuestDashboard';
@@ -245,6 +246,11 @@ function App() {
         <Route path="/property-owner/bookings" element={
           <ProtectedRoute requireAuth requireRole="property_owner">
             <PropertyOwnerBookings />
+          </ProtectedRoute>
+        } />
+        <Route path="/property-owner/calendar" element={
+          <ProtectedRoute requireAuth requireRole="property_owner">
+            <PropertyOwnerCalendar />
           </ProtectedRoute>
         } />
         <Route path="/property-owner/analytics" element={

@@ -103,6 +103,7 @@ const DashboardLayout = () => {
                 { name: 'My Properties', path: '/property-owner/properties', icon: FiHome },
                 { name: 'Add Property', path: '/property-owner/properties/new', icon: FiTruck },
                 { name: 'Bookings', path: '/property-owner/bookings', icon: FiCalendar },
+                { name: 'Calendar Sync', path: '/property-owner/calendar', icon: FiCalendar },
                 { name: 'Earnings', path: '/property-owner/earnings', icon: FiDollarSign },
                 { name: 'Analytics', path: '/property-owner/analytics', icon: FiActivity },
                 { name: 'Profile', path: '/property-owner/profile', icon: FiUser },

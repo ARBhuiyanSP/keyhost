@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { FiMenu, FiX, FiUser, FiLogOut, FiSettings, FiHeart, FiBookOpen, FiDollarSign, FiChevronDown, FiGrid, FiAward, FiHome, FiSearch, FiMinus, FiPlus, FiMapPin, FiMessageSquare, FiGlobe } from 'react-icons/fi';
+import { FiMenu, FiX, FiUser, FiLogOut, FiSettings, FiHeart, FiBookOpen, FiDollarSign, FiChevronDown, FiGrid, FiAward, FiHome, FiSearch, FiMinus, FiPlus, FiMapPin, FiMessageSquare, FiGlobe, FiCalendar } from 'react-icons/fi';
 import { useQuery } from 'react-query';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -581,6 +581,7 @@ const Navbar = () => {
         { name: 'Owner Dashboard', path: '/property-owner', icon: FiSettings },
         { name: 'My Properties', path: '/property-owner/properties', icon: FiBookOpen },
         { name: 'Bookings', path: '/property-owner/bookings', icon: FiBookOpen },
+        { name: 'Calendar Sync', path: '/property-owner/calendar', icon: FiCalendar },
         { name: 'Analytics', path: '/property-owner/analytics', icon: FiSettings },
         { name: 'Earnings', path: '/property-owner/earnings', icon: FiDollarSign },
         { name: 'Messages', path: '/messages', icon: FiMessageSquare },

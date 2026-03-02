@@ -348,6 +348,7 @@ const Home = () => {
         { name: 'Owner Dashboard', path: '/property-owner', icon: FiSettings },
         { name: 'My Properties', path: '/property-owner/properties', icon: FiBookOpen },
         { name: 'Bookings', path: '/property-owner/bookings', icon: FiBookOpen },
+        { name: 'Calendar Sync', path: '/property-owner/calendar', icon: FiCalendar },
         { name: 'Analytics', path: '/property-owner/analytics', icon: FiSettings },
         { name: 'Earnings', path: '/property-owner/earnings', icon: FiDollarSign },
         { name: 'Profile', path: '/property-owner/profile', icon: FiUser },

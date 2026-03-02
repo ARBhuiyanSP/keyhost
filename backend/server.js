@@ -24,6 +24,7 @@ const propertyOwnerRoutes = require('./routes/property-owner/property-owner');
 const guestRoutes = require('./routes/guest/guest');
 const settingsRoutes = require('./routes/settings');
 const rewardsPointsRoutes = require('./routes/rewards-points');
+const icalRoutes = require('./routes/ical');
 
 // Import middleware
 const { verifyToken } = require('./middleware/auth');
@@ -111,7 +112,8 @@ const apiRoutes = [
   { path: '/guest', route: guestRoutes },
   { path: '/settings', route: settingsRoutes },
   { path: '/rewards-points', route: rewardsPointsRoutes },
-  { path: '/sslcommerz', route: sslCommerzRoutes }
+  { path: '/sslcommerz', route: sslCommerzRoutes },
+  { path: '/ical', route: icalRoutes }
 ];
 
 // Mount routes
@@ -137,6 +139,8 @@ app.use('*', (req, res) => {
 
 // Import scheduled tasks
 const { cancelExpiredBookings } = require('./utils/bookingCleanup');
+const cron = require('node-cron');
+const { syncAllExternalCalendars } = require('./utils/icalSync');
 
 // Start scheduled tasks
 // Run booking cleanup every minute to check for expired bookings
@@ -148,7 +152,13 @@ setInterval(async () => {
   }
 }, 60 * 1000); // Run every 60 seconds (1 minute)
 
-console.log('Scheduled tasks started: Booking cleanup runs every minute.');
+// Run iCal sync every 15 minutes
+cron.schedule('*/15 * * * *', () => {
+  console.log('Running scheduled iCal sync...');
+  syncAllExternalCalendars();
+});
+
+console.log('Scheduled tasks started: Booking cleanup runs every minute. iCal sync every 15m.');
 
 // Global error handler
 app.use((err, req, res, next) => {
