@@ -72,7 +72,7 @@ const AdminSettings = () => {
         'registration_enabled', 'facebook_url', 'twitter_url', 'instagram_url',
         'linkedin_url', 'youtube_url', 'tiktok_url', 'google_analytics_id',
         'seo_meta_title', 'seo_meta_description', 'seo_keywords', 'seo_og_image',
-        'google_client_id'
+        'google_client_id', 'google_maps_api_key'
       ];
 
       Object.keys(updatedSettings).forEach(key => {
@@ -1330,6 +1330,22 @@ const AdminSettings = () => {
                           />
                           <p className="mt-1.5 text-xs text-gray-500 font-medium">
                             Enables "Login with Google" if provided.
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                            Google Maps API Key
+                          </label>
+                          <input
+                            type="text"
+                            value={settings.google_maps_api_key || ''}
+                            onChange={(e) => handleInputChange('google_maps_api_key', e.target.value)}
+                            className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                            placeholder="AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXX"
+                          />
+                          <p className="mt-1.5 text-xs text-gray-500 font-medium">
+                            Required to render maps instead of OpenStreetMap. Make sure to enable Maps JavaScript API and Geocoding API.
                           </p>
                         </div>
 

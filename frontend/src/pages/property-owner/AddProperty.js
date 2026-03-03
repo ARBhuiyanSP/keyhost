@@ -14,6 +14,11 @@ import ImageUpload from '../../components/common/ImageUpload';
 import LocationPicker from '../../components/common/LocationPicker';
 import { sanitizeText } from '../../utils/textUtils';
 import { getStatesForCountry, getCitiesForState } from '../../utils/locationUtils';
+import useSettingsStore from '../../store/settingsStore';
+import usePlacesAutocomplete, { getGeocode, getLatLng } from 'use-places-autocomplete';
+import { useJsApiLoader } from '@react-google-maps/api';
+
+const libraries = ['places'];
 
 const AddProperty = () => {
   const navigate = useNavigate();
@@ -48,6 +53,111 @@ const AddProperty = () => {
   const [selectedCountry, setSelectedCountry] = useState(null);
   const [selectedState, setSelectedState] = useState(null);
   const [selectedCity, setSelectedCity] = useState(null);
+
+  const { settings } = useSettingsStore();
+
+  const { isLoaded } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: settings?.google_maps_api_key || '',
+    libraries: libraries,
+  });
+
+  const {
+    ready,
+    value: addressValue,
+    suggestions: { status, data: addressData },
+    setValue: setAddressValue,
+    clearSuggestions,
+    init,
+  } = usePlacesAutocomplete({
+    requestOptions: {
+      /* Define search scope here if needed */
+    },
+    debounce: 300,
+    initOnMount: false,
+  });
+
+  React.useEffect(() => {
+    if (isLoaded) {
+      init();
+    }
+  }, [isLoaded, init]);
+
+  // Handle address selection from Autocomplete
+  const handleAddressSelect = async (address) => {
+    setAddressValue(address, false);
+    clearSuggestions();
+
+    setFormData(prev => ({ ...prev, address }));
+
+    try {
+      const results = await getGeocode({ address });
+      const { lat, lng } = await getLatLng(results[0]);
+
+      let foundCountry = 'Bangladesh';
+      let foundState = '';
+      let foundCity = '';
+      let foundPostalCode = '';
+
+      // Parse Google Maps address components to find Country, State, City, Postal Code
+      const addressComponents = results[0].address_components;
+      addressComponents.forEach(component => {
+        const types = component.types;
+        if (types.includes('country')) {
+          foundCountry = component.long_name;
+        }
+        if (types.includes('administrative_area_level_1')) {
+          foundState = component.long_name;
+        }
+        if (types.includes('locality') || types.includes('administrative_area_level_2')) {
+          foundCity = component.long_name;
+        }
+        if (types.includes('postal_code')) {
+          foundPostalCode = component.long_name;
+        }
+      });
+
+      // Set form data directly mapped from Geocode
+      setFormData(prev => ({
+        ...prev,
+        latitude: lat,
+        longitude: lng,
+        country: foundCountry,
+        state: foundState,
+        city: foundCity,
+        postal_code: foundPostalCode,
+      }));
+
+      // Try dynamically setting React Select dropdowns based on matched geocoding data
+      const countryMatch = Country.getAllCountries().find(c => c.name === foundCountry || c.isoCode === foundCountry);
+      if (countryMatch) {
+        setSelectedCountry({ value: countryMatch.isoCode, label: countryMatch.name });
+
+        const statesList = getStatesForCountry(countryMatch.isoCode);
+        // Relaxed match for state as google often returns different administrative string than country-state-city lib
+        const stateMatch = statesList.find(s => s.label.includes(foundState) || foundState.includes(s.label));
+
+        if (stateMatch) {
+          setSelectedState(stateMatch);
+
+          const citiesList = getCitiesForState(countryMatch.isoCode, stateMatch.value);
+          const cityMatch = citiesList.find(c => c.label.includes(foundCity) || foundCity.includes(c.label));
+
+          if (cityMatch) {
+            setSelectedCity(cityMatch);
+          } else if (foundCity) {
+            setSelectedCity({ value: foundCity, label: foundCity });
+          }
+        } else if (foundState) {
+          setSelectedState({ value: foundState, label: foundState });
+        }
+      }
+
+    } catch (error) {
+      console.error("Error fetching geocode from address: ", error);
+      showError("Failed to pinpoint address location on map.");
+    }
+  };
 
   useEffect(() => {
     const defaultCountry = Country.getCountryByCode('BD');
@@ -290,10 +400,10 @@ const AddProperty = () => {
                 <div key={step.id} className="flex flex-col items-center relative z-10 w-full">
                   <div
                     className={`w-10 h-10 rounded-full flex items-center justify-center font-medium transition-all duration-300 ${currentStep === step.id
-                        ? 'bg-primary-600 text-white shadow-lg scale-110'
-                        : currentStep > step.id
-                          ? 'bg-green-500 text-white'
-                          : 'bg-white border-2 border-gray-200 text-gray-400'
+                      ? 'bg-primary-600 text-white shadow-lg scale-110'
+                      : currentStep > step.id
+                        ? 'bg-green-500 text-white'
+                        : 'bg-white border-2 border-gray-200 text-gray-400'
                       }`}
                   >
                     {currentStep > step.id ? <FiCheck className="w-5 h-5" /> : step.id}
@@ -418,19 +528,36 @@ const AddProperty = () => {
                 </h2>
 
                 <div className="space-y-6">
-                  <div>
+                  <div className="relative">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Address *
                     </label>
                     <input
                       type="text"
                       name="address"
-                      value={formData.address}
-                      onChange={handleInputChange}
+                      value={addressValue || formData.address}
+                      onChange={(e) => {
+                        setAddressValue(e.target.value);
+                        handleInputChange(e); // Sync manual typing
+                      }}
                       className="input-field"
-                      placeholder="Full address"
+                      placeholder="Start typing to search address..."
                       required
+                      autoComplete="off"
                     />
+                    {status === 'OK' && (
+                      <ul className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {addressData.map(({ place_id, description }) => (
+                          <li
+                            key={place_id}
+                            onClick={() => handleAddressSelect(description)}
+                            className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm text-gray-700 border-b border-gray-100 last:border-0"
+                          >
+                            {description}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
