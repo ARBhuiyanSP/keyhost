@@ -114,7 +114,8 @@ router.post('/ssl-success', async (req, res) => {
     }
 
     // Here we would normally redirect to the frontend checkout success page
-    const redirectUrl = `http://localhost:3000/guest/bookings`;
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const redirectUrl = `${frontendUrl}/guest/bookings`;
     return res.redirect(redirectUrl);
 });
 
@@ -123,7 +124,8 @@ router.post('/ssl-fail', async (req, res) => {
     if (tran_id) {
         await pool.execute(`UPDATE orders SET status = 'Failed' WHERE tran_id = ?`, [tran_id]);
     }
-    return res.redirect(`http://localhost:3000/guest/bookings?payment=fail&tran_id=${tran_id}`);
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    return res.redirect(`${frontendUrl}/guest/bookings?payment=fail&tran_id=${tran_id}`);
 });
 
 router.post('/ssl-cancel', async (req, res) => {
@@ -131,7 +133,8 @@ router.post('/ssl-cancel', async (req, res) => {
     if (tran_id) {
         await pool.execute(`UPDATE orders SET status = 'Cancelled' WHERE tran_id = ?`, [tran_id]);
     }
-    return res.redirect(`http://localhost:3000/guest/bookings?payment=cancel&tran_id=${tran_id}`);
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    return res.redirect(`${frontendUrl}/guest/bookings?payment=cancel&tran_id=${tran_id}`);
 });
 
 router.post('/ssl-ipn', async (req, res) => {
