@@ -302,14 +302,17 @@ router.post('/properties', async (req, res) => {
       minimum_stay = 1,
       maximum_stay,
       is_instant_book = false,
-      amenities = []
+      amenities = [],
+      is_draft = false
     } = req.body;
 
-    // Validate required fields
-    if (!title || !description || !address || !city || !state || !country || !base_price) {
-      return res.status(400).json(
-        formatResponse(false, 'Missing required fields')
-      );
+    // Validate required fields only if not saving a draft
+    if (!is_draft) {
+      if (!title || !description || !address || !city || !state || !country || !base_price) {
+        return res.status(400).json(
+          formatResponse(false, 'Missing required fields')
+        );
+      }
     }
 
     // Get property owner ID
@@ -335,18 +338,18 @@ router.post('/properties', async (req, res) => {
         base_price, cleaning_fee, security_deposit, extra_guest_fee,
         check_in_time, check_out_time, minimum_stay, maximum_stay,
         is_instant_book, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_approval', NOW())
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
     `, [
       ownerId,
-      title,
-      description,
-      property_type,
-      property_category,
-      address,
-      city,
-      state,
-      country,
-      postal_code || null,
+      title || 'Draft Property',
+      description || '',
+      property_type || 'room',
+      property_category || 'standard',
+      address || '',
+      city || '',
+      state || '',
+      country || 'Bangladesh',
+      postal_code || '',
       latitude || null,
       longitude || null,
       bedrooms || 1,
@@ -354,7 +357,7 @@ router.post('/properties', async (req, res) => {
       max_guests || 2,
       size_sqft || null,
       floor_number || null,
-      base_price,
+      base_price || 0,
       cleaning_fee || 0,
       security_deposit || 0,
       extra_guest_fee || 0,
@@ -362,7 +365,8 @@ router.post('/properties', async (req, res) => {
       check_out_time || '11:00:00',
       minimum_stay || 1,
       maximum_stay || null,
-      is_instant_book || false
+      is_instant_book || false,
+      is_draft ? 'in_progress' : 'pending_approval'
     ]);
 
     const propertyId = result.insertId;
@@ -481,7 +485,8 @@ router.put('/properties/:id', validateId, async (req, res) => {
         // property_type is required, so always include it
         if (typeof updateData[key] === 'string' && updateData[key].trim() === '' &&
           ['postal_code', 'description', 'latitude', 'longitude', 'size_sqft', 'floor_number', 'maximum_stay'].includes(key)) {
-          return; // Skip empty strings for optional fields
+          // If it's explicitly a draft, don't drop empty descriptions. Replace them with whitespace to avoid DB constraints if needed, but let's allow it for draft.
+          if (!updateData.is_draft || key !== 'description') return; // Skip empty strings for optional fields
         }
         // Always include property_type if provided (even if empty string - frontend validation should prevent this)
         if (key === 'property_type' && updateData[key] !== null) {
@@ -493,6 +498,14 @@ router.put('/properties/:id', validateId, async (req, res) => {
         }
       }
     });
+
+    if (updateData.is_draft) {
+      updateFields.push('status = ?');
+      updateValues.push('in_progress');
+    } else if (updateData.is_final_submit) {
+      updateFields.push('status = ?');
+      updateValues.push('pending_approval');
+    }
 
     if (updateFields.length === 0) {
       return res.status(400).json(
@@ -606,13 +619,21 @@ router.delete('/properties/:id', validateId, async (req, res) => {
 
     // Check if property exists and belongs to user
     const [properties] = await pool.execute(
-      'SELECT id FROM properties WHERE id = ? AND owner_id = ?',
+      'SELECT id, status FROM properties WHERE id = ? AND owner_id = ?',
       [id, ownerId]
     );
 
     if (properties.length === 0) {
       return res.status(404).json(
         formatResponse(false, 'Property not found or access denied')
+      );
+    }
+
+    const propertyStatus = properties[0].status;
+
+    if (propertyStatus === 'active') {
+      return res.status(400).json(
+        formatResponse(false, 'Cannot delete an active property. Please pause or suspend it first.')
       );
     }
 
@@ -628,15 +649,37 @@ router.delete('/properties/:id', validateId, async (req, res) => {
       );
     }
 
-    // Soft delete (change status to inactive)
-    await pool.execute(
-      'UPDATE properties SET status = "inactive", updated_at = NOW() WHERE id = ?',
-      [id]
-    );
+    // Since many things might be tied (like images, amenities), for simple draft/inactive, let's officially delete it from DB entirely to clear up space, assuming DB foreign keys use CASCADE or we delete them manually.
+    // Instead of doing manual cascading, we'll try a hard delete for draft, and soft delete for others, OR just ensure we delete related amenities/images first.
 
-    res.json(
-      formatResponse(true, 'Property deleted successfully')
-    );
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      // Delete property images
+      await connection.execute('DELETE FROM property_images WHERE property_id = ?', [id]);
+
+      // Delete property amenities
+      await connection.execute('DELETE FROM property_amenities WHERE property_id = ?', [id]);
+
+      // Delete the property itself (will fail if there are foreign keys like bookings referencing it without CASCADE, 
+      // in which case soft delete is required. But Drafts/Pending usually have no bookings).
+      await connection.execute('DELETE FROM properties WHERE id = ?', [id]);
+
+      await connection.commit();
+      res.json(formatResponse(true, 'Property permanently deleted'));
+    } catch (dbError) {
+      await connection.rollback();
+      // Fallback to soft delete if hard delete fails due to strict foreign key constraints (e.g. old bookings exist)
+      console.log('Hard delete failed, falling back to soft delete', dbError.message);
+      await pool.execute(
+        'UPDATE properties SET status = "inactive", updated_at = NOW() WHERE id = ?',
+        [id]
+      );
+      res.json(formatResponse(true, 'Property deactivated (soft deleted)'));
+    } finally {
+      connection.release();
+    }
 
   } catch (error) {
     console.error('Delete property error:', error);

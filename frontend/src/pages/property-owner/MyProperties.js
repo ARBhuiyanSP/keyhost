@@ -59,6 +59,8 @@ const MyProperties = () => {
         return 'bg-gray-100 text-gray-800';
       case 'suspended':
         return 'bg-red-100 text-red-800';
+      case 'in_progress':
+        return 'bg-blue-100 text-blue-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
@@ -114,6 +116,7 @@ const MyProperties = () => {
                 <option value="">All Properties</option>
                 <option value="active">Active</option>
                 <option value="pending_approval">Pending Approval</option>
+                <option value="in_progress">In Progress (Draft)</option>
                 <option value="inactive">Inactive</option>
                 <option value="suspended">Suspended</option>
               </select>
@@ -200,15 +203,27 @@ const MyProperties = () => {
                       onClick={() => navigate(`/property-owner/properties/${property.id}/edit`)}
                       className="flex-1 btn-primary flex items-center justify-center"
                     >
-                      <FiEdit className="mr-1" />
-                      Edit
+                      {property.status === 'in_progress' ? (
+                        <>
+                          <FiEdit className="mr-1" />
+                          Resume Draft
+                        </>
+                      ) : (
+                        <>
+                          <FiEdit className="mr-1" />
+                          Edit
+                        </>
+                      )}
                     </button>
-                    <button
-                      onClick={() => handleDeleteProperty(property.id)}
-                      className="px-3 py-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
-                    >
-                      <FiTrash2 />
-                    </button>
+                    {property.status !== 'active' && (
+                      <button
+                        onClick={() => handleDeleteProperty(property.id)}
+                        className="px-3 py-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Delete Property"
+                      >
+                        <FiTrash2 />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

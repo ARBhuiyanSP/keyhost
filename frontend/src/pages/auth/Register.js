@@ -179,8 +179,9 @@ const Register = () => {
     <div className="min-h-screen flex bg-white">
       {/* Left Decoration Section */}
       <div className="hidden lg:flex lg:w-1/2 relative bg-gray-900 justify-center items-center overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-[#E73367] to-[#be123c] opacity-90"></div>
-        <div className="absolute inset-0" style={{ backgroundImage: "url('https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?auto=format&fit=crop&w=1000&q=80')", backgroundSize: 'cover', backgroundPosition: 'center', mixBlendMode: 'overlay' }}></div>
+        <div className="absolute inset-0" style={{ backgroundImage: "url('https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?auto=format&fit=crop&w=1000&q=80')", backgroundSize: 'cover', backgroundPosition: 'center' }}></div>
+        {/* Soft dark overlay for text readability */}
+        <div className="absolute inset-0 bg-black/40"></div>
 
         <div className="relative z-10 p-12 text-white max-w-lg">
           <div className="mb-8">

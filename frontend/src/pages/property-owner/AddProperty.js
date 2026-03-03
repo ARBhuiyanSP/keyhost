@@ -24,6 +24,7 @@ const AddProperty = () => {
   const navigate = useNavigate();
   const { showSuccess, showError } = useToast();
   const [currentStep, setCurrentStep] = useState(1);
+  const [draftPropertyId, setDraftPropertyId] = useState(null);
   const [images, setImages] = useState([]);
   const [selectedAmenities, setSelectedAmenities] = useState([]);
   const [formData, setFormData] = useState({
@@ -165,7 +166,74 @@ const AddProperty = () => {
       setSelectedCountry({ value: defaultCountry.isoCode, label: defaultCountry.name });
       setFormData(prev => ({ ...prev, country: defaultCountry.name }));
     }
-  }, []);
+  }, [setAddressValue]);
+
+  // DB Save Mutation
+  const saveDraftMutation = useMutation(
+    (draftPayload) => {
+      if (draftPropertyId) {
+        return api.put(`/property-owner/properties/${draftPropertyId}`, draftPayload, { silent: true });
+      } else {
+        return api.post('/property-owner/properties', draftPayload, { silent: true });
+      }
+    },
+    {
+      onSuccess: (response) => {
+        if (!draftPropertyId && response.data?.data?.property?.id) {
+          setDraftPropertyId(response.data.data.property.id);
+        }
+      },
+      onError: (error) => {
+        console.warn('Silent auto-save failed', error);
+        if (error.response?.status === 404) {
+          // Property no longer exists in DB, likely deleted.
+          setDraftPropertyId(null);
+        }
+      }
+    }
+  );
+
+  // Auto-save draft on any core data change
+  useEffect(() => {
+    const timer = setTimeout(() => {
+
+      // Sync to Database if we have basic required Title
+      if (formData.title.length > 2) {
+        const draftPayload = {
+          title: formData.title,
+          description: formData.description,
+          property_type: (formData.property_type || 'room').toLowerCase(),
+          property_category: formData.property_category || 'standard',
+          address: formData.address,
+          city: formData.city,
+          state: formData.state,
+          country: formData.country || 'Bangladesh',
+          postal_code: formData.postal_code || '',
+          latitude: formData.latitude,
+          longitude: formData.longitude,
+          bedrooms: parseInt(formData.bedrooms) || 1,
+          bathrooms: parseInt(formData.bathrooms) || 1,
+          max_guests: parseInt(formData.max_guests) || 2,
+          size_sqft: formData.size_sqft ? parseInt(formData.size_sqft) : null,
+          floor_number: null,
+          base_price: parseFloat(formData.base_price) || 0,
+          cleaning_fee: parseFloat(formData.cleaning_fee) || 0,
+          security_deposit: parseFloat(formData.security_deposit) || 0,
+          extra_guest_fee: parseFloat(formData.extra_guest_fee) || 0,
+          check_in_time: formData.check_in_time || '15:00:00',
+          check_out_time: formData.check_out_time || '11:00:00',
+          minimum_stay: parseInt(formData.minimum_stay) || 1,
+          maximum_stay: formData.maximum_stay ? parseInt(formData.maximum_stay) : null,
+          is_instant_book: false,
+          amenities: selectedAmenities,
+          images: images.map(img => img.preview), // Array of base64 strings
+          is_draft: true
+        };
+        saveDraftMutation.mutate(draftPayload);
+      }
+    }, 1500); // 1.5-second debounce for auto-save
+    return () => clearTimeout(timer);
+  }, [formData, currentStep, selectedAmenities, addressValue, images, draftPropertyId]);
 
   // Fetch amenities
   const { data: amenitiesData } = useQuery(
@@ -186,7 +254,13 @@ const AddProperty = () => {
   );
 
   const addPropertyMutation = useMutation(
-    (propertyData) => api.post('/property-owner/properties', propertyData),
+    (propertyData) => {
+      if (draftPropertyId) {
+        return api.put(`/property-owner/properties/${draftPropertyId}`, propertyData);
+      } else {
+        return api.post('/property-owner/properties', propertyData);
+      }
+    },
     {
       onSuccess: (response) => {
         showSuccess('Property added successfully! Pending admin approval.');
@@ -329,7 +403,8 @@ const AddProperty = () => {
       maximum_stay: formData.maximum_stay ? parseInt(formData.maximum_stay) : null,
       is_instant_book: false,
       amenities: selectedAmenities,
-      images: images.map(img => img.preview) // Array of base64 strings
+      images: images.map(img => img.preview), // Array of base64 strings
+      is_final_submit: true
     };
 
     console.log('Submitting property with', images.length, 'images');
@@ -346,9 +421,9 @@ const AddProperty = () => {
     { id: 1, name: 'Basic Info' },
     { id: 2, name: 'Location' },
     { id: 3, name: 'Details' },
-    { id: 4, name: 'Amenities' },
-    { id: 5, name: 'Images' },
-    { id: 6, name: 'Pricing' }
+    { id: 4, name: 'Pricing' },
+    { id: 5, name: 'Amenities' },
+    { id: 6, name: 'Images' }
   ];
 
   const handleNext = () => {
@@ -1026,7 +1101,7 @@ const AddProperty = () => {
                 onClick={handleNext}
                 className="btn-primary flex items-center px-6 py-2.5"
               >
-                Next
+                Save & Next
                 <FiChevronRight className="ml-2" />
               </button>
             ) : (

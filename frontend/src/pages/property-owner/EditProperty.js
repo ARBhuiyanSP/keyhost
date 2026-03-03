@@ -26,6 +26,7 @@ const EditProperty = () => {
   const navigate = useNavigate();
   const { showSuccess, showError } = useToast();
   const [currentStep, setCurrentStep] = useState(1);
+  const [propertyStatus, setPropertyStatus] = useState(null);
   const [images, setImages] = useState([]);
   const [selectedAmenities, setSelectedAmenities] = useState([]);
   const [formData, setFormData] = useState({
@@ -175,6 +176,50 @@ const EditProperty = () => {
     }
   );
 
+  // Auto-save draft on any core data change for in_progress properties
+  React.useEffect(() => {
+    if (propertyStatus !== 'in_progress') return;
+
+    const timer = setTimeout(() => {
+      // Sync to Database
+      if (formData.title && formData.title.length > 2) {
+        const draftPayload = {
+          title: formData.title,
+          description: formData.description,
+          property_type: (formData.property_type || 'room').toLowerCase(),
+          property_category: formData.property_category || 'standard',
+          address: formData.address,
+          city: formData.city,
+          state: formData.state,
+          country: formData.country || 'Bangladesh',
+          postal_code: formData.postal_code || '',
+          latitude: formData.latitude,
+          longitude: formData.longitude,
+          bedrooms: parseInt(formData.bedrooms) || 1,
+          bathrooms: parseInt(formData.bathrooms) || 1,
+          max_guests: parseInt(formData.max_guests) || 2,
+          size_sqft: formData.size_sqft ? parseInt(formData.size_sqft) : null,
+          base_price: parseFloat(formData.base_price) || 0,
+          cleaning_fee: parseFloat(formData.cleaning_fee) || 0,
+          security_deposit: parseFloat(formData.security_deposit) || 0,
+          extra_guest_fee: parseFloat(formData.extra_guest_fee) || 0,
+          check_in_time: formData.check_in_time || '15:00:00',
+          check_out_time: formData.check_out_time || '11:00:00',
+          minimum_stay: parseInt(formData.minimum_stay) || 1,
+          maximum_stay: formData.maximum_stay ? parseInt(formData.maximum_stay) : null,
+          amenities: selectedAmenities,
+          images: images.map(img => img.preview), // Array of base64 strings
+          is_draft: true
+        };
+        api.put(`/property-owner/properties/${id}`, draftPayload, { silent: true })
+          .catch((error) => {
+            console.warn('Silent auto-save failed in EditProperty', error);
+          });
+      }
+    }, 1500); // 1.5-second debounce for auto-save
+    return () => clearTimeout(timer);
+  }, [formData, currentStep, selectedAmenities, addressValue, images, propertyStatus, id]);
+
   // Fetch amenities
   const { data: amenitiesData } = useQuery(
     'amenities',
@@ -194,96 +239,103 @@ const EditProperty = () => {
   );
 
   // Fetch property details
-  const { isLoading } = useQuery(
+  const { data: propertyResponse, isLoading, isError, error } = useQuery(
     ['property', id],
     () => api.get(`/property-owner/properties/${id}`),
     {
       enabled: !!id,
-      onSuccess: (response) => {
-        console.log('Property loaded:', response.data);
-        const property = response.data?.data || {};
-        setFormData({
-          title: property.title || '',
-          description: property.description || '',
-          property_type: property.property_type || 'room',
-          property_category: property.property_category || 'standard',
-          address: property.address || '',
-          city: property.city || '',
-          state: property.state || '',
-          country: property.country || 'Bangladesh',
-          postal_code: property.postal_code || '',
-          latitude: property.latitude || null,
-          longitude: property.longitude || null,
-          bedrooms: property.bedrooms || 1,
-          bathrooms: property.bathrooms || 1,
-          max_guests: property.max_guests || 2,
-          size_sqft: property.size_sqft || '',
-          base_price: property.base_price || '',
-          cleaning_fee: property.cleaning_fee || 0,
-          security_deposit: property.security_deposit || 0,
-          extra_guest_fee: property.extra_guest_fee || 0,
-          minimum_stay: property.minimum_stay || 1,
-          maximum_stay: property.maximum_stay || '',
-          check_in_time: property.check_in_time || '15:00',
-          check_out_time: property.check_out_time || '11:00'
-        });
+    }
+  );
 
-        // Setup dropdown state from fetched property
-        if (property.country) {
-          const countryMatch = Country.getAllCountries().find(c => c.name === property.country);
-          if (countryMatch) {
-            setSelectedCountry({ value: countryMatch.isoCode, label: countryMatch.name });
+  React.useEffect(() => {
+    if (isError) {
+      console.error('Error loading property:', error);
+      showError(error.response?.data?.message || 'Failed to load property details');
+      navigate('/property-owner/properties');
+    }
+  }, [isError, error, navigate, showError]);
 
-            if (property.state) {
-              const statesList = getStatesForCountry(countryMatch.isoCode);
-              const stateMatch = statesList.find(s => s.label === property.state);
-              if (stateMatch) {
-                setSelectedState(stateMatch);
+  React.useEffect(() => {
+    if (propertyResponse?.data?.data) {
+      const property = propertyResponse.data.data;
+      console.log('Property loaded:', property);
+      setPropertyStatus(property.status);
 
-                if (property.city) {
-                  setSelectedCity({ value: property.city, label: property.city });
-                }
-              } else {
-                setSelectedState({ value: property.state, label: property.state });
-                if (property.city) {
-                  setSelectedCity({ value: property.city, label: property.city });
-                }
+      setFormData(prev => ({
+        ...prev,
+        title: property.title || '',
+        description: property.description || '',
+        property_type: property.property_type || 'room',
+        property_category: property.property_category || 'standard',
+        address: property.address || '',
+        city: property.city || '',
+        state: property.state || '',
+        country: property.country || 'Bangladesh',
+        postal_code: property.postal_code || '',
+        latitude: property.latitude || null,
+        longitude: property.longitude || null,
+        bedrooms: property.bedrooms || 1,
+        bathrooms: property.bathrooms || 1,
+        max_guests: property.max_guests || 2,
+        size_sqft: property.size_sqft || '',
+        base_price: property.base_price || '',
+        cleaning_fee: property.cleaning_fee || 0,
+        security_deposit: property.security_deposit || 0,
+        extra_guest_fee: property.extra_guest_fee || 0,
+        minimum_stay: property.minimum_stay || 1,
+        maximum_stay: property.maximum_stay || '',
+        check_in_time: property.check_in_time || '15:00',
+        check_out_time: property.check_out_time || '11:00'
+      }));
+
+      // Setup dropdown state from fetched property
+      if (property.country) {
+        const countryMatch = Country.getAllCountries().find(c => c.name === property.country);
+        if (countryMatch) {
+          setSelectedCountry({ value: countryMatch.isoCode, label: countryMatch.name });
+
+          if (property.state) {
+            const statesList = getStatesForCountry(countryMatch.isoCode);
+            const stateMatch = statesList.find(s => s.label === property.state);
+            if (stateMatch) {
+              setSelectedState(stateMatch);
+
+              if (property.city) {
+                setSelectedCity({ value: property.city, label: property.city });
+              }
+            } else {
+              setSelectedState({ value: property.state, label: property.state });
+              if (property.city) {
+                setSelectedCity({ value: property.city, label: property.city });
               }
             }
           }
         }
+      }
 
-        // Populate the address input text seamlessly
-        if (property.address) {
-          setAddressValue(property.address, false);
-        }
+      // Populate the address input text seamlessly
+      if (property.address) {
+        setAddressValue(property.address, false);
+      }
 
-        // Load existing images if any
-        if (property.images && property.images.length > 0) {
-          const existingImages = property.images.map((img, index) => ({
-            id: img.id || `existing-${index}`,
-            preview: img.image_url,
-            name: img.alt_text || `Image ${index + 1}`,
-            size: 0,
-            existing: true // Mark as existing
-          }));
-          setImages(existingImages);
-          console.log('Loaded existing images:', existingImages.length);
-        }
+      // Load existing images if any
+      if (property.images && property.images.length > 0) {
+        const existingImages = property.images.map((img, index) => ({
+          id: img.id || `existing-${index}`,
+          preview: img.image_url,
+          name: img.alt_text || `Image ${index + 1}`,
+          size: 0,
+          existing: true // Mark as existing
+        }));
+        setImages(existingImages);
+      }
 
-        // Load existing amenities if any
-        if (property.amenities && property.amenities.length > 0) {
-          setSelectedAmenities(property.amenities.map(amenity => amenity.id));
-          console.log('Loaded existing amenities:', property.amenities.length);
-        }
-      },
-      onError: (error) => {
-        console.error('Error loading property:', error);
-        showError(error.response?.data?.message || 'Failed to load property details');
-        navigate('/property-owner/properties');
+      // Load existing amenities if any
+      if (property.amenities && property.amenities.length > 0) {
+        setSelectedAmenities(property.amenities.map(amenity => amenity.id));
       }
     }
-  );
+  }, [propertyResponse, setAddressValue]);
 
   // Get icon for amenity based on its name
   const getAmenityIcon = (amenityName, category) => {
@@ -414,7 +466,8 @@ const EditProperty = () => {
       minimum_stay: parseInt(formData.minimum_stay) || 1,
       maximum_stay: formData.maximum_stay ? parseInt(formData.maximum_stay) : null,
       amenities: selectedAmenities,
-      images: images.map(img => img.preview) // Base64 strings
+      images: images.map(img => img.preview), // Base64 strings
+      is_final_submit: propertyStatus === 'in_progress' ? true : undefined
     };
 
     console.log('Update Data', propertyData);
@@ -432,9 +485,9 @@ const EditProperty = () => {
     { id: 1, name: 'Basic Info' },
     { id: 2, name: 'Location' },
     { id: 3, name: 'Details' },
-    { id: 4, name: 'Amenities' },
-    { id: 5, name: 'Images' },
-    { id: 6, name: 'Pricing' }
+    { id: 4, name: 'Pricing' },
+    { id: 5, name: 'Amenities' },
+    { id: 6, name: 'Images' }
   ];
 
   const handleNext = () => {
@@ -1067,7 +1120,7 @@ const EditProperty = () => {
                 onClick={handleNext}
                 className="btn-primary flex items-center px-6 py-2.5"
               >
-                Next
+                {propertyStatus === 'in_progress' ? 'Save & Next' : 'Next'}
                 <FiChevronRight className="ml-2" />
               </button>
             ) : (
@@ -1085,7 +1138,7 @@ const EditProperty = () => {
                   className="btn-primary flex items-center px-6 py-2.5 shadow-lg shadow-primary-500/30"
                 >
                   <FiSave className="mr-2" />
-                  {updatePropertyMutation.isLoading ? 'Saving...' : 'Update Property'}
+                  {updatePropertyMutation.isLoading ? 'Saving...' : propertyStatus === 'in_progress' ? 'Submit Property' : 'Update Property'}
                 </button>
               </div>
             )}

@@ -877,7 +877,7 @@ const Home = () => {
 
       // Fetch each property by ID
       const promises = recentlyViewedIds.map(id =>
-        api.get(`/properties/${id}`).catch(() => null)
+        api.get(`/properties/${id}`, { silent: true }).catch(() => null)
       );
       const results = await Promise.all(promises);
 

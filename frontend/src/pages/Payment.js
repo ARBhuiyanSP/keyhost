@@ -4,7 +4,6 @@ import useAuthStore from '../store/authStore';
 import api from '../utils/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import useToast from '../hooks/useToast';
-import BkashPayment from '../components/payment/BkashPayment';
 
 const Payment = () => {
   const { bookingId } = useParams();
@@ -15,7 +14,7 @@ const Payment = () => {
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
-  const [showBkashPayment, setShowBkashPayment] = useState(false);
+
   const [pointsData, setPointsData] = useState(null);
   const [usePoints, setUsePoints] = useState(false);
   const [pointsToRedeem, setPointsToRedeem] = useState(0);
@@ -146,12 +145,7 @@ const Payment = () => {
     try {
       setProcessing(true);
 
-      // Handle bKash payment separately
-      if (paymentMethod === 'bKash') {
-        setShowBkashPayment(true);
-        setProcessing(false);
-        return;
-      }
+
 
       // Handle SSLCommerz payment separately
       if (paymentMethod === 'SSLCommerz') {
@@ -221,17 +215,7 @@ const Payment = () => {
     }
   };
 
-  const handleBkashSuccess = async (paymentData) => {
-    showSuccess('bKash payment completed successfully!');
-    setShowBkashPayment(false);
-    // Refetch points data to show updated balance and new points earned
-    await fetchPointsData();
-    navigate('/guest/bookings');
-  };
 
-  const handleBkashCancel = () => {
-    setShowBkashPayment(false);
-  };
 
   if (loading) return <LoadingSpinner />;
   if (!booking) return <div className="text-center p-8">Booking not found</div>;
@@ -344,69 +328,6 @@ const Payment = () => {
               <div>
                 <h2 className="text-lg font-semibold text-gray-900 mb-4">Payment Methods</h2>
                 <div className="space-y-3">
-                  <button
-                    onClick={() => handlePayment('bKash')}
-                    disabled={processing}
-                    className="w-full p-4 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <div className="flex items-center">
-                      <div className="w-8 h-8 bg-pink-500 rounded-full flex items-center justify-center text-white font-bold mr-3">
-                        B
-                      </div>
-                      <div>
-                        <div className="font-medium">bKash</div>
-                        <div className="text-sm text-gray-500">Mobile Banking</div>
-                      </div>
-                    </div>
-                  </button>
-
-                  <button
-                    onClick={() => handlePayment('Nagad')}
-                    disabled={processing}
-                    className="w-full p-4 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <div className="flex items-center">
-                      <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white font-bold mr-3">
-                        N
-                      </div>
-                      <div>
-                        <div className="font-medium">Nagad</div>
-                        <div className="text-sm text-gray-500">Mobile Banking</div>
-                      </div>
-                    </div>
-                  </button>
-
-                  <button
-                    onClick={() => handlePayment('Rocket')}
-                    disabled={processing}
-                    className="w-full p-4 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <div className="flex items-center">
-                      <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold mr-3">
-                        R
-                      </div>
-                      <div>
-                        <div className="font-medium">Rocket</div>
-                        <div className="text-sm text-gray-500">Mobile Banking</div>
-                      </div>
-                    </div>
-                  </button>
-
-                  <button
-                    onClick={() => handlePayment('Bank Transfer')}
-                    disabled={processing}
-                    className="w-full p-4 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <div className="flex items-center">
-                      <div className="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center text-white font-bold mr-3">
-                        B
-                      </div>
-                      <div>
-                        <div className="font-medium">Bank Transfer</div>
-                        <div className="text-sm text-gray-500">Direct Bank Transfer</div>
-                      </div>
-                    </div>
-                  </button>
 
                   <button
                     onClick={() => handlePayment('SSLCommerz')}
@@ -440,20 +361,7 @@ const Payment = () => {
         </div>
       </div>
 
-      {/* bKash Payment Modal */}
-      {showBkashPayment && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-full max-w-md shadow-lg rounded-md bg-white">
-            <BkashPayment
-              bookingId={bookingId}
-              amount={usePoints ? (finalAmount || booking.total_amount) : booking.total_amount}
-              pointsToRedeem={usePoints ? pointsToRedeem : 0}
-              onSuccess={handleBkashSuccess}
-              onCancel={handleBkashCancel}
-            />
-          </div>
-        </div>
-      )}
+
     </div>
   );
 };

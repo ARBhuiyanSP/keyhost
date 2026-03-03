@@ -1043,41 +1043,7 @@ const AdminSettings = () => {
                       <h3 className="text-lg font-medium text-gray-900 mb-4">Payment Gateway Settings</h3>
 
                       <div className="space-y-4">
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={settings.enable_bkash || false}
-                            onChange={(e) => handleInputChange('enable_bkash', e.target.checked)}
-                            className="h-5 w-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 transition-colors cursor-pointer"
-                          />
-                          <label className="ml-3 text-sm font-semibold text-gray-800 cursor-pointer">
-                            Enable bKash Payment
-                          </label>
-                        </div>
 
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={settings.enable_nagad || false}
-                            onChange={(e) => handleInputChange('enable_nagad', e.target.checked)}
-                            className="h-5 w-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 transition-colors cursor-pointer"
-                          />
-                          <label className="ml-3 text-sm font-semibold text-gray-800 cursor-pointer">
-                            Enable Nagad Payment
-                          </label>
-                        </div>
-
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={settings.enable_stripe || false}
-                            onChange={(e) => handleInputChange('enable_stripe', e.target.checked)}
-                            className="h-5 w-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 transition-colors cursor-pointer"
-                          />
-                          <label className="ml-3 text-sm font-semibold text-gray-800 cursor-pointer">
-                            Enable Stripe Payment
-                          </label>
-                        </div>
 
                         <div className="flex items-center">
                           <input
