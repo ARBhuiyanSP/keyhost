@@ -10,9 +10,23 @@ function Help() {
                     <FiHelpCircle className="w-12 h-12 text-[#E73367]" />
                     <h1 className="text-4xl font-extrabold text-gray-900">Help Center</h1>
                 </div>
-                <p className="text-lg text-gray-600 mb-10">
+                <p className="text-lg text-gray-600 mb-6">
                     Find answers and guidance for both guests and property owners. If you need further assistance, feel free to contact our support team.
                 </p>
+
+                <div className="mb-10">
+                    <a
+                        href="/project_documentation.html"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center bg-[#E73367] text-white px-6 py-3 rounded-lg hover:bg-[#d42c5c] transition-colors font-medium shadow-sm hover:shadow"
+                    >
+                        View Full Manual
+                        <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                    </a>
+                </div>
                 {/* Grid for Guest and Owner sections */}
                 <div className="grid gap-8 md:grid-cols-2">
                     {/* Guest Section */}
