@@ -15,9 +15,9 @@ const Footer = () => {
           <div className="space-y-4">
             <div className="flex items-center">
               {settings?.site_logo ? (
-                <img 
-                  src={settings.site_logo} 
-                  alt={settings?.site_name || 'Logo'} 
+                <img
+                  src={settings.site_logo}
+                  alt={settings?.site_name || 'Logo'}
                   className="h-8 w-auto max-w-[150px] object-contain"
                   onError={(e) => {
                     e.target.style.display = 'none';
@@ -36,9 +36,9 @@ const Footer = () => {
             </p>
             <div className="flex space-x-4">
               {settings?.facebook_url && (
-                <a 
-                  href={settings.facebook_url} 
-                  target="_blank" 
+                <a
+                  href={settings.facebook_url}
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="text-gray-600 hover:text-gray-900 transition-colors duration-200"
                 >
@@ -46,9 +46,9 @@ const Footer = () => {
                 </a>
               )}
               {settings?.twitter_url && (
-                <a 
-                  href={settings.twitter_url} 
-                  target="_blank" 
+                <a
+                  href={settings.twitter_url}
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="text-gray-600 hover:text-gray-900 transition-colors duration-200"
                 >
@@ -56,9 +56,9 @@ const Footer = () => {
                 </a>
               )}
               {settings?.instagram_url && (
-                <a 
-                  href={settings.instagram_url} 
-                  target="_blank" 
+                <a
+                  href={settings.instagram_url}
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="text-gray-600 hover:text-gray-900 transition-colors duration-200"
                 >
@@ -66,9 +66,9 @@ const Footer = () => {
                 </a>
               )}
               {settings?.linkedin_url && (
-                <a 
-                  href={settings.linkedin_url} 
-                  target="_blank" 
+                <a
+                  href={settings.linkedin_url}
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="text-gray-600 hover:text-gray-900 transition-colors duration-200"
                 >
@@ -76,9 +76,9 @@ const Footer = () => {
                 </a>
               )}
               {settings?.youtube_url && (
-                <a 
-                  href={settings.youtube_url} 
-                  target="_blank" 
+                <a
+                  href={settings.youtube_url}
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="text-gray-600 hover:text-gray-900 transition-colors duration-200"
                 >
@@ -86,9 +86,9 @@ const Footer = () => {
                 </a>
               )}
               {settings?.tiktok_url && (
-                <a 
-                  href={settings.tiktok_url} 
-                  target="_blank" 
+                <a
+                  href={settings.tiktok_url}
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="text-gray-600 hover:text-gray-900 transition-colors duration-200"
                 >
@@ -135,6 +135,11 @@ const Footer = () => {
                 </Link>
               </li>
               <li>
+                <a href="/project_documentation.html" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-gray-900 transition-colors duration-200 text-sm">
+                  User Manual
+                </a>
+              </li>
+              <li>
                 <Link to="/faq" className="text-gray-600 hover:text-gray-900 transition-colors duration-200 text-sm">
                   FAQ
                 </Link>
@@ -159,7 +164,7 @@ const Footer = () => {
               {settings?.contact_email && (
                 <div className="flex items-center space-x-3">
                   <FiMail className="w-4 h-4 text-[#E41D57]" />
-                  <a 
+                  <a
                     href={`mailto:${settings.contact_email}`}
                     className="text-gray-600 text-sm hover:text-gray-900 transition-colors"
                   >
@@ -170,7 +175,7 @@ const Footer = () => {
               {settings?.contact_phone && (
                 <div className="flex items-center space-x-3">
                   <FiPhone className="w-4 h-4 text-[#E41D57]" />
-                  <a 
+                  <a
                     href={`tel:${settings.contact_phone}`}
                     className="text-gray-600 text-sm hover:text-gray-900 transition-colors"
                   >
