@@ -1543,7 +1543,7 @@ const Navbar = () => {
                     <div className={`text-[10px] text-gray-900 ${effectiveHeaderSection === 'guests' && hasGuests ? 'pr-8' : ''}`}>
                       {headerActiveType === 'flight'
                         ? `${guestCounts.adults + guestCounts.children + guestCounts.kids + guestCounts.infants} Travelers`
-                        : (totalGuests > 1 ? `${totalGuests} guests` : 'Add guests') + (guestCounts.pets ? `, ${guestCounts.pets} pet${guestCounts.pets > 1 ? 's' : ''}` : '')
+                        : `${totalGuests} guest${totalGuests > 1 ? 's' : ''}` + (guestCounts.pets ? `, ${guestCounts.pets} pet${guestCounts.pets > 1 ? 's' : ''}` : '')
                       }
                     </div>
                   </div>

@@ -49,7 +49,17 @@ api.interceptors.response.use(
     return response;
   },
   async (error) => {
+    // If no config is available, just reject
+    if (!error.config) {
+      return Promise.reject(error);
+    }
+
     const originalRequest = error.config;
+
+    // Preserve silent flag from config if it was set
+    if (originalRequest.silent) {
+      originalRequest._silent = true;
+    }
 
     // Handle 401 errors (unauthorized)
     if (error.response?.status === 401 && !originalRequest._retry) {
@@ -93,50 +103,64 @@ api.interceptors.response.use(
       }
     }
 
+    // If it's a silent request, do not show any toast notifications
+    if (originalRequest._silent) {
+      return Promise.reject(error);
+    }
+
     // Handle timeout errors specifically
-    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-      // Only show timeout error if it's not a silent request and not shown recently
-      if (!originalRequest._silent) {
-        const now = Date.now();
-        if (now - lastTimeoutErrorTime > ERROR_DEBOUNCE_TIME) {
-          lastTimeoutErrorTime = now;
-          toast.error('Request timeout. Please check your connection and try again.');
-        }
+    if (error.code === 'ECONNABORTED' || error.message?.toLowerCase().includes('timeout')) {
+      const now = Date.now();
+      if (now - lastTimeoutErrorTime > ERROR_DEBOUNCE_TIME) {
+        lastTimeoutErrorTime = now;
+        toast.error('Request timeout. Please check your connection and try again.', {
+          toastId: 'global-timeout-error'
+        });
       }
       return Promise.reject(error);
     }
 
-    // Handle network errors
+    // Handle network errors (backend down, no internet)
     if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
-      if (!originalRequest._silent) {
-        const now = Date.now();
-        if (now - lastNetworkErrorTime > ERROR_DEBOUNCE_TIME) {
-          lastNetworkErrorTime = now;
-          toast.error('Network error. Please check your internet connection.');
-        }
+      const now = Date.now();
+      if (now - lastNetworkErrorTime > ERROR_DEBOUNCE_TIME) {
+        lastNetworkErrorTime = now;
+        toast.error('Server is unreachable. Please check your internet connection or try later.', {
+          toastId: 'global-network-error'
+        });
       }
       return Promise.reject(error);
     }
 
-    // Handle other errors
+    // Handle Server Errors (500+)
     if (error.response?.status >= 500) {
-      if (!originalRequest._silent) {
-        toast.error('Server error. Please try again later.');
-      }
-    } else if (error.response?.status === 404) {
-      if (!originalRequest._silent) {
-        toast.error('Resource not found.');
-      }
-    } else if (error.response?.status === 403) {
-      if (!originalRequest._silent) {
-        toast.error('Access denied.');
-      }
-    } else if (error.response?.data?.message) {
-      if (!originalRequest._silent) {
-        toast.error(error.response.data.message);
-      }
-    } else if (error.message && !originalRequest._silent) {
-      toast.error(error.message);
+      toast.error('Server error executing request. Please try again later.', {
+        toastId: 'global-server-error'
+      });
+    }
+    // Handle typical 404s
+    else if (error.response?.status === 404) {
+      // Avoid spamming 404s for images/assets or repetitive endpoints
+      toast.error('Requested resource not found.', {
+        toastId: `global-404-error-${originalRequest.url}`
+      });
+    }
+    // Handle Access Denied
+    else if (error.response?.status === 403) {
+      toast.error('Access denied. You do not have permission.', {
+        toastId: 'global-403-error'
+      });
+    }
+    // Handle defined backend error messages
+    else if (error.response?.data?.message) {
+      toast.error(error.response.data.message, {
+        toastId: `backend-error-${error.response.data.message}`
+      });
+    }
+    // Fallback unhandled errors
+    else if (error.message) {
+      // Prevent axios internal errors from flooding the screen
+      console.warn('Unhandled API error:', error.message);
     }
 
     return Promise.reject(error);

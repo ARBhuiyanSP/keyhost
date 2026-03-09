@@ -13,6 +13,7 @@ const {
   validatePagination
 } = require('../../middleware/validation');
 const { verifyToken, requirePropertyOwner } = require('../../middleware/auth');
+const { processBase64Image } = require('../../utils/imageProcessor');
 
 // Import earnings routes
 const earningsRoutes = require('./property-owner-earnings');
@@ -388,7 +389,14 @@ router.post('/properties', async (req, res) => {
 
       // Add images one by one to avoid SQL syntax issues
       for (let index = 0; index < req.body.images.length; index++) {
-        const imageUrl = req.body.images[index];
+        let imageUrl = req.body.images[index];
+        if (imageUrl) {
+          try {
+            imageUrl = await processBase64Image(imageUrl, 'prop');
+          } catch (err) {
+            console.error('Image processing error:', err);
+          }
+        }
         await pool.execute(`
           INSERT INTO property_images (property_id, image_url, image_type, alt_text, sort_order, is_active)
           VALUES (?, ?, ?, ?, ?, ?)
@@ -544,15 +552,54 @@ router.put('/properties/:id', validateId, async (req, res) => {
     if (updateData.images && Array.isArray(updateData.images) && updateData.images.length > 0) {
       console.log('Updating images:', updateData.images.length, 'images');
 
-      // Remove existing images
+      // Get existing images BEFORE deleting them to clean up physical files
+      const [oldImages] = await pool.execute(
+        'SELECT image_url FROM property_images WHERE property_id = ?',
+        [id]
+      );
+
+      const fs = require('fs');
+      const path = require('path');
+      const processedImageUrls = [];
+
+      // Process new images
+      for (let index = 0; index < updateData.images.length; index++) {
+        let imageUrl = updateData.images[index];
+        if (imageUrl) {
+          try {
+            imageUrl = await processBase64Image(imageUrl, 'prop');
+            if (imageUrl) processedImageUrls.push(imageUrl);
+          } catch (err) {
+            console.error('Image processing error:', err);
+          }
+        }
+      }
+
+      // Cleanup old files from disk that are no longer referenced
+      for (const oldImg of oldImages) {
+        if (!processedImageUrls.includes(oldImg.image_url)) {
+          if (oldImg.image_url.startsWith('/uploads/')) {
+            const filePath = path.join(__dirname, '../../', oldImg.image_url);
+            if (fs.existsSync(filePath)) {
+              try {
+                fs.unlinkSync(filePath);
+              } catch (err) {
+                console.error('Failed to delete old image file:', filePath, err);
+              }
+            }
+          }
+        }
+      }
+
+      // Remove existing images from DB
       await pool.execute(
         'DELETE FROM property_images WHERE property_id = ?',
         [id]
       );
 
-      // Add new images one by one
-      for (let index = 0; index < updateData.images.length; index++) {
-        const imageUrl = updateData.images[index];
+      // Save processed images to DB
+      for (let index = 0; index < processedImageUrls.length; index++) {
+        const imageUrl = processedImageUrls[index];
         await pool.execute(`
           INSERT INTO property_images (property_id, image_url, image_type, alt_text, sort_order, is_active)
           VALUES (?, ?, ?, ?, ?, ?)
@@ -566,7 +613,7 @@ router.put('/properties/:id', validateId, async (req, res) => {
         ]);
       }
 
-      console.log('Images saved successfully');
+      console.log('Images updated and cleaned up successfully');
     }
 
     // Get updated property with images

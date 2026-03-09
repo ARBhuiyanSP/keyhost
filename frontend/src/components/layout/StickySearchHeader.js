@@ -567,7 +567,7 @@ const StickySearchHeader = ({
 
   const getGuestsDisplay = () => {
     const totalGuests = searchData.guests || 1;
-    return totalGuests > 1 ? `${totalGuests} guests` : 'Add guests';
+    return `${totalGuests} guest${totalGuests > 1 ? 's' : ''}`;
   };
 
   const handlePropertyTypeClick = (typeName) => {
