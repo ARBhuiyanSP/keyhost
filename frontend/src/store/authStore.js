@@ -183,6 +183,28 @@ const useAuthStore = create(
         }
       },
 
+      becomeHost: async () => {
+        set({ isLoading: true });
+        try {
+          const response = await api.put('/users/become-host');
+          const { user } = response.data.data;
+
+          set({
+            user,
+            isLoading: false,
+          });
+
+          return { success: true, data: response.data };
+        } catch (error) {
+          set({ isLoading: false });
+          return {
+            success: false,
+            error: error.response?.data?.message || 'Failed to become a host'
+          };
+        }
+      },
+
+
       initializeAuth: () => {
         const { token } = get();
         if (token) {

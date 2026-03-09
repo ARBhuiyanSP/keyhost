@@ -73,11 +73,11 @@ class BkashPaymentGateway {
   async createPayment(amount, bookingId, customerInfo) {
     try {
       const token = await this.getAccessToken();
-      
+
       const paymentData = {
         mode: '0011', // Payment mode
         payerReference: customerInfo.phone || 'N/A',
-        callbackURL: 'http://localhost:3000/payment/callback',
+        callbackURL: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/callback`,
         amount: amount.toString(),
         currency: 'BDT',
         intent: 'sale',
@@ -116,7 +116,7 @@ class BkashPaymentGateway {
   async executePayment(paymentID) {
     try {
       const token = await this.getAccessToken();
-      
+
       const response = await axios.post(`${this.baseURL}/tokenized/checkout/payment/execute/${paymentID}`, {}, {
         headers: {
           'Content-Type': 'application/json',
@@ -152,7 +152,7 @@ class BkashPaymentGateway {
   async queryPayment(paymentID) {
     try {
       const token = await this.getAccessToken();
-      
+
       const response = await axios.get(`${this.baseURL}/tokenized/checkout/payment/query/${paymentID}`, {
         headers: {
           'Content-Type': 'application/json',
@@ -187,11 +187,11 @@ class BkashPaymentGateway {
   // Demo mode - simulate payment for testing
   async createDemoPayment(amount, bookingId, customerInfo) {
     console.log('Creating demo bKash payment...');
-    
+
     // Simulate payment creation
     const demoPaymentID = `DEMO_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const demoBkashURL = `https://demo.bkash.com/payment/${demoPaymentID}`;
-    
+
     return {
       success: true,
       paymentID: demoPaymentID,
@@ -203,10 +203,10 @@ class BkashPaymentGateway {
 
   async executeDemoPayment(paymentID) {
     console.log('Executing demo bKash payment...');
-    
+
     // Simulate successful payment
     const demoTransactionID = `TXN_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     return {
       success: true,
       transactionID: demoTransactionID,

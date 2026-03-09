@@ -16,7 +16,7 @@ import useSettingsStore from '../store/settingsStore';
 import useAuthStore from '../store/authStore';
 import StickySearchHeader from '../components/layout/StickySearchHeader';
 import PropertyImageSlider from '../components/property/PropertyImageSlider';
-import { getRecentlyViewed } from '../utils/recentlyViewed';
+import { getRecentlyViewed, removeFromRecentlyViewed } from '../utils/recentlyViewed';
 
 // Category Section Component
 const CategorySection = ({ category, checkCarouselScroll, activePropertyType }) => {
@@ -31,7 +31,6 @@ const CategorySection = ({ category, checkCarouselScroll, activePropertyType }) 
     {
       select: (response) => {
         const properties = response.data?.data?.properties || [];
-        console.log(`Category ${category.name} properties:`, properties);
         return properties;
       },
       enabled: !!category.id && category.property_count > 0,
@@ -472,16 +471,6 @@ const Home = () => {
   const [activePropertyType, setActivePropertyType] = useState('');
   const [airportList, setAirportList] = useState([]);
 
-  // Fetch airport list for mobile flight search
-  useEffect(() => {
-    fetch('/data/airportlist.json')
-      .then(res => res.json())
-      .then(data => {
-        setAirportList(Object.values(data));
-      })
-      .catch(err => console.error('Failed to load airports:', err));
-  }, []);
-
   const getAirportSuggestions = (input) => {
     if (!input || typeof input !== 'string' || input.length < 2) return [];
     const lower = input.toLowerCase();
@@ -524,12 +513,17 @@ const Home = () => {
     }
   );
 
-  // Fetch property types for tabs
+  // Fetch property types for tabs — fully DB-driven, including Flight
   const { data: propertyTypes } = useQuery(
     'home-property-types',
     () => api.get('/properties/property-types/list'),
     {
-      select: (response) => (response.data?.data?.propertyTypes || []).filter(pt => pt.is_active !== false),
+      staleTime: 0,
+      cacheTime: 0,
+      refetchOnWindowFocus: true,
+      refetchOnMount: true,
+      select: (response) =>
+        (response.data?.data?.propertyTypes || []).filter(pt => pt.is_active !== false),
     }
   );
 
@@ -541,6 +535,22 @@ const Home = () => {
       select: (response) => response.data?.data?.locations || [],
     }
   );
+
+  // Derived after propertyTypes loads: is Flight enabled by admin?
+  const isFlightEnabled = Array.isArray(propertyTypes) &&
+    propertyTypes.some(t => (t.name || '').toLowerCase() === 'flight');
+
+  // Load airport JSON ONLY when Flight tab is enabled — saves ~200KB on page load
+  useEffect(() => {
+    if (!isFlightEnabled) {
+      setAirportList([]);
+      return;
+    }
+    fetch('/data/airportlist.json')
+      .then(res => res.json())
+      .then(data => setAirportList(Object.values(data)))
+      .catch(err => console.error('Failed to load airports:', err));
+  }, [isFlightEnabled]);
 
   useEffect(() => {
     if (propertyTypes && propertyTypes.length > 0 && !activePropertyType) {
@@ -627,17 +637,20 @@ const Home = () => {
     navigate(`${activePropertyType === 'flight' ? '/flight/results' : '/search'}?${params.toString()}`);
   };
 
-  const getTypeIcon = (typeName, isActive = false) => {
+  const getTypeIcon = (typeName, isActive = false, iconUrl = '') => {
     const normalized = (typeName || '').toLowerCase();
 
-    let imgSrc = '/images/nav-icon-room.png'; // Default fallback
+    // Use admin-set icon first, then smart-detect
+    let imgSrc = iconUrl || '/images/nav-icon-room.png';
 
-    if (normalized.includes('apartment') || normalized.includes('villa') || normalized.includes('house') || normalized.includes('home')) {
-      imgSrc = '/images/nav-icon-apartment.png';
-    } else if (normalized.includes('hotel')) {
-      imgSrc = '/images/nav-icon-hotel.png';
-    } else if (normalized.includes('flight')) {
-      imgSrc = '/images/flight.png';
+    if (!iconUrl) {
+      if (normalized.includes('apartment') || normalized.includes('villa') || normalized.includes('house') || normalized.includes('home')) {
+        imgSrc = '/images/nav-icon-apartment.png';
+      } else if (normalized.includes('hotel')) {
+        imgSrc = '/images/nav-icon-hotel.png';
+      } else if (normalized.includes('flight')) {
+        imgSrc = '/images/flight.png';
+      }
     }
 
     return (
@@ -648,6 +661,7 @@ const Home = () => {
           ? 'opacity-100 grayscale-0'
           : 'opacity-70 grayscale'
           }`}
+        onError={(e) => { e.target.src = '/images/nav-icon-room.png'; }}
       />
     );
   };
@@ -659,7 +673,6 @@ const Home = () => {
     {
       select: (response) => {
         const categories = response.data?.data?.categories || [];
-        console.log('Display Categories:', categories);
         return categories;
       },
     }
@@ -875,19 +888,42 @@ const Home = () => {
     async () => {
       if (recentlyViewedIds.length === 0) return [];
 
-      // Fetch each property by ID
-      const promises = recentlyViewedIds.map(id =>
-        api.get(`/properties/${id}`, { silent: true }).catch(() => null)
-      );
-      const results = await Promise.all(promises);
+      const baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+      const token = (() => {
+        try {
+          const raw = localStorage.getItem('auth-storage');
+          return raw ? JSON.parse(raw)?.state?.token : null;
+        } catch { return null; }
+      })();
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      };
 
-      // Filter out failed requests and extract property data
-      return results
-        .filter(result => result && result.data?.data?.property)
-        .map(result => result.data.data.property);
+      // Use native fetch to avoid axios console error logs for 404s
+      const results = await Promise.all(
+        recentlyViewedIds.map(async (id) => {
+          try {
+            const res = await fetch(`${baseUrl}/properties/${id}`, { headers });
+            if (res.status === 404 || res.status === 410) {
+              // Property deleted — silently remove from localStorage
+              removeFromRecentlyViewed(id);
+              return null;
+            }
+            if (!res.ok) return null;
+            const json = await res.json();
+            return json?.data?.property || null;
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      return results.filter(Boolean);
     },
     {
       enabled: recentlyViewedIds.length > 0,
+      staleTime: 60000,
       select: (properties) => properties || [],
     }
   );
@@ -932,21 +968,28 @@ const Home = () => {
               <span className="text-sm">Start your search</span>
             </button>
           </div>
-          <div className="px-4 pb-2 flex items-center justify-center gap-2 overflow-x-auto scrollbar-hide">
+          {/* Dynamic tabs from DB - admin controlled */}
+          <div className="px-4 pb-2 flex items-center gap-2 overflow-x-auto scrollbar-hide">
             {propertyTypes.map((type) => {
               const isActive = activePropertyType === (type.name || '').toLowerCase();
               return (
                 <button
                   key={type.id}
-                  onClick={() => setActivePropertyType((type.name || '').toLowerCase())}
-                  className={`flex flex-col items-center justify-center py-1.5 transition-colors ${isActive
+                  onClick={() => {
+                    const typeLower = (type.name || '').toLowerCase();
+                    setActivePropertyType(typeLower);
+                    if (typeLower === 'flight') {
+                      navigate('/search?property_type=flight');
+                    }
+                  }}
+                  className={`flex flex-col items-center justify-center py-1.5 transition-colors flex-shrink-0 ${isActive
                     ? 'text-gray-900'
                     : 'text-gray-500 hover:text-gray-800'
                     }`}
                 >
                   <div className="flex flex-col items-center px-2">
-                    {getTypeIcon(type.name, isActive)}
-                    <span className="text-base font-medium whitespace-nowrap mt-1.5">{type.name}</span>
+                    {getTypeIcon(type.name, isActive, type.icon_url)}
+                    <span className="text-xs font-semibold whitespace-nowrap mt-1.5">{type.name}</span>
                     <span
                       className={`mt-1.5 h-[2px] w-full ${isActive ? 'bg-black' : 'bg-transparent'
                         }`}
@@ -955,18 +998,6 @@ const Home = () => {
                 </button>
               );
             })}
-
-            {/* Manual Flight Tab - Moved to End */}
-            <button
-              onClick={() => navigate('/search?property_type=flight')}
-              className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-500 hover:text-gray-800"
-            >
-              <div className="flex flex-col items-center px-2">
-                <img src="/images/flight.png" alt="Flight" className="w-5 h-5 object-contain transition-all duration-300 opacity-70 grayscale" />
-                <span className="text-base font-medium whitespace-nowrap mt-1.5">Flight</span>
-                <span className="mt-1.5 h-[2px] w-full bg-transparent" />
-              </div>
-            </button>
           </div>
         </div>
       )}
@@ -985,7 +1016,7 @@ const Home = () => {
               <FiX className="w-4 h-4 text-black" />
             </button>
 
-            {/* Property Type Tabs */}
+            {/* Dynamic Property Type Tabs from DB */}
             <div className="flex items-center justify-center gap-6 overflow-x-auto scrollbar-hide px-10 w-full">
               {propertyTypes.map((type) => {
                 const isActive = activePropertyType === (type.name || '').toLowerCase();
@@ -996,7 +1027,7 @@ const Home = () => {
                     className="flex flex-col items-center gap-2 min-w-[64px] flex-shrink-0 group cursor-pointer"
                   >
                     <div className={`transition-opacity duration-200 ${isActive ? 'opacity-100' : 'opacity-60 group-hover:opacity-80'}`}>
-                      {getTypeIcon(type.name, isActive)}
+                      {getTypeIcon(type.name, isActive, type.icon_url)}
                     </div>
                     <span className={`text-xs font-semibold whitespace-nowrap pb-2 border-b-2 transition-all duration-200 ${isActive ? 'text-black border-black' : 'text-gray-500 border-transparent group-hover:text-gray-800'
                       }`}>
@@ -1005,22 +1036,6 @@ const Home = () => {
                   </button>
                 );
               })}
-
-              {/* Manual Flight Tab inside Modal - Moved to End */}
-              <button
-                onClick={() => {
-                  setShowMobileSearch(false);
-                  navigate('/search?property_type=flight');
-                }}
-                className="flex flex-col items-center gap-2 min-w-[64px] flex-shrink-0 group cursor-pointer"
-              >
-                <div className="transition-opacity duration-200 opacity-60 group-hover:opacity-100">
-                  <img src="/images/flight.png" alt="Flight" className="w-5 h-5 object-contain transition-all duration-300 opacity-70 grayscale" />
-                </div>
-                <span className="text-xs font-semibold whitespace-nowrap pb-2 border-b-2 transition-all duration-200 text-gray-500 border-transparent group-hover:text-gray-900 group-hover:border-gray-300">
-                  Flight
-                </span>
-              </button>
             </div>
           </div>
 

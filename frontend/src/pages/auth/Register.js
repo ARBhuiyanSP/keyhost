@@ -91,6 +91,28 @@ const Register = () => {
           version: 0
         }));
 
+        // Check if there's a pending booking in localStorage
+        const pendingBooking = localStorage.getItem('pendingBooking');
+        if (pendingBooking && (userData?.user_type === 'guest' || !userData?.user_type)) {
+          try {
+            const bookingData = JSON.parse(pendingBooking);
+            const params = new URLSearchParams();
+            if (bookingData.check_in_date) params.set('check_in_date', bookingData.check_in_date);
+            if (bookingData.check_out_date) params.set('check_out_date', bookingData.check_out_date);
+            if (bookingData.number_of_guests) params.set('guests', bookingData.number_of_guests.toString());
+            const queryString = params.toString();
+
+            const bookingUrl = `/guest/booking/new/${bookingData.property_id}${queryString ? `?${queryString}` : ''}`;
+
+            setTimeout(() => {
+              navigate(bookingUrl);
+            }, 100);
+            return;
+          } catch (error) {
+            console.error('Error parsing pending booking during Google Login:', error);
+          }
+        }
+
         const redirectPath = buildRedirectPath(userData);
         navigate(redirectPath, { replace: true });
       } else {

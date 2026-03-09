@@ -9,6 +9,19 @@ const {
   validatePagination
 } = require('../../middleware/validation');
 const { verifyToken, requireAdmin } = require('../../middleware/auth');
+const { cache } = require('../../middleware/cache');
+
+// Helper: instantly clear all property-types cache entries
+const clearPropertyTypesCache = () => {
+  try {
+    const allKeys = cache.keys();
+    allKeys.forEach(key => {
+      if (key.includes('property-types') || key.includes('property_types')) {
+        cache.del(key);
+      }
+    });
+  } catch (e) { /* ignore */ }
+};
 
 const router = express.Router();
 
@@ -1456,13 +1469,32 @@ router.patch('/amenities/:id/toggle', validateId, async (req, res) => {
 // Get all property types
 router.get('/property-types', async (req, res) => {
   try {
+    // Ensure icon_url column exists
+    try {
+      await pool.execute(`ALTER TABLE property_types ADD COLUMN IF NOT EXISTS icon_url VARCHAR(500) NULL`);
+    } catch (e) { /* ignore */ }
+
+    // Auto-seed: ensure Flight exists in DB so admin can control it
+    const [flightExists] = await pool.execute(
+      "SELECT id FROM property_types WHERE LOWER(name) = 'flight'"
+    );
+    if (flightExists.length === 0) {
+      try {
+        await pool.execute(
+          'INSERT INTO property_types (name, icon_url, sort_order, is_active, created_at) VALUES (?, ?, 99, 1, NOW())',
+          ['Flight', '/images/flight.png']
+        );
+      } catch (e) { /* ignore */ }
+    }
+
     const [propertyTypes] = await pool.execute(`
       SELECT 
         pt.id, 
         pt.name, 
         pt.description, 
         pt.sort_order, 
-        pt.is_active, 
+        pt.is_active,
+        pt.icon_url,
         pt.created_at, 
         pt.updated_at,
         (
@@ -1471,7 +1503,7 @@ router.get('/property-types', async (req, res) => {
           WHERE LOWER(p.property_type) COLLATE utf8mb4_unicode_ci = LOWER(pt.name) COLLATE utf8mb4_unicode_ci
         ) as property_count
       FROM property_types pt
-      ORDER BY pt.sort_order, pt.name
+      ORDER BY pt.sort_order ASC, pt.name ASC
     `);
 
     res.json(
@@ -1489,7 +1521,7 @@ router.get('/property-types', async (req, res) => {
 // Create new property type
 router.post('/property-types', async (req, res) => {
   try {
-    const { name, description, sort_order } = req.body;
+    const { name, description, sort_order, icon_url } = req.body;
 
     // Validate required fields
     if (!name) {
@@ -1510,11 +1542,27 @@ router.post('/property-types', async (req, res) => {
       );
     }
 
+    // Try to ensure icon_url column exists
+    try {
+      await pool.execute(`ALTER TABLE property_types ADD COLUMN IF NOT EXISTS icon_url VARCHAR(500) NULL`);
+    } catch (e) {
+      // Column may already exist or DB doesn't support IF NOT EXISTS - ignore
+    }
+
     // Create property type
-    const [result] = await pool.execute(
-      'INSERT INTO property_types (name, description, sort_order, created_at) VALUES (?, ?, ?, NOW())',
-      [name, description || null, sort_order || 0]
-    );
+    let result;
+    try {
+      [result] = await pool.execute(
+        'INSERT INTO property_types (name, description, sort_order, icon_url, created_at) VALUES (?, ?, ?, ?, NOW())',
+        [name, description || null, sort_order || 0, icon_url || null]
+      );
+    } catch (e) {
+      // Fallback if icon_url column doesn't exist
+      [result] = await pool.execute(
+        'INSERT INTO property_types (name, description, sort_order, created_at) VALUES (?, ?, ?, NOW())',
+        [name, description || null, sort_order || 0]
+      );
+    }
 
     const propertyTypeId = result.insertId;
 
@@ -1523,6 +1571,9 @@ router.post('/property-types', async (req, res) => {
       'SELECT * FROM property_types WHERE id = ?',
       [propertyTypeId]
     );
+
+    // ✅ Clear cache so frontend sees new tab immediately
+    clearPropertyTypesCache();
 
     res.status(201).json(
       formatResponse(true, 'Property type created successfully', { propertyType: newPropertyType[0] })
@@ -1540,7 +1591,7 @@ router.post('/property-types', async (req, res) => {
 router.put('/property-types/:id', validateId, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, sort_order, is_active } = req.body;
+    const { name, description, sort_order, is_active, icon_url } = req.body;
 
     // Validate required fields
     if (!name) {
@@ -1573,17 +1624,26 @@ router.put('/property-types/:id', validateId, async (req, res) => {
       );
     }
 
+    // Ensure icon_url column exists
+    try {
+      await pool.execute(`ALTER TABLE property_types ADD COLUMN IF NOT EXISTS icon_url VARCHAR(500) NULL`);
+    } catch (e) {
+      // Ignore - column may already exist
+    }
+
     // Update property type
     const isActiveValue = is_active !== undefined ? (is_active === true || is_active === 1 || is_active === '1' ? 1 : 0) : 1;
 
-    const [result] = await pool.execute(
-      'UPDATE property_types SET name = ?, description = ?, sort_order = ?, is_active = ? WHERE id = ?',
-      [name, description || null, sort_order || 0, isActiveValue, id]
-    );
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json(
-        formatResponse(false, 'Property type not found')
+    try {
+      await pool.execute(
+        'UPDATE property_types SET name = ?, description = ?, sort_order = ?, is_active = ?, icon_url = ? WHERE id = ?',
+        [name, description || null, sort_order || 0, isActiveValue, icon_url || null, id]
+      );
+    } catch (e) {
+      // Fallback without icon_url
+      await pool.execute(
+        'UPDATE property_types SET name = ?, description = ?, sort_order = ?, is_active = ? WHERE id = ?',
+        [name, description || null, sort_order || 0, isActiveValue, id]
       );
     }
 
@@ -1592,6 +1652,9 @@ router.put('/property-types/:id', validateId, async (req, res) => {
       'SELECT * FROM property_types WHERE id = ?',
       [id]
     );
+
+    // ✅ Clear cache so frontend sees changes immediately
+    clearPropertyTypesCache();
 
     res.json(
       formatResponse(true, 'Property type updated successfully', { propertyType: updatedPropertyType[0] })
@@ -1652,6 +1715,9 @@ router.delete('/property-types/:id', validateId, async (req, res) => {
       );
     }
 
+    // ✅ Clear cache so frontend sees deletion immediately
+    clearPropertyTypesCache();
+
     res.json(
       formatResponse(true, 'Property type deleted successfully')
     );
@@ -1687,6 +1753,9 @@ router.patch('/property-types/:id/toggle', validateId, async (req, res) => {
         formatResponse(false, 'Property type not found')
       );
     }
+
+    // ✅ Instantly clear cached property types so frontend sees changes immediately
+    clearPropertyTypesCache();
 
     res.json(
       formatResponse(true, `Property type ${is_active ? 'activated' : 'deactivated'} successfully`)

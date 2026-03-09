@@ -4,7 +4,7 @@ import {
     FiGrid, FiCalendar, FiHome, FiUsers, FiDollarSign,
     FiSettings, FiLogOut, FiMenu, FiX, FiSearch,
     FiChevronDown, FiChevronRight, FiUser,
-    FiTruck, FiActivity, FiSend
+    FiTruck, FiActivity, FiSend, FiMessageSquare
 } from 'react-icons/fi';
 import useAuthStore from '../../store/authStore';
 import useSettingsStore from '../../store/settingsStore';
@@ -103,6 +103,7 @@ const DashboardLayout = () => {
                 { name: 'My Properties', path: '/property-owner/properties', icon: FiHome },
                 { name: 'Add Property', path: '/property-owner/properties/new', icon: FiTruck },
                 { name: 'Bookings', path: '/property-owner/bookings', icon: FiCalendar },
+                { name: 'Messages', path: '/messages', icon: FiMessageSquare },
                 { name: 'Calendar Sync', path: '/property-owner/calendar', icon: FiCalendar },
                 { name: 'Earnings', path: '/property-owner/earnings', icon: FiDollarSign },
                 { name: 'Analytics', path: '/property-owner/analytics', icon: FiActivity },
@@ -113,6 +114,7 @@ const DashboardLayout = () => {
                 { name: 'Dashboard', path: '/guest', icon: FiGrid },
                 { name: 'Find Property', path: '/properties', icon: FiSearch },
                 { name: 'My Bookings', path: '/guest/bookings', icon: FiCalendar },
+                { name: 'Messages', path: '/messages', icon: FiMessageSquare },
                 { name: 'Favorites', path: '/guest/favorites', icon: FiActivity },
                 { name: 'Rewards', path: '/guest/rewards-points', icon: FiDollarSign },
                 { name: 'Profile', path: '/guest/profile', icon: FiUser },

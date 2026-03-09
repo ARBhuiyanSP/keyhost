@@ -95,7 +95,7 @@ router.get('/export/:propertyId', async (req, res) => {
         const [bookings] = await connection.query(`
             SELECT check_in_date, check_out_date, booking_reference, source, guest_name 
             FROM bookings 
-            WHERE property_id = ? AND status IN ('confirmed', 'checked_in')
+            WHERE property_id = ? AND status IN ('request_accepted', 'confirmed', 'checked_in')
         `, [propertyId]);
 
         for (const booking of bookings) {

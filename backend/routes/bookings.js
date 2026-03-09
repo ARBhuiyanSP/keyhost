@@ -86,19 +86,11 @@ router.post('/', verifyToken, requireGuest, validateBooking, async (req, res) =>
     }
 
     // Check availability
-    // Include bookings that are confirmed/checked_in OR pending with owner acceptance and payment deadline not expired
+    // Include bookings that are request_accepted, confirmed, or checked_in
     const [conflicts] = await pool.execute(`
       SELECT id FROM bookings
       WHERE property_id = ? 
-      AND (
-        status IN ('confirmed', 'checked_in')
-        OR (
-          status = 'pending' 
-          AND confirmed_at IS NOT NULL 
-          AND payment_deadline IS NOT NULL 
-          AND payment_deadline > NOW()
-        )
-      )
+      AND status IN ('request_accepted', 'confirmed', 'checked_in')
       AND (
         (check_in_date <= ? AND check_out_date > ?) OR
         (check_in_date < ? AND check_out_date >= ?) OR
@@ -572,7 +564,7 @@ router.get('/availability/check', async (req, res) => {
     }
 
     // Check for conflicts
-    // Include bookings that are confirmed/checked_in OR pending with owner acceptance and payment deadline not expired
+    // Include bookings that are request_accepted, confirmed, or checked_in
     const [conflicts] = await pool.execute(`
       SELECT 
         b.id, b.booking_reference, b.check_in_date, b.check_out_date, b.status,
@@ -580,15 +572,7 @@ router.get('/availability/check', async (req, res) => {
       FROM bookings b
       JOIN users u ON b.guest_id = u.id
       WHERE b.property_id = ? 
-      AND (
-        b.status IN ('confirmed', 'checked_in')
-        OR (
-          b.status = 'pending' 
-          AND b.confirmed_at IS NOT NULL 
-          AND b.payment_deadline IS NOT NULL 
-          AND b.payment_deadline > NOW()
-        )
-      )
+      AND b.status IN ('request_accepted', 'confirmed', 'checked_in')
       AND (
         (b.check_in_date <= ? AND b.check_out_date > ?) OR
         (b.check_in_date < ? AND b.check_out_date >= ?) OR

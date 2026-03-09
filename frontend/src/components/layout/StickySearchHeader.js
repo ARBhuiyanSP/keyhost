@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { FiSearch, FiUser, FiLogOut, FiSettings, FiHeart, FiBookOpen, FiChevronDown, FiDollarSign, FiChevronLeft, FiMinus, FiPlus, FiMapPin, FiX, FiGlobe, FiCalendar } from 'react-icons/fi';
 import DatePicker from 'react-datepicker';
@@ -7,8 +7,11 @@ import { useQuery } from 'react-query';
 import useSettingsStore from '../../store/settingsStore';
 import useAuthStore from '../../store/authStore';
 import api from '../../utils/api';
-import FlightSearchForm from '../search/FlightSearchForm';
 import { sanitizeText } from '../../utils/textUtils';
+
+// Lazy load FlightSearchForm — only downloaded when Flight is enabled
+const FlightSearchForm = lazy(() => import('../search/FlightSearchForm'));
+
 
 const StickySearchHeader = ({
   alwaysSticky = false,
@@ -45,7 +48,21 @@ const StickySearchHeader = ({
   const propertyTypesStickyRef = useRef(null);
   const mobilePropertyTypesRef = useRef(null);
   const { settings } = useSettingsStore();
-  const { user, isAuthenticated, isAdmin, isPropertyOwner, logout } = useAuthStore();
+  const { user, isAuthenticated, isAdmin, isPropertyOwner, logout, becomeHost } = useAuthStore();
+
+  const handleBecomeHost = async (e) => {
+    e.preventDefault();
+    if (isAuthenticated) {
+      if (isAdmin() || isPropertyOwner()) {
+        navigate('/property-owner');
+      } else {
+        navigate('/become-host');
+      }
+    } else {
+      navigate('/register');
+    }
+    setIsProfileOpen(false);
+  };
 
   // Load search state from localStorage on mount
   const loadSearchState = () => {
@@ -105,16 +122,6 @@ const StickySearchHeader = ({
   const [flightActiveSection, setFlightActiveSection] = useState(null); // 'from', 'to', 'depart', 'return', 'travelers'
   const [airportList, setAirportList] = useState([]);
 
-  // Fetch airport list from public directory
-  useEffect(() => {
-    fetch('/data/airportlist.json')
-      .then(res => res.json())
-      .then(data => {
-        setAirportList(Object.values(data));
-      })
-      .catch(err => console.error('Failed to load airports:', err));
-  }, []);
-
   const getAirportSuggestions = (input) => {
     if (!input || typeof input !== 'string' || input.length < 2) return [];
     const lower = input.toLowerCase();
@@ -141,33 +148,50 @@ const StickySearchHeader = ({
     }
   );
 
-  // Fetch property types
+  // Fetch property types — fully DB-driven, admin controls Flight on/off too
   const { data: propertyTypes } = useQuery(
     'home-property-types',
     () => api.get('/properties/property-types/list'),
     {
-      select: (response) => {
-        const types = (response.data?.data?.propertyTypes || []).filter(pt => pt.is_active !== false);
-        // Manually inject Flight if not present
-        if (!types.find(t => t.name.toLowerCase() === 'flight')) {
-          types.push({ id: 9999, name: 'Flight', is_active: true });
-        }
-        return types;
-      },
+      staleTime: 0,
+      cacheTime: 0,
+      refetchOnWindowFocus: true,
+      refetchOnMount: true,
+      select: (response) =>
+        (response.data?.data?.propertyTypes || []).filter(pt => pt.is_active !== false),
     }
   );
 
-  const getTypeIcon = (typeName, isActive = false) => {
+  // Derive flight enabled state from DB (computed after propertyTypes loads)
+  const isFlightEnabled = Array.isArray(propertyTypes) &&
+    propertyTypes.some(t => (t.name || '').toLowerCase() === 'flight');
+
+  // Load airport list ONLY when Flight is enabled by admin — saves bandwidth
+  useEffect(() => {
+    if (!isFlightEnabled) {
+      setAirportList([]);
+      return;
+    }
+    fetch('/data/airportlist.json')
+      .then(res => res.json())
+      .then(data => setAirportList(Object.values(data)))
+      .catch(err => console.error('Failed to load airports:', err));
+  }, [isFlightEnabled]);
+
+  const getTypeIcon = (typeName, isActive = false, iconUrl = '') => {
     const normalized = (typeName || '').toLowerCase();
 
-    let imgSrc = '/images/nav-icon-room.png'; // Default fallback
+    // Use admin-set icon first, then smart-detect
+    let imgSrc = iconUrl || '/images/nav-icon-room.png';
 
-    if (normalized.includes('apartment') || normalized.includes('villa') || normalized.includes('house') || normalized.includes('home')) {
-      imgSrc = '/images/nav-icon-apartment.png';
-    } else if (normalized.includes('hotel')) {
-      imgSrc = '/images/nav-icon-hotel.png';
-    } else if (normalized.includes('flight')) {
-      imgSrc = '/images/flight.png';
+    if (!iconUrl) {
+      if (normalized.includes('apartment') || normalized.includes('villa') || normalized.includes('house') || normalized.includes('home')) {
+        imgSrc = '/images/nav-icon-apartment.png';
+      } else if (normalized.includes('hotel')) {
+        imgSrc = '/images/nav-icon-hotel.png';
+      } else if (normalized.includes('flight')) {
+        imgSrc = '/images/flight.png';
+      }
     }
 
     return (
@@ -178,6 +202,7 @@ const StickySearchHeader = ({
           ? 'opacity-100 grayscale-0 scale-110'
           : 'opacity-70 grayscale'
           }`}
+        onError={(e) => { e.target.src = '/images/nav-icon-room.png'; }}
       />
     );
   };
@@ -637,7 +662,7 @@ const StickySearchHeader = ({
                         className="flex flex-col items-center gap-2 min-w-[64px] flex-shrink-0 group cursor-pointer"
                       >
                         <div className={`transition-opacity duration-200 ${isActive ? 'opacity-100' : 'opacity-60 group-hover:opacity-80'}`}>
-                          {getTypeIcon(type.name, isActive)}
+                          {getTypeIcon(type.name, isActive, type.icon_url)}
                         </div>
                         <span className={`text-xs font-semibold whitespace-nowrap pb-2 border-b-2 transition-all duration-200 ${isActive ? 'text-black border-black' : 'text-gray-500 border-transparent group-hover:text-gray-800'
                           }`}>
@@ -1134,12 +1159,12 @@ const StickySearchHeader = ({
             {/* Airbnb-style User menu */}
             <div className="hidden md:flex items-center gap-2 flex-shrink-0">
               {/* Become a host button */}
-              <Link
-                to="/register"
+              <button
+                onClick={handleBecomeHost}
                 className="text-sm font-semibold text-gray-800 hover:bg-gray-100 px-3 py-2 rounded-full transition-colors"
               >
                 Become a host
-              </Link>
+              </button>
 
               {/* Globe icon and Custom Language Menu */}
               <div className="relative">
@@ -1280,6 +1305,15 @@ const StickySearchHeader = ({
                           <p className="text-sm font-semibold text-gray-900">{user?.first_name} {user?.last_name}</p>
                           <p className="text-xs text-gray-500 mt-1">{user?.email}</p>
                         </div>
+                        {/* Become a host button for guests */}
+                        {!isPropertyOwner() && !isAdmin() && (
+                          <button
+                            onClick={handleBecomeHost}
+                            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                          >
+                            Become a host
+                          </button>
+                        )}
                         <div className="py-2">
                           {getRoleBasedMenu().map((item) => (
                             <Link
@@ -1325,10 +1359,9 @@ const StickySearchHeader = ({
                             </div>
                           </button>
 
-                          <Link
-                            to="/register"
-                            onClick={() => setIsProfileOpen(false)}
-                            className="block px-4 py-3 text-sm hover:bg-gray-50 transition-colors"
+                          <button
+                            onClick={handleBecomeHost}
+                            className="block w-full text-left px-4 py-3 text-sm hover:bg-gray-50 transition-colors"
                           >
                             <div className="flex items-start gap-3">
                               <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center">
@@ -1339,7 +1372,7 @@ const StickySearchHeader = ({
                                 <div className="text-xs text-gray-500 mt-0.5">It's easy to start hosting and earn extra income.</div>
                               </div>
                             </div>
-                          </Link>
+                          </button>
 
                           <button className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                             Refer a Host
@@ -1391,7 +1424,7 @@ const StickySearchHeader = ({
                         className={`flex flex-col items-center gap-2 min-w-max group cursor-pointer transition-all duration-200 ${isActive ? 'opacity-100' : 'opacity-60 hover:opacity-80'}`}
                       >
                         <div className={`w-6 h-6 object-contain transition-all duration-300 ${isActive ? 'grayscale-0' : 'grayscale'}`}>
-                          {getTypeIcon(type.name, isActive)}
+                          {getTypeIcon(type.name, isActive, type.icon_url)}
                         </div>
                         <span className={`text-xs font-semibold whitespace-nowrap pb-1 border-b-2 transition-all duration-200 ${isActive ? 'text-black border-black' : 'text-gray-500 border-transparent hover:text-gray-800'}`}>
                           {type.name}

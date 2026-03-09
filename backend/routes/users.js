@@ -370,4 +370,55 @@ router.patch('/notifications/read-all', async (req, res) => {
   }
 });
 
+// Become a host (switch role from guest to property_owner)
+router.put('/become-host', async (req, res) => {
+  try {
+    if (req.user.user_type === 'admin') {
+      return res.status(400).json(
+        formatResponse(false, 'Admins cannot become hosts')
+      );
+    }
+
+    // Update user type to property_owner
+    await pool.execute(
+      'UPDATE users SET user_type = "property_owner", updated_at = NOW() WHERE id = ?',
+      [req.user.id]
+    );
+
+    // Also create a property_owners record for them if one doesn't exist
+    await pool.execute(
+      `INSERT INTO property_owners (user_id, created_at) 
+       SELECT ?, NOW() 
+       FROM DUAL
+       WHERE NOT EXISTS (
+         SELECT 1 FROM property_owners WHERE user_id = ?
+       )`,
+      [req.user.id, req.user.id]
+    );
+
+    // Get updated user
+    const [users] = await pool.execute(`
+      SELECT 
+        id, first_name, last_name, email, phone, user_type,
+        email_verified_at, phone_verified_at, is_active,
+        profile_image, date_of_birth, gender, address,
+        city, state, country, postal_code, language,
+        timezone, email_notifications, sms_notifications,
+        last_login_at, created_at, updated_at
+      FROM users 
+      WHERE id = ?
+    `, [req.user.id]);
+
+    res.json(
+      formatResponse(true, 'Successfully converted to property owner. You can now start hosting.', { user: users[0] })
+    );
+
+  } catch (error) {
+    console.error('Become host error:', error);
+    res.status(500).json(
+      formatResponse(false, 'Failed to become a host', null, error.message)
+    );
+  }
+});
+
 module.exports = router;

@@ -14,7 +14,11 @@ const pool = mysql.createPool({
   acquireTimeout: 60000,
   timeout: 60000,
   reconnect: true,
-  charset: 'utf8mb4'
+  charset: 'utf8mb4',
+  // Return DATE/DATETIME columns as strings (YYYY-MM-DD / YYYY-MM-DD HH:MM:SS)
+  // instead of JavaScript Date objects, preventing timezone offset issues
+  // where a date stored as 2026-03-04 would appear as 2026-03-03T18:00:00.000Z in UTC+6
+  dateStrings: ['DATE', 'DATETIME', 'TIMESTAMP']
 });
 
 // Get promise-based connection

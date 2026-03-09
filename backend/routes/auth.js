@@ -693,7 +693,7 @@ router.post('/forgot-password', async (req, res) => {
     );
 
     // Try to get frontend URL from headers or use default localhost
-    const frontendUrl = req.headers.origin || 'http://localhost:3000';
+    const frontendUrl = req.headers.origin || process.env.FRONTEND_URL || 'http://localhost:3000';
     const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
 
     const message = `Halo ${user.first_name},\n\nYou requested a password reset. Please click on the following link or paste it in your browser to reset your password:\n\n${resetUrl}\n\nThis link will expire in 1 hour. If you did not request this, please ignore this email.`;

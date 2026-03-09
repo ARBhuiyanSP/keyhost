@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { FiMenu, FiX, FiUser, FiLogOut, FiSettings, FiHeart, FiBookOpen, FiDollarSign, FiChevronDown, FiGrid, FiAward, FiHome, FiSearch, FiMinus, FiPlus, FiMapPin, FiMessageSquare, FiGlobe, FiCalendar } from 'react-icons/fi';
 import { useQuery } from 'react-query';
@@ -7,24 +7,24 @@ import 'react-datepicker/dist/react-datepicker.css';
 import useAuthStore from '../../store/authStore';
 import useSettingsStore from '../../store/settingsStore';
 import api from '../../utils/api';
-import FlightSearchForm from '../search/FlightSearchForm';
 
-const PropertyTypeIcon = ({ name = '', active = false }) => {
+// Lazy load FlightSearchForm — only loaded when Flight tab is active
+const FlightSearchForm = lazy(() => import('../search/FlightSearchForm'));
+
+const PropertyTypeIcon = ({ name = '', active = false, iconUrl = '' }) => {
   const normalized = (name || '').toLowerCase();
 
-  let imgSrc = '/images/nav-icon-room.png'; // Default fallback
+  // Use admin-set icon first
+  let imgSrc = iconUrl || '/images/nav-icon-room.png';
 
-  if (normalized.includes('apartment') || normalized.includes('villa') || normalized.includes('house') || normalized.includes('home')) {
-    imgSrc = '/images/nav-icon-apartment.png';
-  } else if (normalized.includes('hotel')) {
-    imgSrc = '/images/nav-icon-hotel.png';
-  } else if (normalized.includes('flight')) {
-    return (
-      <span className={`text-4xl transition-all duration-300 filter group-hover:scale-110 ${active
-        ? 'opacity-100 grayscale-0 scale-110 animate-shake-active'
-        : 'opacity-100 grayscale-0 hover:opacity-80'
-        }`}>✈️</span>
-    );
+  if (!iconUrl) {
+    if (normalized.includes('apartment') || normalized.includes('villa') || normalized.includes('house') || normalized.includes('home')) {
+      imgSrc = '/images/nav-icon-apartment.png';
+    } else if (normalized.includes('hotel')) {
+      imgSrc = '/images/nav-icon-hotel.png';
+    } else if (normalized.includes('flight')) {
+      imgSrc = '/images/flight.png';
+    }
   }
 
   return (
@@ -35,6 +35,7 @@ const PropertyTypeIcon = ({ name = '', active = false }) => {
         ? 'opacity-100 grayscale-0 scale-110 animate-shake-active'
         : 'opacity-100 grayscale-0 hover:opacity-80'
         }`}
+      onError={(e) => { e.target.src = '/images/nav-icon-room.png'; }}
     />
   );
 };
@@ -42,10 +43,24 @@ const PropertyTypeIcon = ({ name = '', active = false }) => {
 const Navbar = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, isAuthenticated, logout, isAdmin, isPropertyOwner } = useAuthStore();
+  const { user, isAuthenticated, logout, isAdmin, isPropertyOwner, becomeHost } = useAuthStore();
   const { settings, loadPublicSettings } = useSettingsStore();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+
+  const handleBecomeHost = async (e) => {
+    e.preventDefault();
+    if (isAuthenticated) {
+      if (isAdmin() || isPropertyOwner()) {
+        navigate('/property-owner');
+      } else {
+        navigate('/become-host');
+      }
+    } else {
+      navigate('/register');
+    }
+    setIsProfileOpen(false);
+  };
 
   // Load search state from localStorage on mount
   const loadSearchState = () => {
@@ -105,16 +120,6 @@ const Navbar = () => {
     pets: 0,
   });
   const [airportList, setAirportList] = useState([]);
-
-  // Fetch airport list for flight search
-  useEffect(() => {
-    fetch('/data/airportlist.json')
-      .then(res => res.json())
-      .then(data => {
-        setAirportList(Object.values(data));
-      })
-      .catch(err => console.error('Failed to load airports:', err));
-  }, []);
 
   const getAirportSuggestions = (input) => {
     if (!input || typeof input !== 'string' || input.length < 2) return [];
@@ -189,19 +194,17 @@ const Navbar = () => {
     }
   }, []);
 
-  // Fetch property types for header tabs
+  // Fetch property types for header tabs — fully DB-driven, admin controls Flight on/off too
   const { data: propertyTypes } = useQuery(
     'nav-property-types',
     () => api.get('/properties/property-types/list'),
     {
-      select: (response) => {
-        const types = response.data?.data?.propertyTypes || [];
-        // Manually inject Flight if not present
-        if (!types.find(t => t.name.toLowerCase() === 'flight')) {
-          types.push({ id: 9999, name: 'Flight', is_active: true });
-        }
-        return types;
-      },
+      staleTime: 0,
+      cacheTime: 0,
+      refetchOnWindowFocus: true,
+      refetchOnMount: true,
+      select: (response) =>
+        (response.data?.data?.propertyTypes || []).filter(pt => pt.is_active !== false),
     }
   );
 
@@ -213,6 +216,22 @@ const Navbar = () => {
       select: (response) => response.data?.data?.locations || [],
     }
   );
+
+  // Derived AFTER propertyTypes loads: is Flight tab enabled by admin?
+  const isFlightEnabled = Array.isArray(propertyTypes) &&
+    propertyTypes.some(t => (t.name || '').toLowerCase() === 'flight');
+
+  // Load airport list ONLY when Flight is enabled — skip entirely if off (saves ~200KB JSON)
+  useEffect(() => {
+    if (!isFlightEnabled) {
+      setAirportList([]);
+      return;
+    }
+    fetch('/data/airportlist.json')
+      .then(res => res.json())
+      .then(data => setAirportList(Object.values(data)))
+      .catch(err => console.error('Failed to load airports:', err));
+  }, [isFlightEnabled]);
 
   // Sync active type from Home/SearchResults via custom event
   useEffect(() => {
@@ -660,7 +679,7 @@ const Navbar = () => {
                     >
                       <div className="flex flex-col items-center px-2">
                         <div className="flex items-center gap-2">
-                          <PropertyTypeIcon name={type.name} active={isActiveTab} />
+                          <PropertyTypeIcon name={type.name} active={isActiveTab} iconUrl={type.icon_url} />
                           <span className="text-sm font-bold">{type.name}</span>
                         </div>
                         <span
@@ -693,12 +712,12 @@ const Navbar = () => {
           {/* Airbnb-style Auth Section */}
           <div className="hidden md:flex items-center gap-2">
             {/* Become a host button */}
-            <Link
-              to="/register"
+            <button
+              onClick={handleBecomeHost}
               className="text-sm font-semibold text-gray-800 hover:bg-gray-100 px-3 py-2 rounded-full transition-colors"
             >
               Become a host
-            </Link>
+            </button>
 
             {/* Globe icon and Custom Language Menu */}
             <div className="relative">
@@ -859,6 +878,17 @@ const Navbar = () => {
                       >
                         Help Center
                       </Link>
+
+                      {/* Become a host button for guests */}
+                      {!isPropertyOwner() && !isAdmin() && (
+                        <button
+                          onClick={handleBecomeHost}
+                          className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        >
+                          Become a host
+                        </button>
+                      )}
+
                       {/* Role-based Menu Items */}
                       <div className="py-2">
                         {getRoleBasedMenu().map((item) => (
@@ -914,10 +944,9 @@ const Navbar = () => {
                           </div>
                         </Link>
 
-                        <Link
-                          to="/register"
-                          onClick={() => setIsProfileOpen(false)}
-                          className="block px-4 py-3 text-sm hover:bg-gray-50 transition-colors"
+                        <button
+                          onClick={handleBecomeHost}
+                          className="block w-full text-left px-4 py-3 text-sm hover:bg-gray-50 transition-colors"
                         >
                           <div className="flex items-start gap-3">
                             <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center">
@@ -928,7 +957,7 @@ const Navbar = () => {
                               <div className="text-xs text-gray-500 mt-0.5">It's easy to start hosting and earn extra income.</div>
                             </div>
                           </div>
-                        </Link>
+                        </button>
 
                         <button className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                           Refer a Host

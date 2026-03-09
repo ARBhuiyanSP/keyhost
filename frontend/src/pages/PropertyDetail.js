@@ -380,7 +380,14 @@ const PropertyDetail = () => {
 
       console.log('Storing pending booking data:', pendingBookingData);
       localStorage.setItem('pendingBooking', JSON.stringify(pendingBookingData));
-      navigate('/login', { state: { from: `/property/${id}`, bookingIntent: true } });
+
+      const params = new URLSearchParams(location.search);
+      if (bookingData.check_in_date) params.set('check_in_date', bookingData.check_in_date);
+      if (bookingData.check_out_date) params.set('check_out_date', bookingData.check_out_date);
+      if (bookingData.number_of_guests) params.set('guests', bookingData.number_of_guests.toString());
+      const queryString = params.toString();
+
+      navigate('/login', { state: { from: `/property/${id}${queryString ? `?${queryString}` : ''}`, bookingIntent: true } });
       return;
     }
 
@@ -922,7 +929,7 @@ const PropertyDetail = () => {
 
       {/* Sticky Tab Navigation - Desktop Only */}
       {showStickyTabs && (
-        <div className="hidden md:block fixed top-16 left-0 right-0 z-40 bg-white border-b border-gray-200 shadow-sm">
+        <div className="hidden md:block fixed top-[80px] left-0 right-0 z-30 bg-white border-b border-gray-200 shadow-sm">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-8 overflow-x-auto">

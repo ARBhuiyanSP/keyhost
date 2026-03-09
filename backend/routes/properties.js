@@ -12,11 +12,12 @@ const {
   validatePagination
 } = require('../middleware/validation');
 const { verifyToken, requirePropertyOwner, optionalAuth } = require('../middleware/auth');
+const { cacheMiddleware } = require('../middleware/cache');
 
 const router = express.Router();
 
 // Get all properties with filters and pagination
-router.get('/', optionalAuth, validatePagination, async (req, res) => {
+router.get('/', optionalAuth, validatePagination, cacheMiddleware(30), async (req, res) => {
   try {
     const {
       page = 1,
@@ -104,15 +105,7 @@ router.get('/', optionalAuth, validatePagination, async (req, res) => {
         p.id NOT IN (
           SELECT DISTINCT b.property_id 
           FROM bookings b 
-          WHERE (
-            b.status IN ('confirmed', 'checked_in')
-            OR (
-              b.status = 'pending' 
-              AND b.confirmed_at IS NOT NULL 
-              AND b.payment_deadline IS NOT NULL 
-              AND b.payment_deadline > NOW()
-            )
-          )
+          WHERE b.status IN ('request_accepted', 'confirmed', 'checked_in')
           AND (
             (b.check_in_date <= ? AND b.check_out_date > ?) OR
             (b.check_in_date < ? AND b.check_out_date >= ?) OR
@@ -594,7 +587,7 @@ router.delete('/:id', verifyToken, requirePropertyOwner, validateId, async (req,
 });
 
 // Get all amenities
-router.get('/amenities/list', async (req, res) => {
+router.get('/amenities/list', cacheMiddleware(1800), async (req, res) => {
   try {
     const [amenities] = await pool.execute(`
       SELECT id, name, icon, category
@@ -616,14 +609,62 @@ router.get('/amenities/list', async (req, res) => {
 });
 
 // Get all active property types
-router.get('/property-types/list', async (req, res) => {
+router.get('/property-types/list', cacheMiddleware(10), async (req, res) => {
   try {
-    const [propertyTypes] = await pool.execute(`
-      SELECT id, name, description
-      FROM property_types
-      WHERE is_active = 1
-      ORDER BY sort_order, name
-    `);
+    // Ensure icon_url column exists
+    try {
+      await pool.execute(`ALTER TABLE property_types ADD COLUMN IF NOT EXISTS icon_url VARCHAR(500) NULL`);
+    } catch (e) { /* ignore */ }
+
+    // Auto-seed default property types (including Flight) if table is empty
+    const [countResult] = await pool.execute('SELECT COUNT(*) as total FROM property_types');
+    if (countResult[0].total === 0) {
+      const defaults = [
+        { name: 'Rooms', icon_url: '/images/nav-icon-room.png', sort_order: 1 },
+        { name: 'Apartment', icon_url: '/images/nav-icon-apartment.png', sort_order: 2 },
+        { name: 'Hotel', icon_url: '/images/nav-icon-hotel.png', sort_order: 3 },
+        { name: 'Flight', icon_url: '/images/flight.png', sort_order: 4 },
+      ];
+      for (const d of defaults) {
+        try {
+          await pool.execute(
+            'INSERT IGNORE INTO property_types (name, icon_url, sort_order, is_active, created_at) VALUES (?, ?, ?, 1, NOW())',
+            [d.name, d.icon_url, d.sort_order]
+          );
+        } catch (e) { /* ignore individual insert errors */ }
+      }
+    } else {
+      // Ensure Flight exists individually even if other types already exist
+      const [flightExists] = await pool.execute(
+        "SELECT id FROM property_types WHERE LOWER(name) = 'flight'"
+      );
+      if (flightExists.length === 0) {
+        try {
+          await pool.execute(
+            'INSERT INTO property_types (name, icon_url, sort_order, is_active, created_at) VALUES (?, ?, 99, 1, NOW())',
+            ['Flight', '/images/flight.png']
+          );
+        } catch (e) { /* ignore */ }
+      }
+    }
+
+    // Fetch active property types
+    let propertyTypes;
+    try {
+      [propertyTypes] = await pool.execute(`
+        SELECT id, name, description, sort_order, icon_url
+        FROM property_types
+        WHERE is_active = 1
+        ORDER BY sort_order ASC, name ASC
+      `);
+    } catch (e) {
+      [propertyTypes] = await pool.execute(`
+        SELECT id, name, description, sort_order
+        FROM property_types
+        WHERE is_active = 1
+        ORDER BY sort_order ASC, name ASC
+      `);
+    }
 
     res.json(
       formatResponse(true, 'Property types retrieved successfully', { propertyTypes })
@@ -638,7 +679,7 @@ router.get('/property-types/list', async (req, res) => {
 });
 
 // Public: distinct property locations for suggestions
-router.get('/locations/list', async (_req, res) => {
+router.get('/locations/list', cacheMiddleware(3600), async (_req, res) => {
   try {
     const [locations] = await pool.execute(`
       SELECT DISTINCT 
@@ -667,20 +708,16 @@ router.get('/:id/blocked-dates', validateId, async (req, res) => {
     const { id } = req.params;
 
     // Get all blocked date ranges from bookings
-    // Include bookings that are confirmed/checked_in OR pending with owner acceptance and payment deadline not expired
+    // Use DATE_FORMAT in SQL to avoid JS timezone conversion issues (MySQL DATE columns
+    // are returned as UTC midnight objects by Node.js, causing toISOString() to return 
+    // the wrong date for non-UTC timezones)
     const [bookings] = await pool.execute(`
-      SELECT check_in_date, check_out_date
+      SELECT 
+        DATE_FORMAT(check_in_date, '%Y-%m-%d') AS check_in_date,
+        DATE_FORMAT(check_out_date, '%Y-%m-%d') AS check_out_date
       FROM bookings
       WHERE property_id = ? 
-      AND (
-        status IN ('confirmed', 'checked_in')
-        OR (
-          status = 'pending' 
-          AND confirmed_at IS NOT NULL 
-          AND payment_deadline IS NOT NULL 
-          AND payment_deadline > NOW()
-        )
-      )
+      AND status IN ('request_accepted', 'confirmed', 'checked_in')
       AND check_out_date >= CURDATE()
       ORDER BY check_in_date ASC
     `, [id]);
@@ -688,23 +725,29 @@ router.get('/:id/blocked-dates', validateId, async (req, res) => {
     // Generate array of all blocked dates
     const blockedDates = [];
     bookings.forEach(booking => {
-      const checkIn = new Date(booking.check_in_date);
-      const checkOut = new Date(booking.check_out_date);
+      // Parse as local dates (YYYY-MM-DD strings from SQL) to avoid any UTC offset issues
+      const [ciYear, ciMonth, ciDay] = booking.check_in_date.split('-').map(Number);
+      const [coYear, coMonth, coDay] = booking.check_out_date.split('-').map(Number);
+      const checkIn = new Date(ciYear, ciMonth - 1, ciDay);
+      const checkOut = new Date(coYear, coMonth - 1, coDay);
 
-      // Add all dates from check_in_date to check_out_date (exclusive)
+      // Add all dates from check_in_date up to and including check_out_date
       const currentDate = new Date(checkIn);
       // Safeguard: Limit to 2 years (730 days) to prevent infinite loops or memory exhaustion
       let dayCount = 0;
       const MAX_DAYS = 730;
 
-      while (currentDate < checkOut && dayCount < MAX_DAYS) {
-        blockedDates.push(new Date(currentDate).toISOString().split('T')[0]);
+      while (currentDate <= checkOut && dayCount < MAX_DAYS) {
+        const y = currentDate.getFullYear();
+        const m = String(currentDate.getMonth() + 1).padStart(2, '0');
+        const d = String(currentDate.getDate()).padStart(2, '0');
+        blockedDates.push(`${y}-${m}-${d}`);
         currentDate.setDate(currentDate.getDate() + 1);
         dayCount++;
       }
 
       if (dayCount >= MAX_DAYS) {
-        console.warn(`Booking ${booking.id || 'unknown'} has an unusually long duration (> 2 years). Truncated blocked dates.`);
+        console.warn(`Booking has an unusually long duration (> 2 years). Truncated blocked dates.`);
       }
     });
 
@@ -741,20 +784,12 @@ router.get('/:id/availability', validateId, async (req, res) => {
     }
 
     // Check for conflicting bookings
-    // Include bookings that are confirmed/checked_in OR pending with owner acceptance and payment deadline not expired
+    // Include bookings that are request_accepted, confirmed, or checked_in
     const [conflicts] = await pool.execute(`
       SELECT id, check_in_date, check_out_date, status
       FROM bookings
       WHERE property_id = ? 
-      AND (
-        status IN ('confirmed', 'checked_in')
-        OR (
-          status = 'pending' 
-          AND confirmed_at IS NOT NULL 
-          AND payment_deadline IS NOT NULL 
-          AND payment_deadline > NOW()
-        )
-      )
+      AND status IN ('request_accepted', 'confirmed', 'checked_in')
       AND (
         (check_in_date <= ? AND check_out_date > ?) OR
         (check_in_date < ? AND check_out_date >= ?) OR

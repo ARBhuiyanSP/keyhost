@@ -30,7 +30,9 @@ router.post('/ssl-request', verifyToken, async (req, res) => {
         const { store_id, store_password, is_live } = await getSSLConfig();
 
         const tran_id = `REF${new Date().getTime()}`;
-        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const baseUrl = process.env.NODE_ENV === 'production'
+            ? `https://${req.get('host')}`
+            : `${req.protocol}://${req.get('host')}`;
 
         const data = {
             total_amount: amount,

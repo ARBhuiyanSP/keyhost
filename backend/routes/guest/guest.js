@@ -17,6 +17,7 @@ const {
   validatePagination
 } = require('../../middleware/validation');
 const { verifyToken, requireGuest, optionalAuth } = require('../../middleware/auth');
+const { cacheMiddleware } = require('../../middleware/cache');
 
 const router = express.Router();
 
@@ -212,19 +213,11 @@ router.post('/bookings', verifyToken, requireGuest, validateBooking, async (req,
     }
 
     // Check availability
-    // Include bookings that are confirmed/checked_in OR pending with owner acceptance and payment deadline not expired
+    // Include bookings that are request_accepted, confirmed, or checked_in
     const [conflicts] = await pool.execute(`
       SELECT id FROM bookings
       WHERE property_id = ? 
-      AND (
-        status IN ('confirmed', 'checked_in')
-        OR (
-          status = 'request_accepted' 
-          AND confirmed_at IS NOT NULL 
-          AND payment_deadline IS NOT NULL 
-          AND payment_deadline > NOW()
-        )
-      )
+      AND status IN ('request_accepted', 'confirmed', 'checked_in')
       AND (
         (check_in_date <= ? AND check_out_date > ?) OR
         (check_in_date < ? AND check_out_date >= ?) OR
@@ -725,7 +718,7 @@ router.delete('/favorites/:propertyId', verifyToken, requireGuest, validatePrope
 });
 
 // Get available properties for booking
-router.get('/properties', optionalAuth, validatePagination, async (req, res) => {
+router.get('/properties', optionalAuth, validatePagination, cacheMiddleware(30), async (req, res) => {
   try {
     const {
       page = 1,
@@ -797,15 +790,7 @@ router.get('/properties', optionalAuth, validatePagination, async (req, res) => 
         p.id NOT IN (
           SELECT DISTINCT b.property_id 
           FROM bookings b 
-          WHERE (
-            b.status IN ('confirmed', 'checked_in')
-            OR (
-              b.status = 'pending' 
-              AND b.confirmed_at IS NOT NULL 
-              AND b.payment_deadline IS NOT NULL 
-              AND b.payment_deadline > NOW()
-            )
-          )
+          WHERE b.status IN ('request_accepted', 'confirmed', 'checked_in')
           AND (
             (b.check_in_date <= ? AND b.check_out_date > ?) OR
             (b.check_in_date < ? AND b.check_out_date >= ?) OR
@@ -914,7 +899,7 @@ router.get('/properties', optionalAuth, validatePagination, async (req, res) => 
 });
 
 // Get active display categories with properties
-router.get('/display-categories', async (req, res) => {
+router.get('/display-categories', cacheMiddleware(1800), async (req, res) => {
   try {
     const [categories] = await pool.execute(`
       SELECT dc.*, COUNT(DISTINCT dcp.property_id) as property_count
@@ -940,7 +925,7 @@ router.get('/display-categories', async (req, res) => {
 });
 
 // Get properties by display category
-router.get('/display-categories/:id/properties', async (req, res) => {
+router.get('/display-categories/:id/properties', cacheMiddleware(300), async (req, res) => {
   try {
     const { id } = req.params;
     const limit = parseInt(req.query.limit) || 10;
@@ -1015,7 +1000,7 @@ router.get('/display-categories/:id/properties', async (req, res) => {
 });
 
 // Get all amenities
-router.get('/properties/amenities/list', async (req, res) => {
+router.get('/properties/amenities/list', cacheMiddleware(1800), async (req, res) => {
   try {
     const [amenities] = await pool.execute(`
       SELECT id, name, icon, category
@@ -1037,7 +1022,7 @@ router.get('/properties/amenities/list', async (req, res) => {
 });
 
 // Get recommended properties for guest
-router.get('/properties/recommended', optionalAuth, async (req, res) => {
+router.get('/properties/recommended', optionalAuth, cacheMiddleware(600), async (req, res) => {
   try {
     const { limit = 6 } = req.query;
     const userId = req.user?.id;
@@ -1179,20 +1164,12 @@ router.get('/properties/:id/availability', async (req, res) => {
     }
 
     // Check for conflicting bookings
-    // Include bookings that are confirmed/checked_in OR pending with owner acceptance and payment deadline not expired
+    // Include bookings that are request_accepted, confirmed, or checked_in
     const [conflicts] = await pool.execute(`
       SELECT COUNT(*) as conflict_count
       FROM bookings
       WHERE property_id = ?
-        AND (
-          status IN ('confirmed', 'checked_in')
-          OR (
-            status = 'pending' 
-            AND confirmed_at IS NOT NULL 
-            AND payment_deadline IS NOT NULL 
-            AND payment_deadline > NOW()
-          )
-        )
+        AND status IN ('request_accepted', 'confirmed', 'checked_in')
         AND (
           (check_in_date <= ? AND check_out_date > ?) OR
           (check_in_date < ? AND check_out_date >= ?) OR
