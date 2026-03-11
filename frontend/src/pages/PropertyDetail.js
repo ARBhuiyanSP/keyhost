@@ -688,7 +688,11 @@ const PropertyDetail = () => {
                 }}
               >
                 <img
-                  src={property.images[0]?.image_url}
+                  src={
+                    property.images[0]?.image_url?.startsWith('/uploads/') 
+                      ? `/api${property.images[0].image_url}` 
+                      : property.images[0]?.image_url
+                  }
                   alt={property.title}
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   onError={(e) => {
@@ -731,7 +735,11 @@ const PropertyDetail = () => {
                       {image && image.image_url && (
                         <>
                           <img
-                            src={image.image_url}
+                            src={
+                              image.image_url.startsWith('/uploads/') 
+                                ? `/api${image.image_url}` 
+                                : image.image_url
+                            }
                             alt={`${property.title} photo ${position + 1}`}
                             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                             loading="lazy"

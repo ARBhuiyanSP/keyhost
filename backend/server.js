@@ -85,13 +85,16 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 const path = require('path');
 
 // Static files with aggressive browser caching
-app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
-  maxAge: '30d', // Cache static files (images) for 30 days
+// Map both /uploads and /api/uploads to the same path so it works everywhere
+const staticOptions = {
+  maxAge: '30d',
   immutable: true,
   setHeaders: (res, path) => {
     res.setHeader('Cache-Control', 'public, max-age=2592000');
   }
-}));
+};
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), staticOptions));
+app.use('/api/uploads', express.static(path.join(__dirname, 'uploads'), staticOptions));
 
 // Health check endpoint
 app.get('/health', (req, res) => {

@@ -7,6 +7,15 @@ const PropertyImageSlider = ({ property, className = '' }) => {
 
   // Removed getImageUrl hardcoding flag to use native proxy
 
+  // Helper to ensure images load correctly on cPanel/shared hosting via the API URL
+  const fixImageUrl = (url) => {
+    if (!url || typeof url !== 'string') return null;
+    if (url.startsWith('/uploads/')) {
+      return `/api${url}`; // API router will catch this and serve the graphic
+    }
+    return url;
+  };
+
   // Get images array or fallback to main_image
   const images = useMemo(() => {
     // Check if images array exists and has items
@@ -14,11 +23,12 @@ const PropertyImageSlider = ({ property, className = '' }) => {
       const imageUrls = property.images
         .map(img => {
           // Handle different image object structures
-          if (typeof img === 'string') return img;
-          if (img && typeof img === 'object') {
-            return img.image_url || img.url || (typeof img === 'string' ? img : null);
+          let rawUrl = null;
+          if (typeof img === 'string') rawUrl = img;
+          else if (img && typeof img === 'object') {
+            rawUrl = img.image_url || img.url || (typeof img.url === 'string' ? img.url : null);
           }
-          return null;
+          return fixImageUrl(rawUrl);
         })
         .filter(Boolean);
 
@@ -29,10 +39,11 @@ const PropertyImageSlider = ({ property, className = '' }) => {
 
     // Fallback to main_image
     if (property?.main_image) {
-      const mainImageUrl = typeof property.main_image === 'string'
+      let mainImageUrl = typeof property.main_image === 'string'
         ? property.main_image
         : property.main_image.image_url || property.main_image.url;
 
+      mainImageUrl = fixImageUrl(mainImageUrl);
       if (mainImageUrl) {
         return [mainImageUrl];
       }
@@ -40,7 +51,7 @@ const PropertyImageSlider = ({ property, className = '' }) => {
 
     // Fallback to main_image_url (from backend)
     if (property?.main_image_url) {
-      return [property.main_image_url];
+      return [fixImageUrl(property.main_image_url)];
     }
 
     // Final fallback
