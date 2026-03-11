@@ -16,13 +16,13 @@ const {
   validatePropertyId,
   validatePagination
 } = require('../../middleware/validation');
-const { verifyToken, requireGuest, optionalAuth } = require('../../middleware/auth');
+const { verifyToken, requireGuestOrOwner, optionalAuth } = require('../../middleware/auth');
 const { cacheMiddleware } = require('../../middleware/cache');
 
 const router = express.Router();
 
 // Get guest dashboard
-router.get('/dashboard', verifyToken, requireGuest, async (req, res) => {
+router.get('/dashboard', verifyToken, requireGuestOrOwner, async (req, res) => {
   try {
     // Get recent bookings
     const [recentBookings] = await pool.execute(`
@@ -85,7 +85,7 @@ router.get('/dashboard', verifyToken, requireGuest, async (req, res) => {
 });
 
 // Get guest's bookings
-router.get('/bookings', verifyToken, requireGuest, validatePagination, async (req, res) => {
+router.get('/bookings', verifyToken, requireGuestOrOwner, validatePagination, async (req, res) => {
   try {
     const { page = 1, limit = 10, status } = req.query;
     const offset = (page - 1) * limit;
@@ -143,7 +143,7 @@ router.get('/bookings', verifyToken, requireGuest, validatePagination, async (re
 });
 
 // Create new booking
-router.post('/bookings', verifyToken, requireGuest, validateBooking, async (req, res) => {
+router.post('/bookings', verifyToken, requireGuestOrOwner, validateBooking, async (req, res) => {
   try {
     const {
       property_id,
@@ -432,7 +432,7 @@ router.post('/bookings', verifyToken, requireGuest, validateBooking, async (req,
 });
 
 // Get single booking
-router.get('/bookings/:id', verifyToken, requireGuest, validateId, async (req, res) => {
+router.get('/bookings/:id', verifyToken, requireGuestOrOwner, validateId, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -507,6 +507,14 @@ router.get('/bookings/:id', verifyToken, requireGuest, validateId, async (req, r
     });
     booking.payments = paymentsWithBalance;
 
+    // Get rewards points earned/redeemed for this booking
+    const [rewardPoints] = await pool.execute(`
+      SELECT * FROM rewards_point_transactions
+      WHERE booking_id = ?
+      ORDER BY created_at DESC
+    `, [id]);
+    booking.reward_points = rewardPoints;
+
     res.json(
       formatResponse(true, 'Booking retrieved successfully', { booking })
     );
@@ -520,7 +528,7 @@ router.get('/bookings/:id', verifyToken, requireGuest, validateId, async (req, r
 });
 
 // Cancel booking
-router.patch('/bookings/:id/cancel', verifyToken, requireGuest, validateId, async (req, res) => {
+router.patch('/bookings/:id/cancel', verifyToken, requireGuestOrOwner, validateId, async (req, res) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
@@ -615,7 +623,7 @@ router.patch('/bookings/:id/cancel', verifyToken, requireGuest, validateId, asyn
 });
 
 // Get guest's favorites
-router.get('/favorites', verifyToken, requireGuest, async (req, res) => {
+router.get('/favorites', verifyToken, requireGuestOrOwner, async (req, res) => {
   try {
     const [favorites] = await pool.execute(`
       SELECT 
@@ -643,7 +651,7 @@ router.get('/favorites', verifyToken, requireGuest, async (req, res) => {
 });
 
 // Add property to favorites
-router.post('/favorites/:propertyId', verifyToken, requireGuest, validatePropertyId, async (req, res) => {
+router.post('/favorites/:propertyId', verifyToken, requireGuestOrOwner, validatePropertyId, async (req, res) => {
   try {
     const { propertyId } = req.params;
 
@@ -690,7 +698,7 @@ router.post('/favorites/:propertyId', verifyToken, requireGuest, validatePropert
 });
 
 // Remove property from favorites
-router.delete('/favorites/:propertyId', verifyToken, requireGuest, validatePropertyId, async (req, res) => {
+router.delete('/favorites/:propertyId', verifyToken, requireGuestOrOwner, validatePropertyId, async (req, res) => {
   try {
     const { propertyId } = req.params;
 
@@ -1196,10 +1204,10 @@ router.get('/properties/:id/availability', async (req, res) => {
 });
 
 // Update booking payment information (without changing booking status)
-router.patch('/bookings/:id/payment', verifyToken, requireGuest, validateId, async (req, res) => {
+router.patch('/bookings/:id/payment', verifyToken, requireGuestOrOwner, validateId, async (req, res) => {
   try {
     const { id } = req.params;
-    const { payment_method, payment_status, points_to_redeem } = req.body;
+    const { payment_method, payment_status, points_to_redeem, amount_paid } = req.body;
 
     console.log('=== UPDATE BOOKING PAYMENT ===');
     console.log('Booking ID:', id);
@@ -1222,19 +1230,30 @@ router.patch('/bookings/:id/payment', verifyToken, requireGuest, validateId, asy
     }
 
     const booking = bookings[0];
+    const isExtensionPayment = booking.payment_status === 'pending_extra';
 
-    // Check if booking is request_accepted and owner has accepted (confirmed_at is set)
-    if (booking.status !== 'request_accepted') {
-      return res.status(400).json(
-        formatResponse(false, 'Booking must be accepted by the owner before payment')
-      );
-    }
+    // For extension payments: booking must be confirmed/checked_in with pending_extra payment
+    if (isExtensionPayment) {
+      if (!['confirmed', 'checked_in'].includes(booking.status)) {
+        return res.status(400).json(
+          formatResponse(false, 'Invalid booking status for extension payment')
+        );
+      }
+      // Extension payment is allowed — fall through to payment processing below
+    } else {
+      // For original booking payment: status must be request_accepted
+      if (booking.status !== 'request_accepted') {
+        return res.status(400).json(
+          formatResponse(false, 'Booking must be accepted by the owner before payment')
+        );
+      }
 
-    // Check if owner has accepted the booking request
-    if (!booking.confirmed_at) {
-      return res.status(400).json(
-        formatResponse(false, 'Property owner has not accepted this booking request yet')
-      );
+      // Check if owner has accepted the booking request
+      if (!booking.confirmed_at) {
+        return res.status(400).json(
+          formatResponse(false, 'Property owner has not accepted this booking request yet')
+        );
+      }
     }
 
     // If payment status is 'paid', create CR entry, payment record, and confirm booking
@@ -1261,7 +1280,9 @@ router.patch('/bookings/:id/payment', verifyToken, requireGuest, validateId, asy
 
       if (existingCrPayments.length === 0) {
         // Handle rewards points redemption if applicable
-        let finalAmount = booking.total_amount;
+        // For extensions: use amount_paid (extra amount only), for original: use total
+        let baseAmount = (isExtensionPayment && amount_paid) ? parseFloat(amount_paid) : parseFloat(booking.total_amount);
+        let finalAmount = baseAmount;
         let pointsRedeemed = 0;
         let pointsDiscount = 0;
 
@@ -1271,7 +1292,7 @@ router.patch('/bookings/:id/payment', verifyToken, requireGuest, validateId, asy
             const redemptionResult = await redeemPointsForBooking(req.user.id, points_to_redeem, id);
             pointsRedeemed = redemptionResult.pointsRedeemed;
             pointsDiscount = redemptionResult.discountAmount;
-            finalAmount = Math.max(0, booking.total_amount - pointsDiscount);
+            finalAmount = Math.max(0, baseAmount - pointsDiscount);
           } catch (pointsError) {
             console.error('Points redemption error:', pointsError);
             // Continue with payment even if points redemption fails
@@ -1280,6 +1301,10 @@ router.patch('/bookings/:id/payment', verifyToken, requireGuest, validateId, asy
 
         // Create CR entry for admin (money received from guest)
         const crReference = `CR-${Date.now()}-${id}`;
+        const crNotes = isExtensionPayment
+          ? `Extension extra payment received: ৳${finalAmount}${pointsDiscount > 0 ? `, Points discount: ৳${pointsDiscount.toFixed(2)}` : ''}`
+          : `Guest payment received - Total: ৳${booking.total_amount}${pointsDiscount > 0 ? `, Points discount: ৳${pointsDiscount.toFixed(2)}` : ''}`;
+
         await pool.execute(`
           INSERT INTO payments (
             booking_id, payment_reference, payment_method, payment_type,
@@ -1292,7 +1317,7 @@ router.patch('/bookings/:id/payment', verifyToken, requireGuest, validateId, asy
           payment_method || 'online',
           finalAmount,
           finalAmount,
-          `Guest payment received - Total: ৳${booking.total_amount}${pointsDiscount > 0 ? `, Points discount: ৳${pointsDiscount.toFixed(2)}` : ''}`
+          crNotes
         ]);
 
         // Update booking with points redeemed info
@@ -1325,15 +1350,26 @@ router.patch('/bookings/:id/payment', verifyToken, requireGuest, validateId, asy
         `, [id]);
 
         // Update booking status to 'confirmed' after payment
-        await pool.execute(`
-          UPDATE bookings
-          SET status = 'confirmed',
-              payment_status = ?,
-              updated_at = NOW()
-          WHERE id = ?
-        `, [payment_status, id]);
-
-        console.log(`Booking ${id} confirmed after payment by guest`);
+        if (isExtensionPayment) {
+          // Extension: just mark payment as paid, keep booking status unchanged
+          await pool.execute(`
+            UPDATE bookings
+            SET payment_status = 'paid',
+                updated_at = NOW()
+            WHERE id = ?
+          `, [id]);
+          console.log(`Extension payment confirmed for booking ${id}`);
+        } else {
+          // Original booking: set status to confirmed
+          await pool.execute(`
+            UPDATE bookings
+            SET status = 'confirmed',
+                payment_status = 'paid',
+                updated_at = NOW()
+            WHERE id = ?
+          `, [id]);
+          console.log(`Booking ${id} confirmed after payment by guest`);
+        }
       }
 
       // Award points for completed booking (only if payment is paid)
@@ -1419,7 +1455,7 @@ router.patch('/bookings/:id/payment', verifyToken, requireGuest, validateId, asy
 });
 
 // Confirm booking payment (DEPRECATED - kept for backward compatibility)
-router.patch('/bookings/:id/confirm', verifyToken, requireGuest, validateId, async (req, res) => {
+router.patch('/bookings/:id/confirm', verifyToken, requireGuestOrOwner, validateId, async (req, res) => {
   try {
     const { id } = req.params;
     const { payment_method, payment_status } = req.body;
@@ -1585,4 +1621,256 @@ router.patch('/bookings/:id/confirm', verifyToken, requireGuest, validateId, asy
   }
 });
 
+
+// Calculate cost to extend booking
+router.post('/bookings/:id/extend/calculate', verifyToken, requireGuestOrOwner, validateId, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { new_check_out_date } = req.body;
+
+    if (!new_check_out_date) {
+      return res.status(400).json(formatResponse(false, 'New check-out date is required'));
+    }
+
+    // Get original booking
+    const [bookings] = await pool.execute(`
+      SELECT b.*, p.base_price as property_base_price 
+      FROM bookings b
+      JOIN properties p ON b.property_id = p.id
+      WHERE b.id = ? AND b.guest_id = ?
+    `, [id, req.user.id]);
+
+    if (bookings.length === 0) {
+      return res.status(404).json(formatResponse(false, 'Booking not found'));
+    }
+
+    const booking = bookings[0];
+    const propertyId = booking.property_id;
+
+    // Must be confirmed or checked in
+    if (!['confirmed', 'checked_in'].includes(booking.status)) {
+      return res.status(400).json(formatResponse(false, 'Cannot extend booking with current status'));
+    }
+
+    // Ensure new date is after current check-out date
+    const oldCheckOutDate = new Date(booking.check_out_date);
+    const newCheckOutDateObj = new Date(new_check_out_date);
+    oldCheckOutDate.setHours(0,0,0,0);
+    newCheckOutDateObj.setHours(0,0,0,0);
+
+    if (newCheckOutDateObj <= oldCheckOutDate) {
+      return res.status(400).json(formatResponse(false, 'New check-out date must be after current check-out date'));
+    }
+
+    // Check availability for the additional days (from old check_out to new check_out)
+    // The previous check-out date becomes the check-in date for the extended period
+    const [conflicts] = await pool.execute(`
+      SELECT id FROM bookings 
+      WHERE property_id = ? 
+      AND status IN ('confirmed', 'checked_in', 'request_accepted', 'pending')
+      AND id != ?
+      AND (
+        (check_in_date < ? AND check_out_date > ?)
+      )
+    `, [propertyId, id, new_check_out_date, booking.check_out_date]);
+
+    if (conflicts.length > 0) {
+      return res.status(400).json(formatResponse(false, 'Property is not available for requested extension dates'));
+    }
+
+    // Calculate extra days
+    const extraNights = Math.ceil((newCheckOutDateObj - oldCheckOutDate) / (1000 * 60 * 60 * 24));
+    
+    // Additional price calculation
+    const extraBasePrice = parseFloat(booking.base_price) * extraNights;
+    
+    // Get service fee % (this might be in system_settings, assuming simplified logic based on existing booking)
+    const existingNightsCount = Math.ceil((oldCheckOutDate - new Date(booking.check_in_date)) / (1000 * 60 * 60 * 24));
+    let serviceFeeRate = booking.service_fee > 0 ? (parseFloat(booking.service_fee) / (parseFloat(booking.base_price) * existingNightsCount)) : 0;
+    
+    // Cap service fee rate around 10%
+    if(serviceFeeRate > 0.15) serviceFeeRate = 0.10; 
+
+    const extraServiceFee = extraBasePrice * serviceFeeRate;
+    const additionalTotalAmount = extraBasePrice + extraServiceFee;
+
+    // Don't add cleaning fee again, they already paid it
+    
+    res.json(formatResponse(true, 'Extension cost calculated', {
+      original_check_out: booking.check_out_date,
+      new_check_out: new_check_out_date,
+      extra_nights: extraNights,
+      extra_base_price: extraBasePrice,
+      extra_service_fee: extraServiceFee,
+      additional_total_amount: additionalTotalAmount
+    }));
+
+  } catch (error) {
+    console.error('Calculate extension error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to calculate extension cost', null, error.message));
+  }
+});
+
+// Extend booking
+router.post('/bookings/:id/extend', verifyToken, requireGuestOrOwner, validateId, async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const { id } = req.params;
+    const { new_check_out_date } = req.body;
+
+    if (!new_check_out_date) {
+      return res.status(400).json(formatResponse(false, 'New check-out date is required'));
+    }
+
+    await connection.beginTransaction();
+
+    // 1. Get original booking
+    const [bookings] = await connection.execute(`
+      SELECT b.*, p.base_price as property_base_price 
+      FROM bookings b
+      JOIN properties p ON b.property_id = p.id
+      WHERE b.id = ? AND b.guest_id = ?
+    `, [id, req.user.id]);
+
+    if (bookings.length === 0) {
+      await connection.rollback();
+      return res.status(404).json(formatResponse(false, 'Booking not found'));
+    }
+
+    const booking = bookings[0];
+    const propertyId = booking.property_id;
+
+    if (!['confirmed', 'checked_in'].includes(booking.status)) {
+      await connection.rollback();
+      return res.status(400).json(formatResponse(false, 'Cannot extend booking with current status'));
+    }
+
+    const oldCheckOutDate = new Date(booking.check_out_date);
+    const newCheckOutDateObj = new Date(new_check_out_date);
+    oldCheckOutDate.setHours(0,0,0,0);
+    newCheckOutDateObj.setHours(0,0,0,0);
+
+    if (newCheckOutDateObj <= oldCheckOutDate) {
+      await connection.rollback();
+      return res.status(400).json(formatResponse(false, 'New check-out date must be after current check-out date'));
+    }
+
+    // 2. Check Availability
+    const [conflicts] = await connection.execute(`
+      SELECT id FROM bookings 
+      WHERE property_id = ? 
+      AND status IN ('confirmed', 'checked_in', 'request_accepted', 'pending')
+      AND id != ?
+      AND (
+        (check_in_date < ? AND check_out_date > ?)
+      )
+    `, [propertyId, id, new_check_out_date, booking.check_out_date]);
+
+    if (conflicts.length > 0) {
+      await connection.rollback();
+      return res.status(400).json(formatResponse(false, 'Property is not available for requested extension dates'));
+    }
+
+    // 3. Math (Same as calculate)
+    const extraNights = Math.ceil((newCheckOutDateObj - oldCheckOutDate) / (1000 * 60 * 60 * 24));
+    const extraBasePrice = parseFloat(booking.base_price) * extraNights;
+    
+    const existingNightsCount = Math.ceil((oldCheckOutDate - new Date(booking.check_in_date)) / (1000 * 60 * 60 * 24));
+    let serviceFeeRate = booking.service_fee > 0 ? (parseFloat(booking.service_fee) / (parseFloat(booking.base_price) * existingNightsCount)) : 0;
+    if(serviceFeeRate > 0.15) serviceFeeRate = 0.10; 
+    
+    const extraServiceFee = extraBasePrice * serviceFeeRate;
+    const extraTax = parseFloat(booking.tax_amount || 0) > 0 ? (extraBasePrice * 0.15) : 0; // Assuming 15% VAT roughly
+    
+    const extraTotalAmount = extraBasePrice + extraServiceFee + extraTax;
+    
+    const adminCommissionRate = parseFloat(booking.admin_commission_rate || 10);
+    const extraAdminCommission = extraBasePrice * (adminCommissionRate / 100);
+    const extraOwnerEarnings = extraTotalAmount - extraAdminCommission;
+
+    const newTotalAmount = parseFloat(booking.total_amount) + extraTotalAmount;
+    const newOwnerEarnings = parseFloat(booking.property_owner_earnings || 0) + extraOwnerEarnings;
+    const newAdminCommission = parseFloat(booking.admin_commission_amount || 0) + extraAdminCommission;
+
+    // 4. Record the Modification FIRST BEFORE UPDATING, to capture old state cleanly
+    const oldValuesJSON = JSON.stringify({
+      check_out_date: booking.check_out_date,
+      total_amount: booking.total_amount,
+      property_owner_earnings: booking.property_owner_earnings,
+      admin_commission_amount: booking.admin_commission_amount,
+      service_fee: booking.service_fee,
+      tax_amount: booking.tax_amount
+    });
+
+    const newValuesJSON = JSON.stringify({
+      check_out_date: new_check_out_date,
+      total_amount: newTotalAmount,
+      property_owner_earnings: newOwnerEarnings,
+      admin_commission_amount: newAdminCommission,
+      service_fee: parseFloat(booking.service_fee) + extraServiceFee,
+      tax_amount: parseFloat(booking.tax_amount) + extraTax
+    });
+
+    await connection.execute(`
+      INSERT INTO booking_modifications (
+        booking_id, modified_by, modification_type, old_values, new_values, reason, additional_fee
+      ) VALUES (?, ?, 'extension', ?, ?, 'Guest requested extension', ?)
+    `, [id, req.user.id, oldValuesJSON, newValuesJSON, extraTotalAmount]);
+
+    // 5. Update Bookings Table
+    await connection.execute(`
+      UPDATE bookings 
+      SET 
+        check_out_date = ?,
+        total_amount = ?,
+        property_owner_earnings = ?,
+        admin_commission_amount = ?,
+        service_fee = ?,
+        tax_amount = ?,
+        payment_status = 'pending_extra', 
+        updated_at = NOW()
+      WHERE id = ?
+    `, [
+      new_check_out_date, 
+      newTotalAmount, 
+      newOwnerEarnings, 
+      newAdminCommission, 
+      parseFloat(booking.service_fee) + extraServiceFee, 
+      parseFloat(booking.tax_amount) + extraTax,
+      id
+    ]);
+
+    // Note: We don't automatically deduct or add 'payments' ledger CR entries yet.
+    // They still need to make an SSLCommerz payment for the extra amount,
+    // which should update the balance. However, we DO need to add the owner DR ledger to reflect new receivables.
+    
+    const ownerAcceptedRef = `DR_EXT_${Date.now()}_${id}`;
+    await connection.execute(`
+      INSERT INTO payments (
+        booking_id, amount, dr_amount, cr_amount, payment_method, payment_reference,
+        status, transaction_type, notes, payment_date, created_at
+      ) VALUES (?, ?, ?, 0, 'system_update', ?, 'completed', 'owner_accepted', 'Extra charge for extension', NOW(), NOW())
+    `, [id, extraTotalAmount, extraTotalAmount, ownerAcceptedRef]);
+
+    await connection.commit();
+
+    // 6. Return response to forward to payment processor with new "extraTotalAmount"
+    res.json(formatResponse(true, 'Booking extended successfully. Pending extra payment', {
+      booking_id: id,
+      extra_amount_due: extraTotalAmount,
+      new_total: newTotalAmount
+    }));
+
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error('Extension apply error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to apply extension', null, error.message));
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
 module.exports = router;
+
+
+

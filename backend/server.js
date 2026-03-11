@@ -82,8 +82,10 @@ app.use(morgan('combined'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+const path = require('path');
+
 // Static files with aggressive browser caching
-app.use('/uploads', express.static('uploads', {
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
   maxAge: '30d', // Cache static files (images) for 30 days
   immutable: true,
   setHeaders: (res, path) => {
@@ -218,4 +220,4 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
-// Force restart 2
+// Force restart 3

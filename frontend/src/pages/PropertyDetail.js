@@ -19,6 +19,7 @@ import PropertyImageSlider from '../components/property/PropertyImageSlider';
 import PropertyMap from '../components/property/PropertyMap';
 import { addToRecentlyViewed } from '../utils/recentlyViewed';
 import { sanitizeText } from '../utils/textUtils';
+import AuthModal from '../components/auth/AuthModal';
 
 const PropertyDetail = () => {
   const { id } = useParams();
@@ -46,6 +47,8 @@ const PropertyDetail = () => {
   const [isReserveButtonInView, setIsReserveButtonInView] = useState(true);
   const [showReviewsModal, setShowReviewsModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState('login');
   const [isGuestPickerOpen, setIsGuestPickerOpen] = useState(false);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
 
@@ -352,8 +355,7 @@ const PropertyDetail = () => {
     e.preventDefault();
 
     if (!isAuthenticated) {
-      // Store booking data in localStorage before redirecting to login
-      // Only store essential property fields to avoid serialization issues
+      // Store booking data in localStorage so AuthModal's handlePostAuth can redirect after login
       const propertyData = property ? {
         id: property.id,
         title: property.title,
@@ -378,16 +380,11 @@ const PropertyDetail = () => {
         property: propertyData
       };
 
-      console.log('Storing pending booking data:', pendingBookingData);
       localStorage.setItem('pendingBooking', JSON.stringify(pendingBookingData));
 
-      const params = new URLSearchParams(location.search);
-      if (bookingData.check_in_date) params.set('check_in_date', bookingData.check_in_date);
-      if (bookingData.check_out_date) params.set('check_out_date', bookingData.check_out_date);
-      if (bookingData.number_of_guests) params.set('guests', bookingData.number_of_guests.toString());
-      const queryString = params.toString();
-
-      navigate('/login', { state: { from: `/property/${id}${queryString ? `?${queryString}` : ''}`, bookingIntent: true } });
+      // Open auth modal instead of navigating to /login page
+      setAuthModalMode('login');
+      setAuthModalOpen(true);
       return;
     }
 
@@ -402,7 +399,8 @@ const PropertyDetail = () => {
 
   const toggleFavorite = async () => {
     if (!isAuthenticated) {
-      navigate('/login');
+      setAuthModalMode('login');
+      setAuthModalOpen(true);
       return;
     }
 
@@ -2065,6 +2063,13 @@ const PropertyDetail = () => {
         onClose={() => setShowReportModal(false)}
         propertyTitle={property.title}
         propertyId={property.id}
+      />
+
+      {/* Auth Modal — shown when unauthenticated user clicks Reserve or Favorite */}
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        defaultMode={authModalMode}
       />
 
       {/* Reviews Modal */}

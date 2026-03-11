@@ -94,6 +94,17 @@ const requireGuest = (req, res, next) => {
   next();
 };
 
+// Check if user is guest OR property owner (owners can also book other properties as guests)
+const requireGuestOrOwner = (req, res, next) => {
+  if (req.user.user_type !== 'guest' && req.user.user_type !== 'property_owner') {
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied. Guest or property owner privileges required.'
+    });
+  }
+  next();
+};
+
 // Optional authentication (doesn't fail if no token)
 const optionalAuth = async (req, res, next) => {
   try {
@@ -123,5 +134,6 @@ module.exports = {
   requireAdmin,
   requirePropertyOwner,
   requireGuest,
+  requireGuestOrOwner,
   optionalAuth
 };

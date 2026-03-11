@@ -762,8 +762,8 @@ router.get('/bookings', validatePagination, async (req, res) => {
 
     const ownerId = owners[0].id;
 
-    let whereClause = 'WHERE p.owner_id = ?';
-    let queryParams = [ownerId];
+    let whereClause = 'WHERE (p.owner_id = ? OR b.guest_id = ?)';
+    let queryParams = [ownerId, req.user.id];
 
     if (status) {
       whereClause += ' AND b.status = ?';
@@ -841,18 +841,24 @@ router.get('/bookings', validatePagination, async (req, res) => {
 
     const pagination = generatePagination(parseInt(page), parseInt(limit), total);
 
+    // Identify if booking is as an owner or a guest
+    const enrichedBookings = bookings.map(b => ({
+      ...b,
+      booking_role: b.guest_id === req.user.id ? 'guest' : 'host'
+    }));
+
     // Debug: Log first booking to see data structure
-    if (bookings.length > 0) {
+    if (enrichedBookings.length > 0) {
       console.log('=== PROPERTY OWNER BOOKINGS DEBUG ===');
-      console.log('First booking guest_name:', bookings[0].guest_name);
-      console.log('First booking guest_first_name:', bookings[0].guest_first_name);
-      console.log('First booking guest_last_name:', bookings[0].guest_last_name);
+      console.log('First booking guest_name:', enrichedBookings[0].guest_name);
+      console.log('First booking guest_first_name:', enrichedBookings[0].guest_first_name);
+      console.log('First booking guest_last_name:', enrichedBookings[0].guest_last_name);
       console.log('====================================');
     }
 
     res.json(
       formatResponse(true, 'Bookings retrieved successfully', {
-        bookings,
+        bookings: enrichedBookings,
         pagination
       })
     );

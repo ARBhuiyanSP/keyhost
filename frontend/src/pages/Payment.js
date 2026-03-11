@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
 import api from '../utils/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
@@ -8,8 +8,14 @@ import useToast from '../hooks/useToast';
 const Payment = () => {
   const { bookingId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuthStore();
   const { showSuccess, showError } = useToast();
+
+  // Extension state from navigation (passed by GuestBookingDetail)
+  const navState = location.state || {};
+  const isExtensionNav = navState.isExtension === true;
+  const navExtraAmount = navState.extra_amount_due ? parseFloat(navState.extra_amount_due) : null;
 
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -103,10 +109,22 @@ const Payment = () => {
         setFinalAmount(bookingData.total_amount);
       }
 
-      // Check if booking is pending and owner has accepted (confirmed_at is set)
+      const isExtensionPayment = bookingData.payment_status === 'pending_extra';
+
+      if (isExtensionPayment) {
+        // Extension payment: allowed if booking is confirmed or checked_in
+        if (!['confirmed', 'checked_in'].includes(bookingData.status)) {
+          showError('Invalid booking status for extension payment');
+          navigate(`/guest/bookings/${bookingId}`);
+          return;
+        }
+        // OK — let through
+        return;
+      }
+
+      // Original booking payment flow
       if (bookingData.status !== 'request_accepted') {
         if (bookingData.status === 'confirmed') {
-          // Already confirmed, payment might be completed
           if (bookingData.payment_status !== 'paid') {
             showError('Booking is already confirmed. Please check booking details.');
           } else {
@@ -151,9 +169,14 @@ const Payment = () => {
       if (paymentMethod === 'SSLCommerz') {
         const { data: sslSettings } = await api.get('/sslcommerz/settings');
         if (sslSettings) {
+          // For extensions: charge only the extra amount, not the full total
+          const amountToCharge = isExtensionPayment && payableAmount
+            ? (usePoints ? Math.max(0, payableAmount - pointsDiscount) : payableAmount)
+            : (usePoints ? (finalAmount || booking.total_amount) : booking.total_amount);
+
           const sslRes = await api.post('/sslcommerz/ssl-request', {
             booking_id: bookingId,
-            amount: usePoints ? (finalAmount || booking.total_amount) : booking.total_amount,
+            amount: amountToCharge,
             customer_name: user?.name,
             customer_email: user?.email,
             customer_phone: user?.phone
@@ -192,6 +215,8 @@ const Payment = () => {
       const requestPayload = {
         payment_method: dbPaymentMethod,
         payment_status: 'paid',
+        // For extension payments: record the extra amount paid, not the full total
+        amount_paid: isExtensionNav && navExtraAmount ? navExtraAmount : undefined,
         points_to_redeem: (usePoints && pointsToRedeem > 0) ? pointsToRedeem : undefined
       };
 
@@ -203,10 +228,11 @@ const Payment = () => {
       console.log('5. Response:', response.data);
       console.log('===================');
 
-      showSuccess('Payment completed successfully! Booking is now confirmed.');
+      showSuccess('Payment completed successfully!');
       // Refetch points data to show updated balance and new points earned
       await fetchPointsData();
-      navigate(`/guest/bookings/${bookingId}`);
+      const isExt = booking?.payment_status === 'pending_extra';
+      navigate(`/booking-confirmation/${bookingId}${isExt ? '?type=extension' : ''}`);
     } catch (err) {
       console.error('Payment error:', err);
       showError(err.response?.data?.message || 'Payment failed');
@@ -220,13 +246,30 @@ const Payment = () => {
   if (loading) return <LoadingSpinner />;
   if (!booking) return <div className="text-center p-8">Booking not found</div>;
 
+  const isExtensionPayment = booking.payment_status === 'pending_extra' || isExtensionNav;
+  // payableAmount: for extensions use the extra amount only, for original use total
+  const payableAmount = isExtensionPayment && navExtraAmount ? navExtraAmount : parseFloat(booking.total_amount);
+  const alreadyPaid = isExtensionPayment ? parseFloat(booking.total_amount) - payableAmount : 0;
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="bg-white rounded-lg shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200">
-            <h1 className="text-2xl font-bold text-gray-900">Complete Your Payment</h1>
-            <p className="text-gray-600 mt-1">Booking ID: {booking.id}</p>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {isExtensionPayment ? '🗓️ Pay for Extension' : 'Complete Your Payment'}
+            </h1>
+            <p className="text-gray-600 mt-1">
+              {isExtensionPayment
+                ? 'Complete payment for your booking extension'
+                : `Booking ID: ${booking.id}`}
+            </p>
+            {isExtensionPayment && (
+              <div className="mt-2 inline-flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-1.5">
+                <span className="text-blue-600 text-xs font-semibold">Extension Payment</span>
+                <span className="text-blue-400 text-xs">Booking #{booking.id}</span>
+              </div>
+            )}
           </div>
 
           <div className="p-6">
@@ -244,17 +287,37 @@ const Payment = () => {
                     <span className="font-medium">{new Date(booking.check_in_date).toLocaleDateString()}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Check-out:</span>
+                    <span className="text-gray-600">{isExtensionPayment ? 'New Check-out:' : 'Check-out:'}</span>
                     <span className="font-medium">{new Date(booking.check_out_date).toLocaleDateString()}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Guests:</span>
                     <span className="font-medium">{booking.number_of_guests}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Total Amount:</span>
-                    <span className="font-bold text-lg text-red-600">BDT {booking.total_amount}</span>
-                  </div>
+
+                  {isExtensionPayment && navExtraAmount ? (
+                    <>
+                      <div className="border-t pt-2 mt-1 space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Original booking (already paid):</span>
+                          <span className="text-gray-500 line-through">BDT {alreadyPaid.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Extension extra charge:</span>
+                          <span className="font-semibold text-orange-600">BDT {payableAmount.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between border-t pt-2">
+                          <span className="text-gray-800 font-bold">Amount Due Now:</span>
+                          <span className="font-bold text-lg text-red-600">BDT {payableAmount.toLocaleString()}</span>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Total Amount:</span>
+                      <span className="font-bold text-lg text-red-600">BDT {booking.total_amount}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Rewards Points Redemption */}

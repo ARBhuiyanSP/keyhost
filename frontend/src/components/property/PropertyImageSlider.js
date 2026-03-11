@@ -5,6 +5,8 @@ const PropertyImageSlider = ({ property, className = '' }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
 
+  // Removed getImageUrl hardcoding flag to use native proxy
+
   // Get images array or fallback to main_image
   const images = useMemo(() => {
     // Check if images array exists and has items
@@ -156,8 +158,8 @@ const PropertyImageSlider = ({ property, className = '' }) => {
                 }}
                 onMouseDown={(e) => e.stopPropagation()}
                 className={`rounded-full transition-all duration-200 ${index === currentImageIndex
-                    ? 'bg-white w-2 h-2'
-                    : 'bg-white/60 w-1.5 h-1.5 hover:bg-white/80'
+                  ? 'bg-white w-2 h-2'
+                  : 'bg-white/60 w-1.5 h-1.5 hover:bg-white/80'
                   }`}
                 aria-label={`Go to image ${index + 1}`}
               />

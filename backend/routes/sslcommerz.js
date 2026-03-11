@@ -21,7 +21,7 @@ const getSSLConfig = async () => {
 // Payment Init Route
 router.post('/ssl-request', verifyToken, async (req, res) => {
     try {
-        const { booking_id, amount, customer_name, customer_email, customer_phone, customer_city, customer_address } = req.body;
+        const { booking_id, amount, points_to_redeem, customer_name, customer_email, customer_phone, customer_city, customer_address } = req.body;
 
         if (!amount) {
             return res.status(400).json(formatResponse(false, 'Amount is required'));
@@ -67,8 +67,8 @@ router.post('/ssl-request', verifyToken, async (req, res) => {
 
         // Store in orders table
         await pool.execute(
-            `INSERT INTO orders (booking_id, tran_id, amount, status) VALUES (?, ?, ?, ?)`,
-            [booking_id || null, tran_id, amount, 'PENDING']
+            `INSERT INTO orders (booking_id, tran_id, amount, status, points_to_redeem) VALUES (?, ?, ?, ?, ?)`,
+            [booking_id || null, tran_id, amount, 'PENDING', points_to_redeem || 0]
         );
 
         const sslcz = new SSLCommerzPayment(store_id, store_password, is_live);
@@ -94,30 +94,108 @@ router.post('/ssl-success', async (req, res) => {
 
         // Attempt to update bookings and payments table if booking_id logic is required
         // (A real app would also verify the val_id via SSLCommerz API here)
-        const [orders] = await pool.execute(`SELECT booking_id, amount FROM orders WHERE tran_id = ?`, [tran_id]);
+        const [orders] = await pool.execute(`SELECT booking_id, amount, points_to_redeem FROM orders WHERE tran_id = ?`, [tran_id]);
         if (orders.length > 0 && orders[0].booking_id) {
             const booking_id = orders[0].booking_id;
             const amount = orders[0].amount;
+            const points_to_redeem = orders[0].points_to_redeem;
 
             // Same payment logic as bkash
             await pool.execute(`UPDATE bookings SET payment_status = 'paid', status = 'confirmed', confirmed_at = NOW() WHERE id = ?`, [booking_id]);
             const crReference = `SSL-${tran_id}`;
             const [exists] = await pool.execute("SELECT id FROM payments WHERE gateway_transaction_id = ?", [tran_id]);
             if (exists.length === 0) {
+                
+                // Handle points redemption if ANY
+                let pointsRedeemed = 0;
+                let pointsDiscount = 0;
+                if (points_to_redeem > 0) {
+                    try {
+                        const [bookingData] = await pool.execute('SELECT guest_id, total_amount FROM bookings WHERE id = ?', [booking_id]);
+                        if (bookingData.length > 0) {
+                            const { redeemPointsForBooking } = require('../utils/rewardsPoints');
+                            const redemptionResult = await redeemPointsForBooking(bookingData[0].guest_id, points_to_redeem, booking_id);
+                            pointsRedeemed = redemptionResult.pointsRedeemed;
+                            pointsDiscount = redemptionResult.discountAmount;
+                            
+                            await pool.execute(`
+                                UPDATE bookings 
+                                SET points_redeemed = ?, points_discount = ?, updated_at = NOW()
+                                WHERE id = ?
+                            `, [pointsRedeemed, pointsDiscount, booking_id]);
+                        }
+                    } catch (err) {
+                        console.error('Points redemption error on SSL success:', err);
+                    }
+                }
+
                 await pool.execute(`
             INSERT INTO payments (
               booking_id, payment_reference, payment_method, payment_type, 
-              amount, dr_amount, cr_amount, transaction_type, status, 
+              amount, dr_amount, cr_amount, transaction_type, status, notes,
               payment_date, created_at, updated_at, gateway_transaction_id
-            ) VALUES (?, ?, 'sslcommerz', 'booking', ?, 0, ?, 'guest_payment', 'completed', NOW(), NOW(), NOW(), ?)
-          `, [booking_id, crReference, amount, amount, tran_id]);
+            ) VALUES (?, ?, 'sslcommerz', 'booking', ?, 0, ?, 'guest_payment', 'completed', ?, NOW(), NOW(), NOW(), ?)
+          `, [
+                booking_id, 
+                crReference, 
+                amount, 
+                amount, 
+                `Guest payment received via SSLCommerz - Total paid: ৳${amount}${pointsDiscount > 0 ? `, Points discount: ৳${pointsDiscount.toFixed(2)}` : ''}`,
+                tran_id
+            ]);
+          
+                // Mark admin commission as paid
+                await pool.execute(`
+                  UPDATE admin_earnings 
+                  SET payment_status = 'paid', 
+                      payment_date = NOW(),
+                      updated_at = NOW()
+                  WHERE booking_id = ? 
+                  AND payment_status = 'pending'
+                `, [booking_id]);
+
+                // Update owner_accepted DR entry to completed
+                await pool.execute(`
+                  UPDATE payments
+                  SET status = 'completed',
+                      updated_at = NOW()
+                  WHERE booking_id = ? 
+                  AND transaction_type = 'owner_accepted'
+                  AND dr_amount > 0
+                `, [booking_id]);
+
+                // Award rewards points
+                try {
+                    const [bookingData] = await pool.execute('SELECT guest_id, total_amount FROM bookings WHERE id = ?', [booking_id]);
+                    if (bookingData.length > 0) {
+                        const guestId = bookingData[0].guest_id;
+                        const totalAmount = bookingData[0].total_amount;
+                        
+                        const [existingPoints] = await pool.execute(`
+                            SELECT id FROM rewards_point_transactions 
+                            WHERE booking_id = ? AND transaction_type = 'earned'
+                        `, [booking_id]);
+                        
+                        if (existingPoints.length === 0) {
+                            const { awardPointsForBooking } = require('../utils/rewardsPoints');
+                            await awardPointsForBooking(guestId, totalAmount, booking_id);
+                            console.log(`✅ Points awarded successfully for SSLCommerz payment on booking ${booking_id}`);
+                        }
+                    }
+                } catch (pointsError) {
+                    console.error('Points awarding error in SSLCommerz:', pointsError);
+                }
             }
         }
     }
 
-    // Here we would normally redirect to the frontend checkout success page
+    // Redirect to the booking confirmation page
     const frontendUrl = process.env.FRONTEND_URL;
-    const redirectUrl = `${frontendUrl}/guest/bookings`;
+    const orders2 = (await pool.execute(`SELECT booking_id FROM orders WHERE tran_id = ?`, [tran_id]))[0];
+    const bookingIdForRedirect = orders2?.[0]?.booking_id;
+    const redirectUrl = bookingIdForRedirect
+        ? `${frontendUrl}/booking-confirmation/${bookingIdForRedirect}`
+        : `${frontendUrl}/guest/bookings`;
     return res.redirect(redirectUrl);
 });
 
@@ -143,6 +221,100 @@ router.post('/ssl-ipn', async (req, res) => {
     const { tran_id, val_id, status } = req.body;
     if (tran_id && status === 'VALID') {
         await pool.execute(`UPDATE orders SET status = 'Success', val_id = ? WHERE tran_id = ?`, [val_id, tran_id]);
+        
+        // Ensure bookings and payments are updated
+        const [orders] = await pool.execute(`SELECT booking_id, amount, points_to_redeem FROM orders WHERE tran_id = ?`, [tran_id]);
+        if (orders.length > 0 && orders[0].booking_id) {
+            const booking_id = orders[0].booking_id;
+            const amount = orders[0].amount;
+            const points_to_redeem = orders[0].points_to_redeem;
+
+            await pool.execute(`UPDATE bookings SET payment_status = 'paid', status = 'confirmed', confirmed_at = NOW() WHERE id = ?`, [booking_id]);
+            const crReference = `SSL-${tran_id}`;
+            const [exists] = await pool.execute("SELECT id FROM payments WHERE gateway_transaction_id = ?", [tran_id]);
+            if (exists.length === 0) {
+                
+                // Handle points redemption
+                let pointsRedeemed = 0;
+                let pointsDiscount = 0;
+                if (points_to_redeem > 0) {
+                    try {
+                        const [bookingData] = await pool.execute('SELECT guest_id, total_amount FROM bookings WHERE id = ?', [booking_id]);
+                        if (bookingData.length > 0) {
+                            const { redeemPointsForBooking } = require('../utils/rewardsPoints');
+                            const redemptionResult = await redeemPointsForBooking(bookingData[0].guest_id, points_to_redeem, booking_id);
+                            pointsRedeemed = redemptionResult.pointsRedeemed;
+                            pointsDiscount = redemptionResult.discountAmount;
+                            
+                            await pool.execute(`
+                                UPDATE bookings 
+                                SET points_redeemed = ?, points_discount = ?, updated_at = NOW()
+                                WHERE id = ?
+                            `, [pointsRedeemed, pointsDiscount, booking_id]);
+                        }
+                    } catch (err) {
+                        console.error('Points redemption error on SSL IPN:', err);
+                    }
+                }
+
+                await pool.execute(`
+            INSERT INTO payments (
+              booking_id, payment_reference, payment_method, payment_type, 
+              amount, dr_amount, cr_amount, transaction_type, status, notes,
+              payment_date, created_at, updated_at, gateway_transaction_id
+            ) VALUES (?, ?, 'sslcommerz', 'booking', ?, 0, ?, 'guest_payment', 'completed', ?, NOW(), NOW(), NOW(), ?)
+          `, [
+                booking_id, 
+                crReference, 
+                amount, 
+                amount, 
+                `Guest payment received via SSLCommerz - Total paid: ৳${amount}${pointsDiscount > 0 ? `, Points discount: ৳${pointsDiscount.toFixed(2)}` : ''}`,
+                tran_id
+            ]);
+
+                // Mark admin commission as paid
+                await pool.execute(`
+                  UPDATE admin_earnings 
+                  SET payment_status = 'paid', 
+                      payment_date = NOW(),
+                      updated_at = NOW()
+                  WHERE booking_id = ? 
+                  AND payment_status = 'pending'
+                `, [booking_id]);
+
+                // Update owner_accepted DR entry to completed
+                await pool.execute(`
+                  UPDATE payments
+                  SET status = 'completed',
+                      updated_at = NOW()
+                  WHERE booking_id = ? 
+                  AND transaction_type = 'owner_accepted'
+                  AND dr_amount > 0
+                `, [booking_id]);
+
+                // Award rewards points
+                try {
+                    const [bookingData] = await pool.execute('SELECT guest_id, total_amount FROM bookings WHERE id = ?', [booking_id]);
+                    if (bookingData.length > 0) {
+                        const guestId = bookingData[0].guest_id;
+                        const totalAmount = bookingData[0].total_amount;
+                        
+                        const [existingPoints] = await pool.execute(`
+                            SELECT id FROM rewards_point_transactions 
+                            WHERE booking_id = ? AND transaction_type = 'earned'
+                        `, [booking_id]);
+                        
+                        if (existingPoints.length === 0) {
+                            const { awardPointsForBooking } = require('../utils/rewardsPoints');
+                            await awardPointsForBooking(guestId, totalAmount, booking_id);
+                            console.log(`✅ Points awarded successfully via SSL IPN on booking ${booking_id}`);
+                        }
+                    }
+                } catch (pointsError) {
+                    console.error('Points awarding error in SSLCommerz IPN:', pointsError);
+                }
+            }
+        }
     }
     return res.status(200).send('IPN Recieved');
 });

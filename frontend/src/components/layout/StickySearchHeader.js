@@ -8,6 +8,7 @@ import useSettingsStore from '../../store/settingsStore';
 import useAuthStore from '../../store/authStore';
 import api from '../../utils/api';
 import { sanitizeText } from '../../utils/textUtils';
+import AuthModal from '../auth/AuthModal';
 
 // Lazy load FlightSearchForm — only downloaded when Flight is enabled
 const FlightSearchForm = lazy(() => import('../search/FlightSearchForm'));
@@ -28,6 +29,8 @@ const StickySearchHeader = ({
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [showMobileSearch, setShowMobileSearch] = useState(false);
   const [showDesktopExpanded, setShowDesktopExpanded] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState('login');
   const [desktopActiveSection, setDesktopActiveSection] = useState(null);
   const [desktopHoverSection, setDesktopHoverSection] = useState(null);
   const [desktopActivePillStyle, setDesktopActivePillStyle] = useState({ x: 0, w: 0, visible: false });
@@ -59,7 +62,8 @@ const StickySearchHeader = ({
         navigate('/become-host');
       }
     } else {
-      navigate('/register');
+      setAuthModalMode('register');
+      setAuthModalOpen(true);
     }
     setIsProfileOpen(false);
   };
@@ -1388,20 +1392,26 @@ const StickySearchHeader = ({
                         </div>
 
                         <div className="border-t border-gray-200 pt-2">
-                          <Link
-                            to="/login"
-                            onClick={() => setIsProfileOpen(false)}
-                            className="block px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50 transition-colors"
+                          <button
+                            onClick={() => {
+                              setIsProfileOpen(false);
+                              setAuthModalMode('login');
+                              setAuthModalOpen(true);
+                            }}
+                            className="block w-full text-left px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50 transition-colors"
                           >
                             Log in
-                          </Link>
-                          <Link
-                            to="/register"
-                            onClick={() => setIsProfileOpen(false)}
-                            className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                          </button>
+                          <button
+                            onClick={() => {
+                              setIsProfileOpen(false);
+                              setAuthModalMode('register');
+                              setAuthModalOpen(true);
+                            }}
+                            className="block w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                           >
                             Sign up
-                          </Link>
+                          </button>
                         </div>
                       </>
                     )}
@@ -1438,6 +1448,7 @@ const StickySearchHeader = ({
           )}
         </div>
       </div >
+      <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} defaultMode={authModalMode} />
     </>
   );
 };

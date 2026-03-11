@@ -769,7 +769,7 @@ router.get('/:id/blocked-dates', validateId, async (req, res) => {
 router.get('/:id/availability', validateId, async (req, res) => {
   try {
     const { id } = req.params;
-    const { check_in_date, check_out_date } = req.query;
+    const { check_in_date, check_out_date, exclude_booking_id } = req.query;
 
     if (!check_in_date || !check_out_date) {
       return res.status(400).json(
@@ -785,7 +785,8 @@ router.get('/:id/availability', validateId, async (req, res) => {
 
     // Check for conflicting bookings
     // Include bookings that are request_accepted, confirmed, or checked_in
-    const [conflicts] = await pool.execute(`
+    // Optional: exclude a specific booking (e.g., the one being extended)
+    let conflictQuery = `
       SELECT id, check_in_date, check_out_date, status
       FROM bookings
       WHERE property_id = ? 
@@ -795,7 +796,15 @@ router.get('/:id/availability', validateId, async (req, res) => {
         (check_in_date < ? AND check_out_date >= ?) OR
         (check_in_date >= ? AND check_out_date <= ?)
       )
-    `, [id, check_out_date, check_in_date, check_out_date, check_in_date, check_in_date, check_out_date]);
+    `;
+    const conflictParams = [id, check_out_date, check_in_date, check_out_date, check_in_date, check_in_date, check_out_date];
+
+    if (exclude_booking_id && !isNaN(parseInt(exclude_booking_id))) {
+      conflictQuery += ' AND id != ?';
+      conflictParams.push(parseInt(exclude_booking_id));
+    }
+
+    const [conflicts] = await pool.execute(conflictQuery, conflictParams);
 
     const isAvailable = conflicts.length === 0;
 

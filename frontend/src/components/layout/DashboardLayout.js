@@ -99,15 +99,22 @@ const DashboardLayout = () => {
             ];
         } else if (isPropertyOwner()) {
             return [
+                // ── Owner Section ──
                 { name: 'Dashboard', path: '/property-owner', icon: FiGrid },
                 { name: 'My Properties', path: '/property-owner/properties', icon: FiHome },
                 { name: 'Add Property', path: '/property-owner/properties/new', icon: FiTruck },
-                { name: 'Bookings', path: '/property-owner/bookings', icon: FiCalendar },
-                { name: 'Messages', path: '/messages', icon: FiMessageSquare },
+                { name: 'Bookings (Owner)', path: '/property-owner/bookings', icon: FiCalendar },
                 { name: 'Calendar Sync', path: '/property-owner/calendar', icon: FiCalendar },
                 { name: 'Earnings', path: '/property-owner/earnings', icon: FiDollarSign },
                 { name: 'Analytics', path: '/property-owner/analytics', icon: FiActivity },
                 { name: 'Profile', path: '/property-owner/profile', icon: FiUser },
+                // ── Divider ──
+                { divider: true, label: 'As Guest' },
+                // ── Guest Section (owners can also book other properties) ──
+                { name: 'My Bookings', path: '/guest/bookings', icon: FiCalendar },
+                { name: 'Messages', path: '/messages', icon: FiMessageSquare },
+                { name: 'Favorites', path: '/guest/favorites', icon: FiActivity },
+                { name: 'Rewards Points', path: '/guest/rewards-points', icon: FiDollarSign },
             ];
         } else { // Guest
             return [
@@ -186,6 +193,25 @@ const DashboardLayout = () => {
                 <div className="flex-1 overflow-y-auto py-2 custom-scrollbar">
                     <ul className="space-y-1 px-2">
                         {allMenus.map((item, index) => {
+                            // ── Divider ──────────────────────────────────
+                            if (item.divider) {
+                                return (
+                                    <li key={index}>
+                                        <div className={`flex items-center gap-2 px-3 py-2 mt-2 ${sidebarOpen ? '' : 'justify-center'}`}>
+                                            {sidebarOpen ? (
+                                                <>
+                                                    <div className="flex-1 h-px bg-gray-600" />
+                                                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 whitespace-nowrap">{item.label}</span>
+                                                    <div className="flex-1 h-px bg-gray-600" />
+                                                </>
+                                            ) : (
+                                                <div className="w-8 h-px bg-gray-600" />
+                                            )}
+                                        </div>
+                                    </li>
+                                );
+                            }
+
                             const isActive = location.pathname === item.path || (item.submenu && item.submenu.some(sub => location.pathname === sub.path));
 
                             return (

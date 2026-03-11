@@ -74,12 +74,13 @@ const GuestBookingDetail = lazy(() => import('./pages/guest/GuestBookingDetail')
 const GuestProfile = lazy(() => import('./pages/guest/GuestProfile'));
 const RewardsPoints = lazy(() => import('./pages/guest/RewardsPoints'));
 const Payment = lazy(() => import('./pages/Payment'));
+const BookingConfirmation = lazy(() => import('./pages/BookingConfirmation'));
 
 // Protected Route Component
 
 
 function App() {
-  const { isLoading, user, isAdmin } = useAuthStore();
+  const { user, isAdmin } = useAuthStore();
   const { settings, isMaintenanceMode, loadPublicSettings } = useSettingsStore();
 
   // Load public settings on app initialization
@@ -111,9 +112,9 @@ function App() {
     );
   }
 
-  if (isLoading) {
-    return <LoadingSpinner />;
-  }
+  // NOTE: Do NOT block the entire app on isLoading — that unmounts the whole
+  // React tree during login and causes a full re-render (looks like page refresh).
+  // Auth loading is handled locally inside AuthModal and individual components.
 
   return (
     <Suspense fallback={<LoadingSpinner />}>
@@ -135,6 +136,7 @@ function App() {
           <Route path="/reset-password/:token" element={<ResetPassword />} />
           <Route path="/car-booking" element={<CarBooking />} />
           <Route path="/payment/:bookingId" element={<Payment />} />
+          <Route path="/booking-confirmation/:bookingId" element={<BookingConfirmation />} />
           <Route path="/help" element={<Help />} />
           <Route path="/contact" element={<Contact />} />
           <Route path="/about" element={<About />} />
@@ -150,17 +152,7 @@ function App() {
             </ProtectedRoute>
           } />
 
-          {/* Messages Routes - kept in Public Layout */}
-          <Route path="/messages" element={
-            <ProtectedRoute requireAuth>
-              <Messages />
-            </ProtectedRoute>
-          } />
-          <Route path="/messages/:id" element={
-            <ProtectedRoute requireAuth>
-              <ConversationDetail />
-            </ProtectedRoute>
-          } />
+
         </Route>
 
         {/* Dashboard Layout Routes */}
@@ -232,6 +224,18 @@ function App() {
             </ProtectedRoute>
           } />
 
+          {/* Messages Routes — inside DashboardLayout for sidebar */}
+          <Route path="/messages" element={
+            <ProtectedRoute>
+              <Messages />
+            </ProtectedRoute>
+          } />
+          <Route path="/messages/:id" element={
+            <ProtectedRoute>
+              <ConversationDetail />
+            </ProtectedRoute>
+          } />
+
           {/* Property Owner Routes */}
           <Route path="/property-owner" element={
             <ProtectedRoute requireAuth requireRole="property_owner">
@@ -281,37 +285,37 @@ function App() {
 
           {/* Guest Routes */}
           <Route path="/guest" element={
-            <ProtectedRoute requireAuth requireRole="guest">
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
               <GuestDashboard />
             </ProtectedRoute>
           } />
           <Route path="/guest/bookings" element={
-            <ProtectedRoute requireAuth requireRole="guest">
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
               <GuestBookings />
             </ProtectedRoute>
           } />
           <Route path="/guest/favorites" element={
-            <ProtectedRoute requireAuth requireRole="guest">
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
               <GuestFavorites />
             </ProtectedRoute>
           } />
           <Route path="/guest/rewards-points" element={
-            <ProtectedRoute requireAuth requireRole="guest">
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
               <RewardsPoints />
             </ProtectedRoute>
           } />
           <Route path="/guest/booking/new/:propertyId" element={
-            <ProtectedRoute requireAuth requireRole="guest">
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
               <GuestBooking />
             </ProtectedRoute>
           } />
           <Route path="/guest/bookings/:id" element={
-            <ProtectedRoute requireAuth requireRole="guest">
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
               <GuestBookingDetail />
             </ProtectedRoute>
           } />
           <Route path="/guest/profile" element={
-            <ProtectedRoute requireAuth requireRole="guest">
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
               <GuestProfile />
             </ProtectedRoute>
           } />

@@ -243,7 +243,7 @@ const Home = () => {
   const recentlyViewedCarouselRef = useRef(null);
   const displayCategoryCarouselRefs = useRef({});
   const locationDropdownRef = useRef(null);
-  const [recentlyViewedIds, setRecentlyViewedIds] = useState([]);
+  const [recentlyViewedProperties, setRecentlyViewedProperties] = useState([]);
   const [canScrollPrev, setCanScrollPrev] = useState(false);
   const [canScrollNext, setCanScrollNext] = useState(false);
   const [canScrollPrevRecent, setCanScrollPrevRecent] = useState(false);
@@ -840,13 +840,13 @@ const Home = () => {
       if (recentCarousel) recentCarousel.removeEventListener('scroll', handleRecentCarouselScroll);
       window.removeEventListener('resize', handleResize);
     };
-  }, [filteredFeaturedProperties, recentlyViewedIds, activePropertyType]);
+  }, [filteredFeaturedProperties, recentlyViewedProperties, activePropertyType]);
 
-  // Get recently viewed property IDs on mount and refresh periodically
+  // Get recently viewed properties on mount and refresh periodically
   useEffect(() => {
     const updateRecentlyViewed = () => {
       const recent = getRecentlyViewed(10);
-      setRecentlyViewedIds(recent.map(p => p.id));
+      setRecentlyViewedProperties(recent);
     };
 
     // Update on mount
@@ -881,52 +881,6 @@ const Home = () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
-
-  // Fetch recently viewed properties
-  const { data: recentlyViewedProperties } = useQuery(
-    ['recently-viewed-properties', recentlyViewedIds],
-    async () => {
-      if (recentlyViewedIds.length === 0) return [];
-
-      const baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
-      const token = (() => {
-        try {
-          const raw = localStorage.getItem('auth-storage');
-          return raw ? JSON.parse(raw)?.state?.token : null;
-        } catch { return null; }
-      })();
-      const headers = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-
-      // Use native fetch to avoid axios console error logs for 404s
-      const results = await Promise.all(
-        recentlyViewedIds.map(async (id) => {
-          try {
-            const res = await fetch(`${baseUrl}/properties/${id}`, { headers });
-            if (res.status === 404 || res.status === 410) {
-              // Property deleted — silently remove from localStorage
-              removeFromRecentlyViewed(id);
-              return null;
-            }
-            if (!res.ok) return null;
-            const json = await res.json();
-            return json?.data?.property || null;
-          } catch {
-            return null;
-          }
-        })
-      );
-
-      return results.filter(Boolean);
-    },
-    {
-      enabled: recentlyViewedIds.length > 0,
-      staleTime: 60000,
-      select: (properties) => properties || [],
-    }
-  );
 
   const filteredRecentlyViewedProperties = useMemo(() => {
     const type = (activePropertyType || '').toLowerCase();
@@ -969,7 +923,7 @@ const Home = () => {
             </button>
           </div>
           {/* Dynamic tabs from DB - admin controlled */}
-          <div className="px-4 pb-2 flex items-center gap-2 overflow-x-auto scrollbar-hide">
+          <div className="px-4 pb-2 flex items-center justify-center gap-6 overflow-x-auto scrollbar-hide w-full">
             {propertyTypes.map((type) => {
               const isActive = activePropertyType === (type.name || '').toLowerCase();
               return (

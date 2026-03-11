@@ -467,6 +467,9 @@ const PropertyOwnerBookings = () => {
                       Amount
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Role
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Booking
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -579,6 +582,11 @@ const PropertyOwnerBookings = () => {
                             </button>
                           )}
                         </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${booking.booking_role === 'host' ? 'bg-purple-100 text-purple-800' : 'bg-teal-100 text-teal-800'}`}>
+                          {booking.booking_role === 'host' ? 'Host' : 'Guest'}
+                        </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>

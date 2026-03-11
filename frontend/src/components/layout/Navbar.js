@@ -7,6 +7,7 @@ import 'react-datepicker/dist/react-datepicker.css';
 import useAuthStore from '../../store/authStore';
 import useSettingsStore from '../../store/settingsStore';
 import api from '../../utils/api';
+import AuthModal from '../auth/AuthModal';
 
 // Lazy load FlightSearchForm — only loaded when Flight tab is active
 const FlightSearchForm = lazy(() => import('../search/FlightSearchForm'));
@@ -47,6 +48,8 @@ const Navbar = () => {
   const { settings, loadPublicSettings } = useSettingsStore();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState('login');
 
   const handleBecomeHost = async (e) => {
     e.preventDefault();
@@ -57,7 +60,8 @@ const Navbar = () => {
         navigate('/become-host');
       }
     } else {
-      navigate('/register');
+      setAuthModalMode('register');
+      setAuthModalOpen(true);
     }
     setIsProfileOpen(false);
   };
@@ -837,19 +841,40 @@ const Navbar = () => {
                   </g>
                 </svg>
 
-                {/* Profile icon */}
-                <div className="w-7 h-7 bg-gray-500 rounded-full flex items-center justify-center">
-                  <svg
-                    viewBox="0 0 32 32"
-                    xmlns="http://www.w3.org/2000/svg"
-                    aria-hidden="true"
-                    role="presentation"
-                    focusable="false"
-                    className="w-5 h-5 fill-white"
-                    style={{ display: 'block' }}
-                  >
-                    <path d="M16 .7C7.56.7.7 7.56.7 16S7.56 31.3 16 31.3 31.3 24.44 31.3 16 24.44.7 16 .7zm0 28c-4.02 0-7.6-1.88-9.93-4.81a12.43 12.43 0 0 1 6.45-4.4A6.5 6.5 0 0 1 9.5 14a6.5 6.5 0 0 1 13 0 6.51 6.51 0 0 1-3.02 5.5 12.42 12.42 0 0 1 6.45 4.4A12.67 12.67 0 0 1 16 28.7z"></path>
-                  </svg>
+                {/* Profile icon — shows avatar/initials when logged in */}
+                <div className="relative w-7 h-7 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {isAuthenticated && user ? (
+                    user.profile_picture || user.avatar ? (
+                      <img
+                        src={user.profile_picture || user.avatar}
+                        alt={user.first_name}
+                        className="w-full h-full object-cover rounded-full"
+                        onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                      />
+                    ) : (
+                      <div
+                        className="w-full h-full rounded-full flex items-center justify-center text-white text-xs font-bold select-none"
+                        style={{ background: 'linear-gradient(135deg, #E73367 0%, #ff6b9d 100%)' }}
+                      >
+                        {(user.first_name?.[0] || '').toUpperCase()}{(user.last_name?.[0] || '').toUpperCase()}
+                      </div>
+                    )
+                  ) : (
+                    <div className="w-full h-full bg-gray-500 rounded-full flex items-center justify-center">
+                      <svg
+                        viewBox="0 0 32 32"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden="true"
+                        role="presentation"
+                        focusable="false"
+                        className="w-5 h-5 fill-white"
+                        style={{ display: 'block' }}
+                      >
+                        <path d="M16 .7C7.56.7.7 7.56.7 16S7.56 31.3 16 31.3 31.3 24.44 31.3 16 24.44.7 16 .7zm0 28c-4.02 0-7.6-1.88-9.93-4.81a12.43 12.43 0 0 1 6.45-4.4A6.5 6.5 0 0 1 9.5 14a6.5 6.5 0 0 1 13 0 6.51 6.51 0 0 1-3.02 5.5 12.42 12.42 0 0 1 6.45 4.4A12.67 12.67 0 0 1 16 28.7z"></path>
+                      </svg>
+                    </div>
+                  )}
+
                 </div>
               </button>
 
@@ -858,7 +883,7 @@ const Navbar = () => {
                 <div className="absolute right-0 top-full mt-2 w-60 max-h-[70vh] overflow-y-auto bg-white rounded-2xl shadow-xl py-2 z-[90001] border border-gray-200">
                   {isAuthenticated ? (
                     <>
-                      {/* Authenticated user menu */}
+                      {/* Authenticated user info */}
                       <div className="px-4 py-3 border-b border-gray-200">
                         <p className="text-sm font-semibold text-gray-900">
                           {user?.first_name} {user?.last_name}
@@ -870,48 +895,35 @@ const Navbar = () => {
                           {isAdmin() ? 'Administrator' : isPropertyOwner() ? 'Property Owner' : 'Guest'}
                         </p>
                       </div>
-                      {/* Help link for logged-in users */}
-                      <Link
-                        to="/help"
-                        onClick={() => setIsProfileOpen(false)}
-                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                      >
-                        Help Center
-                      </Link>
 
-                      {/* Become a host button for guests */}
-                      {!isPropertyOwner() && !isAdmin() && (
-                        <button
-                          onClick={handleBecomeHost}
-                          className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      <div className="py-1">
+                        <Link
+                          to="/help"
+                          onClick={() => setIsProfileOpen(false)}
+                          className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                         >
-                          Become a host
-                        </button>
-                      )}
-
-                      {/* Role-based Menu Items */}
-                      <div className="py-2">
-                        {getRoleBasedMenu().map((item) => (
-                          <Link
-                            key={item.name}
-                            to={item.path}
-                            onClick={() => setIsProfileOpen(false)}
-                            className={`flex items-center px-4 py-3 text-sm transition-colors duration-200 ${isActive(item.path)
-                              ? 'text-primary-600 bg-primary-50'
-                              : 'text-gray-700 hover:bg-gray-50 hover:text-primary-600'
-                              }`}
-                          >
-                            <item.icon className="w-4 h-4 mr-3" />
-                            {item.name}
-                          </Link>
-                        ))}
+                          Help Center
+                        </Link>
+                        <Link
+                          to={isAdmin() ? '/admin' : isPropertyOwner() ? '/property-owner' : '/guest'}
+                          onClick={() => setIsProfileOpen(false)}
+                          className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        >
+                          Dashboard
+                        </Link>
+                        <Link
+                          to={isAdmin() ? '/admin/settings' : isPropertyOwner() ? '/property-owner/profile' : '/guest/profile'}
+                          onClick={() => setIsProfileOpen(false)}
+                          className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        >
+                          Profile
+                        </Link>
                       </div>
 
-                      {/* Logout */}
-                      <div className="border-t border-gray-200 pt-2">
+                      <div className="border-t border-gray-200 pt-1">
                         <button
                           onClick={handleLogout}
-                          className="flex items-center w-full px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-200"
+                          className="flex items-center w-full px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                         >
                           <FiLogOut className="w-4 h-4 mr-3" />
                           Logout
@@ -973,20 +985,26 @@ const Navbar = () => {
                       </div>
 
                       <div className="border-t border-gray-200 pt-2">
-                        <Link
-                          to="/login"
-                          onClick={() => setIsProfileOpen(false)}
-                          className="block px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50 transition-colors"
+                        <button
+                          onClick={() => {
+                            setIsProfileOpen(false);
+                            setAuthModalMode('login');
+                            setAuthModalOpen(true);
+                          }}
+                          className="block w-full text-left px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50 transition-colors"
                         >
                           Log in
-                        </Link>
-                        <Link
-                          to="/register"
-                          onClick={() => setIsProfileOpen(false)}
-                          className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        </button>
+                        <button
+                          onClick={() => {
+                            setIsProfileOpen(false);
+                            setAuthModalMode('register');
+                            setAuthModalOpen(true);
+                          }}
+                          className="block w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                         >
                           Sign up
-                        </Link>
+                        </button>
                       </div>
                     </>
                   )}
@@ -1747,21 +1765,27 @@ const Navbar = () => {
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      <Link
-                        to="/login"
-                        className="block px-3 py-2 text-base font-medium text-gray-700 hover:text-primary-600 hover:bg-gray-50"
-                        onClick={() => setIsMenuOpen(false)}
+                      <button
+                        onClick={() => {
+                          setIsMenuOpen(false);
+                          setAuthModalMode('login');
+                          setAuthModalOpen(true);
+                        }}
+                        className="block w-full text-left px-3 py-2 text-base font-medium text-gray-700 hover:text-primary-600 hover:bg-gray-50"
                       >
                         Login
-                      </Link>
+                      </button>
                       {settings?.registration_enabled !== false && (
-                        <Link
-                          to="/register"
-                          className="block px-3 py-2 text-base font-medium bg-primary-600 text-white rounded-md hover:bg-primary-700"
-                          onClick={() => setIsMenuOpen(false)}
+                        <button
+                          onClick={() => {
+                            setIsMenuOpen(false);
+                            setAuthModalMode('register');
+                            setAuthModalOpen(true);
+                          }}
+                          className="block w-full text-left mt-1 px-3 py-2 text-base font-medium bg-primary-600 text-white rounded-md hover:bg-primary-700"
                         >
                           Sign Up
-                        </Link>
+                        </button>
                       )}
                     </div>
                   )}
@@ -1771,6 +1795,7 @@ const Navbar = () => {
           )
         }
       </div >
+      <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} defaultMode={authModalMode} />
     </nav >
   );
 };
