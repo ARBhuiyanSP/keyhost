@@ -567,9 +567,9 @@ const PropertyDetail = () => {
 
     return (
       <div className="day-cell-wrapper" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, gap: '1px', paddingTop: '3px' }}>
-        <span style={{ fontSize: '14px', fontWeight: 500 }}>{day}</span>
+        <span style={{ fontSize: '14px', fontWeight: specialPrice && !isBlocked ? 750 : 500, color: specialPrice && !isBlocked ? '#4A90E2' : 'inherit' }}>{day}</span>
         {!isBlocked && specialPrice !== null && (
-          <span style={{ fontSize: '8px', color: '#0066cc', fontWeight: 600, lineHeight: 1, whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: '9px', color: '#4A90E2', fontWeight: 750, lineHeight: 1, whiteSpace: 'nowrap' }}>
             ৳{Math.round(specialPrice).toLocaleString()}
           </span>
         )}

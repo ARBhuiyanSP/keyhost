@@ -191,8 +191,8 @@
 
   /* Special rate day highlight */
   .react-datepicker__day--special-rate:not(.react-datepicker__day--keyboard-selected):not(.react-datepicker__day--selected):not(.react-datepicker__day--in-range) {
-    background-color: #f0fdf4 !important; /* Soft green tint */
-    border: 1px dashed #6ee7b7 !important;
+    background-color: #e6f2fc !important; /* primary-50 */
+    border: 1px solid #99cbf3 !important; /* primary-200 */
     border-radius: 5px !important;
   }
 
