@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin from '@fullcalendar/interaction';
-import { FiCalendar, FiLink, FiCopy, FiTrash2, FiPlus, FiChevronDown, FiSearch, FiMapPin } from 'react-icons/fi';
+import { FiCalendar, FiLink, FiCopy, FiTrash2, FiPlus, FiChevronDown, FiSearch, FiMapPin, FiX, FiSave, FiAlertCircle } from 'react-icons/fi';
 import api from '../../utils/api';
 import useToast from '../../hooks/useToast';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
@@ -22,6 +22,11 @@ const PropertyOwnerCalendar = () => {
     const [isProviderDropdownOpen, setIsProviderDropdownOpen] = useState(false);
     const [providerSearchQuery, setProviderSearchQuery] = useState('');
     const providerDropdownRef = useRef(null);
+
+    // Rate modal state
+    const [rateModalOpen, setRateModalOpen] = useState(false);
+    const [selectedDate, setSelectedDate] = useState(null);
+    const [rateForm, setRateForm] = useState({ price: '', is_available: true, minimum_stay: 1 });
 
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -56,6 +61,32 @@ const PropertyOwnerCalendar = () => {
             return res.data?.data?.bookings || [];
         },
         { enabled: !!selectedPropertyId }
+    );
+
+    // Fetch Rates and Availability
+    const { data: ratesData, isLoading: ratesLoading, refetch: refetchRates } = useQuery(
+        ['owner-calendar-rates', selectedPropertyId],
+        async () => {
+            if (!selectedPropertyId) return null;
+            const res = await api.get(`/property-owner/properties/${selectedPropertyId}/calendar-rates`);
+            return res.data?.data || { base_price: 0, rates: [] };
+        },
+        { enabled: !!selectedPropertyId }
+    );
+
+    // Update Rate Mutation
+    const updateRateMutation = useMutation(
+        (data) => api.post(`/property-owner/properties/${selectedPropertyId}/calendar-rates`, data),
+        {
+            onSuccess: () => {
+                showSuccess('Rate updated successfully!');
+                setRateModalOpen(false);
+                refetchRates();
+            },
+            onError: (error) => {
+                showError(error.response?.data?.message || 'Failed to update rate');
+            }
+        }
     );
 
     // Fetch External Calendars (iCal Links)
@@ -107,7 +138,8 @@ const PropertyOwnerCalendar = () => {
 
     const handleCopyExportLink = () => {
         if (!selectedPropertyId) return;
-        const exportUrl = `${window.location.protocol}//${window.location.host}/api/ical/export/${selectedPropertyId}`;
+        const baseUrl = api.defaults.baseURL || `${window.location.protocol}//${window.location.host}/api`;
+        const exportUrl = `${baseUrl}/ical/export/${selectedPropertyId}`;
         navigator.clipboard.writeText(exportUrl);
         showSuccess('Export link copied to clipboard!');
     };
@@ -143,6 +175,59 @@ const PropertyOwnerCalendar = () => {
             extendedProps: { booking }
         };
     });
+
+    const handleRateSubmit = (e) => {
+        e.preventDefault();
+        updateRateMutation.mutate({
+            date: selectedDate,
+            price: rateForm.price || null,
+            is_available: rateForm.is_available,
+            minimum_stay: rateForm.minimum_stay || null
+        });
+    };
+
+    const handleDateClick = (arg) => {
+        const clickedDate = arg.dateStr;
+        const now = new Date();
+        const todayStr = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
+        
+        if (clickedDate < todayStr) {
+            return; // Past dates
+        }
+        
+        const existingRate = ratesData?.rates?.find(r => r.date === clickedDate);
+        setSelectedDate(clickedDate);
+        setRateForm({
+            price: existingRate?.price || ratesData?.base_price || '',
+            is_available: existingRate ? !!existingRate.is_available : true,
+            minimum_stay: existingRate?.minimum_stay || 1
+        });
+        setRateModalOpen(true);
+    };
+
+    const renderDayCell = (arg) => {
+        const dateStr = [arg.date.getFullYear(), String(arg.date.getMonth() + 1).padStart(2, '0'), String(arg.date.getDate()).padStart(2, '0')].join('-');
+        const now = new Date();
+        const todayStr = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
+        
+        const isPast = dateStr < todayStr;
+        const existingRate = ratesData?.rates?.find(r => r.date === dateStr);
+        const price = Math.round(Number(existingRate?.price || ratesData?.base_price || 0));
+        const isAvailable = existingRate ? !!existingRate.is_available : true;
+        
+        return (
+            <div className={`w-full h-full min-h-[35px] sm:min-h-[45px] flex flex-col justify-between p-0.5 sm:p-1 cursor-pointer transition-colors ${isPast ? 'opacity-40 bg-gray-100 cursor-not-allowed' : (!isAvailable ? 'bg-red-50/60 hover:bg-red-50' : 'hover:bg-blue-50/30')} rounded`}>
+                <div className="text-right text-[10px] sm:text-xs md:text-sm font-medium text-gray-700">{arg.dayNumberText}</div>
+                <div className="text-center mt-auto pb-0 sm:pb-0.5">
+                    {!isAvailable ? (
+                        <span className="text-[8px] sm:text-[10px] md:text-xs font-semibold text-red-500 block bg-red-100/50 rounded px-0.5 sm:px-1 py-0.5 mt-0.5 sm:mt-1">Blocked</span>
+                    ) : (
+                        <span className="text-[8px] sm:text-[10px] md:text-xs font-semibold text-gray-600 block mt-0.5 sm:mt-1">৳{price.toLocaleString('en-IN')}</span>
+                    )}
+                </div>
+            </div>
+        );
+    };
 
     const filteredProperties = propertiesData?.filter(p => p.title.toLowerCase().includes(searchQuery.toLowerCase())) || [];
     const selectedProperty = propertiesData?.find(p => p.id.toString() === selectedPropertyId);
@@ -232,26 +317,28 @@ const PropertyOwnerCalendar = () => {
                         {/* Calendar View */}
                         <div className="lg:col-span-2 bg-white rounded-xl shadow-sm p-4 md:p-6 border border-gray-100 w-full overflow-hidden">
                             {bookingsLoading ? <LoadingSpinner /> : (
-                                <div className="calendar-container w-full overflow-x-auto pb-2">
-                                    <div className="min-w-[450px]">
-                                        <FullCalendar
-                                            plugins={[dayGridPlugin, interactionPlugin]}
-                                            initialView="dayGridMonth"
-                                            events={calendarEvents}
-                                            headerToolbar={{
-                                                left: 'prev,next today',
-                                                center: 'title',
-                                                right: 'dayGridMonth'
-                                            }}
-                                            height="auto"
-                                            eventClick={(info) => {
-                                                // show message or modal
-                                                const { booking } = info.event.extendedProps;
-                                                const msg = `Booking Ref: ${booking.booking_reference}\nGuest: ${booking.guest_name || 'External'}\nStatus: ${booking.status}\nSource: ${booking.source || 'Internal'}`;
-                                                alert(msg);
-                                            }}
-                                        />
-                                    </div>
+                                <div className="calendar-container w-full pb-2">
+                                    <FullCalendar
+                                        plugins={[dayGridPlugin, interactionPlugin]}
+                                        initialView="dayGridMonth"
+                                        events={calendarEvents}
+                                        dateClick={handleDateClick}
+                                        dayCellContent={renderDayCell}
+                                        headerToolbar={{
+                                            left: 'prev,next',
+                                            center: 'title',
+                                            right: 'today'
+                                        }}
+                                        height="auto"
+                                        contentHeight="auto"
+                                        aspectRatio={1}
+                                        eventClick={(info) => {
+                                            // show message or modal
+                                            const { booking } = info.event.extendedProps;
+                                            const msg = `Booking Ref: ${booking.booking_reference}\nGuest: ${booking.guest_name || 'External'}\nStatus: ${booking.status}\nSource: ${booking.source || 'Internal'}`;
+                                            alert(msg);
+                                        }}
+                                    />
                                 </div>
                             )}
                         </div>
@@ -395,6 +482,93 @@ const PropertyOwnerCalendar = () => {
                     </div>
                 )}
 
+                {/* Rate Update Modal */}
+                {rateModalOpen && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
+                        <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-fade-in-down">
+                            <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                                <h3 className="text-lg font-bold text-gray-900">Manage Availability & Rate</h3>
+                                <button onClick={() => setRateModalOpen(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                                    <FiX size={24} />
+                                </button>
+                            </div>
+                            
+                            <form onSubmit={handleRateSubmit} className="p-5 space-y-4">
+                                <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm flex items-start gap-2 mb-4">
+                                    <FiAlertCircle className="mt-0.5 flex-shrink-0" />
+                                    <p>Updating for date: <strong>{new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</strong></p>
+                                </div>
+                                
+                                <div className="flex items-center justify-between p-3 border border-gray-200 rounded-xl bg-gray-50/50 hover:bg-gray-50 transition-colors">
+                                    <div>
+                                        <p className="font-medium text-gray-900">Available to Book</p>
+                                        <p className="text-xs text-gray-500">Allow guests to book this date</p>
+                                    </div>
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                        <input 
+                                            type="checkbox" 
+                                            className="sr-only peer"
+                                            checked={rateForm.is_available}
+                                            onChange={(e) => setRateForm({...rateForm, is_available: e.target.checked})}
+                                        />
+                                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
+                                    </label>
+                                </div>
+
+                                {rateForm.is_available && (
+                                    <>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Special Rate (৳) <span className="text-xs text-gray-400 font-normal">(Leave empty to use base rate ৳{ratesData?.base_price})</span></label>
+                                            <div className="relative">
+                                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                                    <span className="text-gray-500 font-medium">৳</span>
+                                                </div>
+                                                <input
+                                                    type="number"
+                                                    value={rateForm.price}
+                                                    onChange={(e) => setRateForm({...rateForm, price: e.target.value})}
+                                                    className="w-full pl-8 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all font-medium"
+                                                    placeholder="e.g. 5000"
+                                                    min="0"
+                                                />
+                                            </div>
+                                        </div>
+                                        
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Minimum Stay (Nights)</label>
+                                            <input
+                                                type="number"
+                                                value={rateForm.minimum_stay}
+                                                onChange={(e) => setRateForm({...rateForm, minimum_stay: parseInt(e.target.value) || 1})}
+                                                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all"
+                                                min="1"
+                                                required
+                                            />
+                                        </div>
+                                    </>
+                                )}
+
+                                <div className="pt-2 flex gap-3">
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setRateModalOpen(false)}
+                                        className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button 
+                                        type="submit" 
+                                        disabled={updateRateMutation.isLoading}
+                                        className="flex-1 px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium transition-colors flex justify-center items-center gap-2"
+                                    >
+                                        {updateRateMutation.isLoading ? <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span> : <><FiSave /> Save Changes</>}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
             </div>
 
             <style dangerouslySetInnerHTML={{
@@ -426,6 +600,9 @@ const PropertyOwnerCalendar = () => {
          .calendar-container .fc-daygrid-day-number {
            color: #111827;
            font-weight: 500;
+         }
+         .calendar-container .fc-daygrid-day-frame {
+           min-height: 40px !important;
          }
          .calendar-container .fc-event {
            cursor: pointer;
