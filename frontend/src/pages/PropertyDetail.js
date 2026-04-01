@@ -207,12 +207,27 @@ const PropertyDetail = () => {
     }
   );
 
+  // Build a fast lookup map: "YYYY-MM-DD" -> availability record
+  const availabilityMap = React.useMemo(() => {
+    const map = {};
+    (property?.availability_data || []).forEach(a => {
+      map[a.date] = a;
+    });
+    return map;
+  }, [property?.availability_data]);
+
   const blockedDates = blockedDatesData?.blockedDates || [];
   const checkInDates = blockedDatesData?.checkInDates || [];
 
-  // Function to check if a date is blocked (includes past dates and booked dates)
+  // Function to check if a date is blocked (includes past dates, booked dates, and host-blocked dates)
   const isDateBlocked = (date) => {
     if (!date) return false;
+
+    // Timezone-safe date string format: YYYY-MM-DD
+    const y = date.getFullYear();
+    const mo = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    const dateStr = `${y}-${mo}-${d}`;
 
     // Check if date is in the past (before today)
     const today = new Date();
@@ -224,17 +239,20 @@ const PropertyDetail = () => {
       return true; // Past dates are blocked
     }
 
-    // Check if date is in blocked dates list
-    const dateString = formatDateLocal(date);
+    // Check host availability blocks from availabilityMap (is_available == 0)
+    const hostData = availabilityMap[dateStr];
+    if (hostData && Number(hostData.is_available) === 0) {
+      return true; // Host explicitly blocked this date
+    }
 
     // Allow checking out on a day someone else checks in (only if user is selecting checkout date)
     const isSelectingCheckout = bookingData.check_in_date && !bookingData.check_out_date;
-    if (isSelectingCheckout && checkInDates.includes(dateString)) {
+    if (isSelectingCheckout && checkInDates.includes(dateStr)) {
       // Validate that the range doesn't cross *other* blocked dates
       return false; 
     }
 
-    return blockedDates.includes(dateString);
+    return blockedDates.includes(dateStr);
   };
 
   // Function to get day className for styling
@@ -467,15 +485,6 @@ const PropertyDetail = () => {
     }
     return 0;
   };
-
-  // Build a fast lookup map: "YYYY-MM-DD" -> availability record
-  const availabilityMap = React.useMemo(() => {
-    const map = {};
-    (property?.availability_data || []).forEach(a => {
-      map[a.date] = a;
-    });
-    return map;
-  }, [property?.availability_data]);
 
   // Helper: get special price for a date string (YYYY-MM-DD), or base_price
   // Uses availabilityMap built from property.availability_data
