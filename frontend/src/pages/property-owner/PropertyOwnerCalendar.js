@@ -216,13 +216,13 @@ const PropertyOwnerCalendar = () => {
         const isAvailable = existingRate ? !!existingRate.is_available : true;
         
         return (
-            <div className={`w-full h-full min-h-[35px] sm:min-h-[45px] flex flex-col justify-between p-0.5 sm:p-1 cursor-pointer transition-colors ${isPast ? 'opacity-40 bg-gray-100 cursor-not-allowed' : (!isAvailable ? 'bg-red-50/60 hover:bg-red-50' : 'hover:bg-blue-50/30')} rounded`}>
-                <div className="text-right text-[10px] sm:text-xs md:text-sm font-medium text-gray-700">{arg.dayNumberText}</div>
-                <div className="text-center mt-auto pb-0 sm:pb-0.5">
+            <div className={`w-full h-full min-h-[45px] flex flex-col items-center justify-center p-1 cursor-pointer transition-colors ${isPast ? 'opacity-40 bg-gray-100 cursor-not-allowed' : (!isAvailable ? 'bg-red-50/60 hover:bg-red-50' : 'hover:bg-blue-50/30')} rounded`}>
+                <div className="text-[10px] sm:text-xs md:text-sm font-semibold text-gray-800 leading-none mb-0.5">{arg.dayNumberText}</div>
+                <div className="text-center">
                     {!isAvailable ? (
-                        <span className="text-[8px] sm:text-[10px] md:text-xs font-semibold text-red-500 block bg-red-100/50 rounded px-0.5 sm:px-1 py-0.5 mt-0.5 sm:mt-1">Blocked</span>
+                        <span className="text-[8px] sm:text-[10px] md:text-xs font-semibold text-red-500 block bg-red-100/50 rounded px-1 py-0.5">Blocked</span>
                     ) : (
-                        <span className="text-[8px] sm:text-[10px] md:text-xs font-semibold text-gray-600 block mt-0.5 sm:mt-1">৳{price.toLocaleString('en-IN')}</span>
+                        <span className="text-[8px] sm:text-[10px] md:text-xs font-semibold text-primary-600 block leading-tight">৳{price.toLocaleString('en-IN')}</span>
                     )}
                 </div>
             </div>
