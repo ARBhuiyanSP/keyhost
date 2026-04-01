@@ -468,15 +468,24 @@ const PropertyDetail = () => {
     return 0;
   };
 
+  // Build a fast lookup map: "YYYY-MM-DD" -> availability record
+  const availabilityMap = React.useMemo(() => {
+    const map = {};
+    (property?.availability_data || []).forEach(a => {
+      map[a.date] = a;
+    });
+    return map;
+  }, [property?.availability_data]);
+
   // Helper: get special price for a date string (YYYY-MM-DD), or base_price
+  // Uses availabilityMap built from property.availability_data
   const getDateRate = (dateStr) => {
-    const available = property?.availability_data || [];
-    const match = available.find(a => a.date === dateStr);
-    if (match && match.is_available && match.price) return parseFloat(match.price);
+    const match = availabilityMap[dateStr];
+    if (match && Number(match.is_available) === 1 && match.price) return parseFloat(match.price);
     return parseFloat(property?.base_price) || 0;
   };
 
-  // Sum up night-by-night prices accounting for special rates
+  // Sum up night-by-night prices with timezone-safe date string generation
   const calculateBasePrice = () => {
     if (!property || !bookingData.check_in_date || !bookingData.check_out_date) return 0;
     const checkIn = parseDateLocal(bookingData.check_in_date);
@@ -484,12 +493,15 @@ const PropertyDetail = () => {
     let total = 0;
     const current = new Date(checkIn);
     while (current < checkOut) {
-      const dateStr = formatDateLocal(current);
-      total += getDateRate(dateStr);
+      const y = current.getFullYear();
+      const mo = String(current.getMonth() + 1).padStart(2, '0');
+      const d = String(current.getDate()).padStart(2, '0');
+      total += getDateRate(`${y}-${mo}-${d}`);
       current.setDate(current.getDate() + 1);
     }
     return total;
   };
+
 
   const calculateTotal = () => {
     if (!property || !bookingData.check_in_date || !bookingData.check_out_date) {
@@ -514,21 +526,26 @@ const PropertyDetail = () => {
     return isNaN(total) ? 0 : total;
   };
 
+
+
   // Render each day cell with special price below the number
+  // Use date.getFullYear/getMonth/getDate (local time) to avoid UTC timezone drift
   const renderDayContents = (day, date) => {
-    const dateStr = formatDateLocal(date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    const dateStr = `${y}-${m}-${d}`;
+
     const isBlocked = isDateBlocked(date);
-    const availData = property?.availability_data || [];
-    const match = availData.find(a => a.date === dateStr);
-    const hasSpecialRate = match && match.is_available && match.price && parseFloat(match.price) !== parseFloat(property?.base_price);
+    const match = availabilityMap[dateStr];
+    const hasSpecialRate = match && Number(match.is_available) === 1 && match.price &&
+      parseFloat(match.price) !== parseFloat(property?.base_price);
     const specialPrice = hasSpecialRate ? parseFloat(match.price) : null;
 
     return (
       <div className="day-cell-wrapper" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, gap: '1px', paddingTop: '3px' }}>
         <span style={{ fontSize: '14px', fontWeight: 500 }}>{day}</span>
-        {!isBlocked && specialPrice && (
+        {!isBlocked && specialPrice !== null && (
           <span style={{ fontSize: '8px', color: '#0066cc', fontWeight: 600, lineHeight: 1, whiteSpace: 'nowrap' }}>
             ৳{Math.round(specialPrice).toLocaleString()}
           </span>
@@ -538,6 +555,7 @@ const PropertyDetail = () => {
   };
 
   const formatStickyDateRange = () => {
+
     if (!bookingData.check_in_date || !bookingData.check_out_date) return '';
     const checkIn = parseDateLocal(bookingData.check_in_date);
     const checkOut = parseDateLocal(bookingData.check_out_date);
