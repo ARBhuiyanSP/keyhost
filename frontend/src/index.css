@@ -185,14 +185,9 @@
   .fresh-datepicker-popper .react-datepicker__day--range-start.react-datepicker__day--range-end { border-radius: 50% !important; }
   .fresh-datepicker-popper .react-datepicker__day--keyboard-selected { background-color: white !important; color: #1a1a1a !important; }
 
-  /* Nuclear fix for unwanted calendar text */
-  .react-datepicker__day span           { display: block; }
-  .react-datepicker__day::before,
-  .react-datepicker__day::after        { content: none !important; display: none !important; }
-  .react-datepicker__day div,
-  .react-datepicker__day small,
-  .react-datepicker__day p             { display: none !important; }
-  .react-datepicker__day > span        { display: block !important; }
+  /* Day cell span display fix — allow renderDayContents wrapper */
+  .react-datepicker__day > .day-cell-wrapper { display: flex !important; }
+  .react-datepicker__day > span             { display: block !important; }
 
   .fresh-datepicker-popper .react-datepicker__navigation          { top: 24px !important; }
   .fresh-datepicker-popper .react-datepicker__navigation--previous { left: 24px !important; }
@@ -539,10 +534,11 @@
 .mobile-date-picker-calendar .react-datepicker__month          { margin: 0 !important; padding: 0.5rem 0 !important; }
 .mobile-date-picker-calendar .react-datepicker__week           { display: flex !important; justify-content: space-around !important; }
 .mobile-date-picker-calendar .react-datepicker__day {
-  width: 2.5rem !important; height: 2.5rem !important; margin: 0.25rem 0 !important;
-  border-radius: 0.5rem !important; display: flex !important;
+  width: 2.5rem !important; height: 3.2rem !important; margin: 0.15rem 0 !important;
+  border-radius: 0.5rem !important; display: inline-flex !important;
   align-items: center !important; justify-content: center !important;
   font-size: 0.875rem !important; transition: all 0.2s !important;
+  flex-direction: column !important;
 }
 .mobile-date-picker-calendar .react-datepicker__day:hover { background-color: #f3f4f6 !important; }
 .mobile-date-picker-calendar .react-datepicker__day--selected,
@@ -550,6 +546,10 @@
 .mobile-date-picker-calendar .react-datepicker__day--in-range  { background-color: #E41D57 !important; color: white !important; }
 .mobile-date-picker-calendar .react-datepicker__day--range-start,
 .mobile-date-picker-calendar .react-datepicker__day--range-end { background-color: #E41D57 !important; color: white !important; border-radius: 0.5rem !important; }
+.mobile-date-picker-calendar .react-datepicker__day--range-start .day-cell-wrapper span:last-child,
+.mobile-date-picker-calendar .react-datepicker__day--range-end .day-cell-wrapper span:last-child,
+.mobile-date-picker-calendar .react-datepicker__day--selected .day-cell-wrapper span:last-child,
+.mobile-date-picker-calendar .react-datepicker__day--in-range .day-cell-wrapper span:last-child { color: #ffc8d6 !important; }
 .mobile-date-picker-calendar .react-datepicker__day--disabled  {
   text-decoration: line-through !important; color: #d1d5db !important;
   background-color: transparent !important; cursor: not-allowed !important; pointer-events: none !important;
@@ -648,3 +648,16 @@ body { top: 0px !important; position: static !important; }
 .goog-te-menu-value span:first-child  { flex-grow: 1 !important; text-align: left !important; padding-left: 6px !important; }
 .goog-te-gadget-icon                  { width: 16px !important; height: 16px !important; margin-right: 4px !important; }
 .goog-te-menu-value img               { margin-left: auto !important; }
+
+/* ============================================================
+   PRINT STYLES (For Dashboard Reports)
+   ============================================================ */
+@media print {
+  aside, header, .print-hide { display: none !important; }
+  .h-screen, .min-h-screen { height: auto !important; min-height: 0 !important; overflow: visible !important; }
+  main { overflow: visible !important; padding: 0 !important; background: white !important; }
+  body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .card, .bg-white { box-shadow: none !important; border: 1px solid #e5e7eb !important; break-inside: avoid; }
+  .text-white { color: #000 !important; }
+  .print-text-black { color: #000 !important; }
+}

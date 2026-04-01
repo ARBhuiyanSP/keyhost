@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { useQuery } from 'react-query';
+import { useQuery, useQueryClient } from 'react-query';
 import {
   FiStar, FiMapPin, FiUsers, FiWifi, FiTruck, FiCoffee, FiHeart, FiShare2,
   FiCalendar, FiCheck, FiX, FiShield, FiTv, FiHome, FiChevronLeft, FiChevronRight,
@@ -11,9 +11,11 @@ import {
 import ReportListingModal from '../components/property/ReportListingModal';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import { toast } from 'react-toastify';
 import api from '../utils/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import useAuthStore from '../store/authStore';
+import useSettingsStore from '../store/settingsStore';
 import StickySearchHeader from '../components/layout/StickySearchHeader';
 import PropertyImageSlider from '../components/property/PropertyImageSlider';
 import PropertyMap from '../components/property/PropertyMap';
@@ -23,9 +25,12 @@ import AuthModal from '../components/auth/AuthModal';
 
 const PropertyDetail = () => {
   const { id } = useParams();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated } = useAuthStore();
+  const { settings } = useSettingsStore();
+
   const mobileReserveDateContainerRef = useRef(null);
   const desktopReserveDatePickerRef = useRef(null);
   const reserveSectionRef = useRef(null);
@@ -187,7 +192,7 @@ const PropertyDetail = () => {
     ['blockedDates', id],
     () => api.get(`/properties/${id}/blocked-dates`),
     {
-      select: (response) => response.data?.data?.blockedDates || [],
+      select: (response) => response.data?.data || { blockedDates: [], checkInDates: [] },
       enabled: !!id,
     }
   );
@@ -202,7 +207,8 @@ const PropertyDetail = () => {
     }
   );
 
-  const blockedDates = blockedDatesData || [];
+  const blockedDates = blockedDatesData?.blockedDates || [];
+  const checkInDates = blockedDatesData?.checkInDates || [];
 
   // Function to check if a date is blocked (includes past dates and booked dates)
   const isDateBlocked = (date) => {
@@ -220,6 +226,14 @@ const PropertyDetail = () => {
 
     // Check if date is in blocked dates list
     const dateString = formatDateLocal(date);
+
+    // Allow checking out on a day someone else checks in (only if user is selecting checkout date)
+    const isSelectingCheckout = bookingData.check_in_date && !bookingData.check_out_date;
+    if (isSelectingCheckout && checkInDates.includes(dateString)) {
+      // Validate that the range doesn't cross *other* blocked dates
+      return false; 
+    }
+
     return blockedDates.includes(dateString);
   };
 
@@ -259,8 +273,36 @@ const PropertyDetail = () => {
     checkFavoriteStatus();
   }, [isAuthenticated, property]);
 
-
-
+  // On-Demand iCal Sync when the user visits the property details page
+  useEffect(() => {
+    if (id) {
+      const syncExternalCalendars = async () => {
+        try {
+          await api.get(`/ical/sync-property/${id}`);
+          // Invalidate queries to fetch updated calendar availability
+          queryClient.invalidateQueries(['blockedDates', id]);
+          
+          if (bookingData.check_in_date && bookingData.check_out_date) {
+            queryClient.invalidateQueries(['availability', id, bookingData.check_in_date, bookingData.check_out_date]);
+            
+            // Explicitly check availability state to trigger alert
+            const availRes = await api.get(`/properties/${id}/availability?check_in_date=${bookingData.check_in_date}&check_out_date=${bookingData.check_out_date}`);
+            const isAvail = availRes.data?.data?.isAvailable;
+            
+            if (isAvail === false) {
+              toast.error('Already/just booked on another platform, please choose another date/property');
+              setBookingData(prev => ({ ...prev, check_in_date: null, check_out_date: null }));
+            }
+          }
+        } catch (error) {
+          console.error('Failed to sync iCal on demand:', error);
+        }
+      };
+      
+      syncExternalCalendars();
+    }
+  }, [id]); // Only run once per property load
+  
   // Scroll to top when property ID changes or component mounts
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
@@ -426,6 +468,29 @@ const PropertyDetail = () => {
     return 0;
   };
 
+  // Helper: get special price for a date string (YYYY-MM-DD), or base_price
+  const getDateRate = (dateStr) => {
+    const available = property?.availability_data || [];
+    const match = available.find(a => a.date === dateStr);
+    if (match && match.is_available && match.price) return parseFloat(match.price);
+    return parseFloat(property?.base_price) || 0;
+  };
+
+  // Sum up night-by-night prices accounting for special rates
+  const calculateBasePrice = () => {
+    if (!property || !bookingData.check_in_date || !bookingData.check_out_date) return 0;
+    const checkIn = parseDateLocal(bookingData.check_in_date);
+    const checkOut = parseDateLocal(bookingData.check_out_date);
+    let total = 0;
+    const current = new Date(checkIn);
+    while (current < checkOut) {
+      const dateStr = formatDateLocal(current);
+      total += getDateRate(dateStr);
+      current.setDate(current.getDate() + 1);
+    }
+    return total;
+  };
+
   const calculateTotal = () => {
     if (!property || !bookingData.check_in_date || !bookingData.check_out_date) {
       return 0;
@@ -434,16 +499,42 @@ const PropertyDetail = () => {
     const nights = calculateNights();
     if (nights === 0) return 0;
 
-    const basePricePerNight = parseFloat(property.base_price) || 0;
-    const basePrice = basePricePerNight * nights;
+    const basePrice = calculateBasePrice();
     const cleaningFee = parseFloat(property.cleaning_fee) || 0;
     const securityDeposit = parseFloat(property.security_deposit) || 0;
     const extraGuestFee = bookingData.number_of_guests > 1 ? (bookingData.number_of_guests - 1) * (parseFloat(property.extra_guest_fee) || 0) : 0;
-    const serviceFee = basePrice * 0.1; // 10% service fee
-    const taxAmount = basePrice * 0.15; // 15% tax
+    
+    const serviceFeePercent = parseFloat(settings?.service_fee_percentage || 0) / 100;
+    const taxPercent = parseFloat(settings?.tax_percentage || 0) / 100;
+    
+    const serviceFee = basePrice * serviceFeePercent;
+    const taxAmount = basePrice * taxPercent;
 
     const total = basePrice + cleaningFee + securityDeposit + extraGuestFee + serviceFee + taxAmount;
     return isNaN(total) ? 0 : total;
+  };
+
+  // Render each day cell with special price below the number
+  const renderDayContents = (day, date) => {
+    const dateStr = formatDateLocal(date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isBlocked = isDateBlocked(date);
+    const availData = property?.availability_data || [];
+    const match = availData.find(a => a.date === dateStr);
+    const hasSpecialRate = match && match.is_available && match.price && parseFloat(match.price) !== parseFloat(property?.base_price);
+    const specialPrice = hasSpecialRate ? parseFloat(match.price) : null;
+
+    return (
+      <div className="day-cell-wrapper" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, gap: '1px', paddingTop: '3px' }}>
+        <span style={{ fontSize: '14px', fontWeight: 500 }}>{day}</span>
+        {!isBlocked && specialPrice && (
+          <span style={{ fontSize: '8px', color: '#0066cc', fontWeight: 600, lineHeight: 1, whiteSpace: 'nowrap' }}>
+            ৳{Math.round(specialPrice).toLocaleString()}
+          </span>
+        )}
+      </div>
+    );
   };
 
   const formatStickyDateRange = () => {
@@ -634,16 +725,17 @@ const PropertyDetail = () => {
       )}
       {/* Modern Hero Gallery - Responsive 2 Column Layout */}
       <div className="relative property-hero-gallery">
+        {/* Back Button - Mobile */}
+        <button
+          onClick={() => navigate(-1)}
+          className="md:hidden absolute top-4 left-4 z-50 p-3 bg-white/90 hover:bg-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 backdrop-blur-sm"
+          aria-label="Go back"
+        >
+          <FiChevronLeft className="w-5 h-5 text-gray-900" />
+        </button>
+
         {property.images && property.images.length > 0 ? (
           <div className="h-[50vh] md:h-[70vh] relative overflow-hidden">
-            {/* Back Button - Mobile */}
-            <button
-              onClick={() => navigate(-1)}
-              className="md:hidden absolute top-4 left-4 z-10 p-3 bg-white/90 hover:bg-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 backdrop-blur-sm"
-              aria-label="Go back"
-            >
-              <FiChevronLeft className="w-5 h-5 text-gray-900" />
-            </button>
             {/* Mobile: Image Slider */}
             <div className="md:hidden h-full mt-[3px]">
               <div
@@ -688,11 +780,7 @@ const PropertyDetail = () => {
                 }}
               >
                 <img
-                  src={
-                    property.images[0]?.image_url?.startsWith('/uploads/') 
-                      ? `/api${property.images[0].image_url}` 
-                      : property.images[0]?.image_url
-                  }
+                  src={property.images[0]?.image_url}
                   alt={property.title}
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   onError={(e) => {
@@ -735,11 +823,7 @@ const PropertyDetail = () => {
                       {image && image.image_url && (
                         <>
                           <img
-                            src={
-                              image.image_url.startsWith('/uploads/') 
-                                ? `/api${image.image_url}` 
-                                : image.image_url
-                            }
+                            src={image.image_url}
                             alt={`${property.title} photo ${position + 1}`}
                             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                             loading="lazy"
@@ -785,7 +869,7 @@ const PropertyDetail = () => {
         )}
 
         {/* Action Buttons */}
-        <div className="absolute top-4 right-4 flex space-x-2 z-10">
+        <div className="absolute top-4 right-4 flex space-x-2 z-50">
           <button
             onClick={toggleFavorite}
             className="p-3 bg-white/90 hover:bg-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 backdrop-blur-sm"
@@ -1032,16 +1116,18 @@ const PropertyDetail = () => {
                 {sanitizeText(property.title)}
               </h1>
 
-              {/* Location and Review - Same Line */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center text-gray-600">
-                  <FiMapPin className="mr-2 text-gray-400" />
+              {/* Location and Review - Same Line on Desktop, Two Lines on Mobile */}
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-4">
+                <div className="flex items-start text-gray-600 mt-1">
+                  <FiMapPin className="mr-2 mt-0.5 min-w-[16px] text-gray-400" />
                   <span className="text-sm">{sanitizeText(property.address)}, {sanitizeText(property.city)}, {sanitizeText(property.state)}</span>
                 </div>
-                <div className="flex items-center">
-                  <FiStar className="text-yellow-400 mr-1" />
-                  <span className="font-medium">{property.average_rating || 'New'}</span>
-                  <span className="text-gray-500 ml-1">({property.total_reviews} reviews)</span>
+                <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center">
+                    <FiStar className="text-yellow-400 mr-1 min-w-[16px]" />
+                    <span className="font-medium">{property.average_rating || 'New'}</span>
+                  </div>
+                  <span className="text-gray-500 md:ml-1 text-sm whitespace-nowrap">({property.total_reviews} reviews)</span>
                 </div>
               </div>
 
@@ -1235,32 +1321,40 @@ const PropertyDetail = () => {
                                       margin: 0;
                                   }
                                   .custom-calendar .react-datepicker__day {
-                                      width: 38px;
-                                      height: 38px;
-                                      line-height: 38px;
+                                      width: 42px;
+                                      height: 50px;
+                                      line-height: 1;
                                       margin: 0;
                                       font-size: 0.85rem;
                                       font-weight: 500;
-                                      border-radius: 50%;
+                                      border-radius: 8px;
+                                      display: inline-flex !important;
+                                      align-items: center;
+                                      justify-content: center;
                                   }
                                   .custom-calendar .react-datepicker__day:hover {
                                       background-color: #f7f7f7;
                                       border: 1.5px solid black;
                                       color: black;
-                                      border-radius: 50%;
+                                      border-radius: 8px;
                                   }
                                   .custom-calendar .react-datepicker__day--selected,
                                   .custom-calendar .react-datepicker__day--range-end,
                                   .custom-calendar .react-datepicker__day--range-start {
                                       background-color: #222222 !important;
                                       color: white !important;
-                                      border-radius: 50%;
+                                      border-radius: 8px;
+                                  }
+                                  .custom-calendar .react-datepicker__day--selected .day-cell-wrapper span:last-child,
+                                  .custom-calendar .react-datepicker__day--range-start .day-cell-wrapper span:last-child,
+                                  .custom-calendar .react-datepicker__day--range-end .day-cell-wrapper span:last-child {
+                                      color: #a0c4ff !important;
                                   }
                                   .custom-calendar .react-datepicker__day--in-selecting-range:not(.react-datepicker__day--range-start):not(.react-datepicker__day--range-end),
                                   .custom-calendar .react-datepicker__day--in-range:not(.react-datepicker__day--range-start):not(.react-datepicker__day--range-end) {
                                       background-color: #f7f7f7 !important;
                                       color: #222222 !important;
-                                      border-radius: 50%;
+                                      border-radius: 8px;
                                   }
                                   .custom-calendar .react-datepicker__day--blocked {
                                       color: #dddddd !important;
@@ -1275,6 +1369,9 @@ const PropertyDetail = () => {
                                   }
                                   .custom-calendar .react-datepicker__navigation {
                                       top: 4px;
+                                  }
+                                  .custom-calendar .react-datepicker__day-name {
+                                      width: 42px;
                                   }
                               `}</style>
                       <div className="flex justify-between items-start mb-4">
@@ -1312,6 +1409,7 @@ const PropertyDetail = () => {
                           minDate={new Date()}
                           filterDate={(date) => !isDateBlocked(date)}
                           dayClassName={getDayClassName}
+                          renderDayContents={renderDayContents}
                           inline
                           monthsShown={2}
                           calendarClassName="custom-calendar"
@@ -1459,8 +1557,81 @@ const PropertyDetail = () => {
                       : 'hover:bg-[#D90B45]'
                       }`}
                   >
-                    Reserve
+                    {property?.owner_auto_accept ? 'Confirm Booking' : 'Reserve'}
                   </button>
+
+                  {/* Price Breakdown */}
+                  {calculateNights() > 0 && (
+                    <div className="mt-1 mb-4 space-y-2 text-sm text-gray-700 border-t border-gray-100 pt-4">
+                      {(() => {
+                        const nights = calculateNights();
+                        const basePrice = calculateBasePrice();
+                        const defaultTotal = parseFloat(property.base_price) * nights;
+                        const hasSpecialRates = Math.abs(basePrice - defaultTotal) > 0.01;
+                        const cleaningFee = parseFloat(property.cleaning_fee) || 0;
+                        const securityDeposit = parseFloat(property.security_deposit) || 0;
+                        const serviceFeePercent = parseFloat(settings?.service_fee_percentage || 0) / 100;
+                        const taxPercent = parseFloat(settings?.tax_percentage || 0) / 100;
+                        const serviceFee = basePrice * serviceFeePercent;
+                        const taxAmount = basePrice * taxPercent;
+                        const extraGuestFee = bookingData.number_of_guests > 1 ? (bookingData.number_of_guests - 1) * (parseFloat(property.extra_guest_fee) || 0) : 0;
+                        return (
+                          <>
+                            <div className="flex justify-between items-start">
+                              <span className="underline underline-offset-2 text-gray-600">
+                                {hasSpecialRates
+                                  ? `BDT ${Math.round(parseFloat(property.base_price)).toLocaleString()} × ${nights} nights (special rates apply)`
+                                  : `BDT ${Math.round(parseFloat(property.base_price)).toLocaleString()} × ${nights} nights`}
+                              </span>
+                              <span className="font-medium">BDT {Math.round(basePrice).toLocaleString()}</span>
+                            </div>
+                            {hasSpecialRates && (
+                              <div className="flex justify-between items-center text-blue-600 text-xs bg-blue-50 -mx-1 px-2 py-1.5 rounded-md">
+                                <span className="flex items-center gap-1">
+                                  <span className="text-base">🏷️</span> Special rates applied for selected dates
+                                </span>
+                              </div>
+                            )}
+                            {cleaningFee > 0 && (
+                              <div className="flex justify-between">
+                                <span className="underline underline-offset-2 text-gray-600">Cleaning fee</span>
+                                <span className="font-medium">BDT {Math.round(cleaningFee).toLocaleString()}</span>
+                              </div>
+                            )}
+                            {securityDeposit > 0 && (
+                              <div className="flex justify-between">
+                                <span className="underline underline-offset-2 text-gray-600">Security deposit</span>
+                                <span className="font-medium">BDT {Math.round(securityDeposit).toLocaleString()}</span>
+                              </div>
+                            )}
+                            {extraGuestFee > 0 && (
+                              <div className="flex justify-between">
+                                <span className="underline underline-offset-2 text-gray-600">Extra guest fee</span>
+                                <span className="font-medium">BDT {Math.round(extraGuestFee).toLocaleString()}</span>
+                              </div>
+                            )}
+                            {serviceFee > 0 && (
+                              <div className="flex justify-between">
+                                <span className="underline underline-offset-2 text-gray-600">Service fee</span>
+                                <span className="font-medium">BDT {Math.round(serviceFee).toLocaleString()}</span>
+                              </div>
+                            )}
+                            {taxAmount > 0 && (
+                              <div className="flex justify-between">
+                                <span className="underline underline-offset-2 text-gray-600">Taxes</span>
+                                <span className="font-medium">BDT {Math.round(taxAmount).toLocaleString()}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between font-bold text-base pt-2 border-t border-gray-200 mt-1">
+                              <span>Total (BDT)</span>
+                              <span>BDT {Math.round(parseFloat(property.cleaning_fee || 0) + parseFloat(property.security_deposit || 0) + extraGuestFee + serviceFee + taxAmount + basePrice).toLocaleString()}</span>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
+
                 </div>
 
                 <div className="mt-4 flex justify-center">
@@ -1882,6 +2053,7 @@ const PropertyDetail = () => {
                           minDate={new Date()}
                           filterDate={(date) => !isDateBlocked(date)}
                           dayClassName={getDayClassName}
+                          renderDayContents={renderDayContents}
                           inline
                           monthsShown={1}
                           calendarClassName="mobile-date-picker-calendar w-full"
