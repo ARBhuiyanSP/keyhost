@@ -261,6 +261,20 @@ const PropertyDetail = () => {
     if (isDateBlocked(date)) {
       return 'react-datepicker__day--blocked';
     }
+    
+    // Timezone-safe date string format: YYYY-MM-DD
+    const y = date.getFullYear();
+    const mo = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    const dateStr = `${y}-${mo}-${d}`;
+
+    const match = availabilityMap[dateStr];
+    const hasSpecialRate = match && Number(match.is_available) === 1 && match.price &&
+      parseFloat(match.price) !== parseFloat(property?.base_price);
+      
+    if (hasSpecialRate) {
+      return 'react-datepicker__day--available react-datepicker__day--special-rate';
+    }
     return 'react-datepicker__day--available';
   };
 

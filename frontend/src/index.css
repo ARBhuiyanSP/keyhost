@@ -189,6 +189,13 @@
   .react-datepicker__day > .day-cell-wrapper { display: flex !important; }
   .react-datepicker__day > span             { display: block !important; }
 
+  /* Special rate day highlight */
+  .react-datepicker__day--special-rate:not(.react-datepicker__day--keyboard-selected):not(.react-datepicker__day--selected):not(.react-datepicker__day--in-range) {
+    background-color: #f0fdf4 !important; /* Soft green tint */
+    border: 1px dashed #6ee7b7 !important;
+    border-radius: 5px !important;
+  }
+
   .fresh-datepicker-popper .react-datepicker__navigation          { top: 24px !important; }
   .fresh-datepicker-popper .react-datepicker__navigation--previous { left: 24px !important; }
   .fresh-datepicker-popper .react-datepicker__navigation--next     { right: 24px !important; }
