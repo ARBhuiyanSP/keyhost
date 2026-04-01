@@ -106,14 +106,10 @@ router.get('/', optionalAuth, validatePagination, cacheMiddleware(30), async (re
           SELECT DISTINCT b.property_id 
           FROM bookings b 
           WHERE b.status IN ('request_accepted', 'confirmed', 'checked_in')
-          AND (
-            (b.check_in_date <= ? AND b.check_out_date > ?) OR
-            (b.check_in_date < ? AND b.check_out_date >= ?) OR
-            (b.check_in_date >= ? AND b.check_out_date <= ?)
-          )
+          AND DATE(b.check_in_date) < DATE(?) AND DATE(b.check_out_date) > DATE(?)
         )
       `);
-      queryParams.push(check_out_date, check_in_date, check_out_date, check_in_date, check_in_date, check_out_date);
+      queryParams.push(check_out_date, check_in_date);
     }
 
     // Build amenity filter
@@ -152,6 +148,7 @@ router.get('/', optionalAuth, validatePagination, cacheMiddleware(30), async (re
         u.last_name as owner_last_name,
         u.email as owner_email,
         u.phone as owner_phone,
+        u.auto_accept_bookings as owner_auto_accept,
         po.business_name,
         po.is_verified as owner_verified
       FROM properties p
@@ -224,7 +221,8 @@ router.get('/:id', optionalAuth, validateId, async (req, res) => {
         u.is_superhost as owner_is_superhost,
         u.languages as owner_languages,
         po.business_name,
-        po.is_verified as owner_verified
+        po.is_verified as owner_verified,
+        u.auto_accept_bookings as owner_auto_accept
       FROM properties p
       JOIN property_owners po ON p.owner_id = po.id
       JOIN users u ON po.user_id = u.id
@@ -242,7 +240,7 @@ router.get('/:id', optionalAuth, validateId, async (req, res) => {
     // Access control for non-active properties
     if (property.status !== 'active') {
       const isOwner = req.user && req.user.id === property.po_user_id;
-      const isAdmin = req.user && req.user.role === 'admin';
+      const isAdmin = req.user && req.user.user_type === 'admin';
 
       if (!isOwner && !isAdmin) {
         return res.status(404).json(
@@ -340,11 +338,18 @@ router.get('/:id', optionalAuth, validateId, async (req, res) => {
       ORDER BY r.created_at DESC
       LIMIT 5
     `, [id]);
-    property.recent_reviews = reviews;
+    // Get custom availability constraints
+    const [availability] = await pool.execute(`
+      SELECT DATE_FORMAT(date, '%Y-%m-%d') as date, is_available, price, minimum_stay
+      FROM property_availability
+      WHERE property_id = ? AND date >= CURDATE()
+    `, [id]);
+    property.availability_data = availability;
 
     res.json(
       formatResponse(true, 'Property retrieved successfully', { property })
     );
+
 
   } catch (error) {
     console.error('Get property error:', error);
@@ -724,20 +729,23 @@ router.get('/:id/blocked-dates', validateId, async (req, res) => {
 
     // Generate array of all blocked dates
     const blockedDates = [];
+    const checkInDates = [];
     bookings.forEach(booking => {
       // Parse as local dates (YYYY-MM-DD strings from SQL) to avoid any UTC offset issues
+      checkInDates.push(booking.check_in_date);
       const [ciYear, ciMonth, ciDay] = booking.check_in_date.split('-').map(Number);
       const [coYear, coMonth, coDay] = booking.check_out_date.split('-').map(Number);
       const checkIn = new Date(ciYear, ciMonth - 1, ciDay);
       const checkOut = new Date(coYear, coMonth - 1, coDay);
 
-      // Add all dates from check_in_date up to and including check_out_date
+      // Add all dates from check_in_date up to (but not including) check_out_date
+      // The checkout date itself shouldn't be blocked because a new guest can check-in that afternoon
       const currentDate = new Date(checkIn);
       // Safeguard: Limit to 2 years (730 days) to prevent infinite loops or memory exhaustion
       let dayCount = 0;
       const MAX_DAYS = 730;
 
-      while (currentDate <= checkOut && dayCount < MAX_DAYS) {
+      while (currentDate < checkOut && dayCount < MAX_DAYS) {
         const y = currentDate.getFullYear();
         const m = String(currentDate.getMonth() + 1).padStart(2, '0');
         const d = String(currentDate.getDate()).padStart(2, '0');
@@ -753,7 +761,8 @@ router.get('/:id/blocked-dates', validateId, async (req, res) => {
 
     res.json(
       formatResponse(true, 'Blocked dates retrieved successfully', {
-        blockedDates: [...new Set(blockedDates)] // Remove duplicates
+        blockedDates: [...new Set(blockedDates)], // Remove duplicates
+        checkInDates: [...new Set(checkInDates)]
       })
     );
 
@@ -791,13 +800,9 @@ router.get('/:id/availability', validateId, async (req, res) => {
       FROM bookings
       WHERE property_id = ? 
       AND status IN ('request_accepted', 'confirmed', 'checked_in')
-      AND (
-        (check_in_date <= ? AND check_out_date > ?) OR
-        (check_in_date < ? AND check_out_date >= ?) OR
-        (check_in_date >= ? AND check_out_date <= ?)
-      )
+      AND DATE(check_in_date) < DATE(?) AND DATE(check_out_date) > DATE(?)
     `;
-    const conflictParams = [id, check_out_date, check_in_date, check_out_date, check_in_date, check_in_date, check_out_date];
+    const conflictParams = [id, check_out_date, check_in_date];
 
     if (exclude_booking_id && !isNaN(parseInt(exclude_booking_id))) {
       conflictQuery += ' AND id != ?';
