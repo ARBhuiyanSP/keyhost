@@ -1,10 +1,12 @@
+// Server entry point - Cache cleared at 2026-05-03 12:59
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -25,6 +27,10 @@ const guestRoutes = require('./routes/guest/guest');
 const settingsRoutes = require('./routes/settings');
 const rewardsPointsRoutes = require('./routes/rewards-points');
 const icalRoutes = require('./routes/ical');
+const supportRoutes = require('./routes/support');
+const contactRoutes = require('./routes/contact');
+const hmsHRRoutes = require('./routes/property-owner/hms-hr');
+const hmsAccountsRoutes = require('./routes/property-owner/hms-accounts');
 
 // Import middleware
 const { verifyToken } = require('./middleware/auth');
@@ -44,7 +50,10 @@ app.use(cors({
 app.options('*', cors());
 
 // Security middleware
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: false,
+  contentSecurityPolicy: false,
+}));
 app.use(compression());
 
 // Rate limiting (disabled for development)
@@ -82,7 +91,7 @@ app.use(morgan('combined'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-const path = require('path');
+
 
 // Static files with aggressive browser caching
 // Map both /uploads and /api/uploads to the same path so it works everywhere
@@ -124,7 +133,11 @@ const apiRoutes = [
   { path: '/settings', route: settingsRoutes },
   { path: '/rewards-points', route: rewardsPointsRoutes },
   { path: '/sslcommerz', route: sslCommerzRoutes },
-  { path: '/ical', route: icalRoutes }
+  { path: '/ical', route: icalRoutes },
+  { path: '/support', route: supportRoutes, middleware: verifyToken },
+  { path: '/contact', route: contactRoutes },
+  { path: '/hms/hr', route: hmsHRRoutes, middleware: verifyToken },
+  { path: '/hms/accounts', route: hmsAccountsRoutes, middleware: verifyToken }
 ];
 
 // Mount routes
@@ -149,9 +162,10 @@ app.use('*', (req, res) => {
 });
 
 // Import scheduled tasks
-const { cancelExpiredBookings } = require('./utils/bookingCleanup');
+const { cancelExpiredBookings, cancelUnacceptedBookings } = require('./utils/bookingCleanup');
 const cron = require('node-cron');
 const { syncAllExternalCalendars } = require('./utils/icalSync');
+const { expireHMSSubscriptions } = require('./utils/hmsCron');
 
 // Start scheduled tasks
 // Run booking cleanup every minute to check for expired bookings
@@ -163,14 +177,28 @@ setInterval(async () => {
   }
 }, 60 * 1000); // Run every 60 seconds (1 minute)
 
+// Auto-cancel unaccepted pending bookings every 5 minutes
+setInterval(async () => {
+  try {
+    await cancelUnacceptedBookings();
+  } catch (error) {
+    console.error('Auto-cancel unaccepted bookings error:', error);
+  }
+}, 5 * 60 * 1000); // Run every 5 minutes
+
 // Run iCal sync every 15 minutes
 cron.schedule('*/15 * * * *', () => {
   console.log('Running scheduled iCal sync...');
   syncAllExternalCalendars();
 });
 
-console.log('Scheduled tasks started: Booking cleanup runs every minute. iCal sync every 15m.');
+// Run HMS checks daily at midnight
+cron.schedule('0 0 * * *', () => {
+  console.log('Running scheduled HMS expiration checks...');
+  expireHMSSubscriptions();
+});
 
+console.log('Scheduled tasks started: Booking cleanup runs every minute. iCal sync every 15m. HMS checks daily.');
 // Global error handler
 app.use((err, req, res, next) => {
   console.error('Error:', err);
@@ -222,5 +250,4 @@ app.listen(PORT, () => {
   console.log(`🌐 Health check: http://localhost:${PORT}/health`);
 });
 
-module.exports = app;
-// Force restart 3
+module.exports = app; 

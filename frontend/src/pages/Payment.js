@@ -4,6 +4,7 @@ import useAuthStore from '../store/authStore';
 import api from '../utils/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import useToast from '../hooks/useToast';
+import { formatPrice } from '../utils/textUtils';
 
 const Payment = () => {
   const { bookingId } = useParams();
@@ -26,6 +27,7 @@ const Payment = () => {
   const [pointsToRedeem, setPointsToRedeem] = useState(0);
   const [pointsDiscount, setPointsDiscount] = useState(0);
   const [finalAmount, setFinalAmount] = useState(0);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   useEffect(() => {
     if (bookingId) {
@@ -300,22 +302,22 @@ const Payment = () => {
                       <div className="border-t pt-2 mt-1 space-y-2">
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-500">Original booking (already paid):</span>
-                          <span className="text-gray-500 line-through">BDT {alreadyPaid.toLocaleString()}</span>
+                          <span className="text-gray-500 line-through">BDT {formatPrice(alreadyPaid)}</span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-500">Extension extra charge:</span>
-                          <span className="font-semibold text-orange-600">BDT {payableAmount.toLocaleString()}</span>
+                          <span className="font-semibold text-orange-600">BDT {formatPrice(payableAmount)}</span>
                         </div>
                         <div className="flex justify-between border-t pt-2">
                           <span className="text-gray-800 font-bold">Amount Due Now:</span>
-                          <span className="font-bold text-lg text-red-600">BDT {payableAmount.toLocaleString()}</span>
+                          <span className="font-bold text-lg text-red-600">BDT {formatPrice(payableAmount)}</span>
                         </div>
                       </div>
                     </>
                   ) : (
                     <div className="flex justify-between">
                       <span className="text-gray-600">Total Amount:</span>
-                      <span className="font-bold text-lg text-red-600">BDT {booking.total_amount}</span>
+                      <span className="font-bold text-lg text-red-600">BDT {formatPrice(booking.total_amount)}</span>
                     </div>
                   )}
                 </div>
@@ -359,12 +361,12 @@ const Payment = () => {
                           </div>
                           <div className="flex justify-between text-sm">
                             <span className="text-gray-600">Discount:</span>
-                            <span className="font-semibold text-green-600">-BDT {pointsDiscount.toFixed(2)}</span>
+                            <span className="font-semibold text-green-600">-BDT {formatPrice(pointsDiscount)}</span>
                           </div>
                           <div className="border-t border-yellow-300 pt-2 mt-2">
                             <div className="flex justify-between">
                               <span className="text-gray-700 font-medium">Amount to Pay:</span>
-                              <span className="font-bold text-lg text-red-600">BDT {finalAmount.toFixed(2)}</span>
+                              <span className="font-bold text-lg text-red-600">BDT {formatPrice(finalAmount)}</span>
                             </div>
                           </div>
                         </>
@@ -378,7 +380,7 @@ const Payment = () => {
                         <div className="border-t border-yellow-300 pt-2 mt-2">
                           <div className="flex justify-between">
                             <span className="text-gray-700 font-medium">Amount to Pay:</span>
-                            <span className="font-bold text-lg text-red-600">BDT {booking.total_amount}</span>
+                            <span className="font-bold text-lg text-red-600">BDT {formatPrice(booking.total_amount)}</span>
                           </div>
                         </div>
                       )}
@@ -390,24 +392,104 @@ const Payment = () => {
               {/* Payment Methods */}
               <div>
                 <h2 className="text-lg font-semibold text-gray-900 mb-4">Payment Methods</h2>
-                <div className="space-y-3">
 
-                  <button
-                    onClick={() => handlePayment('SSLCommerz')}
-                    disabled={processing}
-                    className="w-full p-4 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <div className="flex items-center">
-                      <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center text-white font-bold mr-3">
-                        S
+                {/* Terms and Policies Checkbox */}
+                <div className="mb-4 bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <label className="flex items-start cursor-pointer">
+                    <div className="flex items-center h-5">
+                      <input
+                        type="checkbox"
+                        checked={agreedToTerms}
+                        onChange={(e) => setAgreedToTerms(e.target.checked)}
+                        className="w-4 h-4 text-[#E41D57] bg-white border-gray-300 rounded focus:ring-[#E41D57] focus:ring-2"
+                      />
+                    </div>
+                    <div className="ml-3 text-sm flex-1">
+                      <span className="text-gray-700">
+                        I have read and agree to the{' '}
+                        <a href="/terms" className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">Terms & Conditions</a> and{' '}
+                        <a href="/refund-policy" className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">Refund/Cancellation Policy</a>.
+                      </span>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Refund Policy Summary Box */}
+                <div className="mb-6 bg-blue-50 border border-blue-100 rounded-xl p-4">
+                   <div className="flex items-center gap-2 mb-2">
+                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                      <h3 className="font-bold text-blue-900 text-sm">Refund Policy Summary</h3>
+                   </div>
+                   <ul className="text-xs text-blue-800 space-y-1 ml-7 list-disc">
+                      <li>Free cancellation up to 48 hours before check-in.</li>
+                      <li>100% refund of advance payment if cancelled on time.</li>
+                      <li>Cancellations within 48 hours of check-in are non-refundable.</li>
+                       <li>No refund for unused nights after early check-out.</li>
+                   </ul>
+                </div>
+
+                <div className="space-y-4">
+                  {/* Trust Signals */}
+                  <div className="flex items-center justify-center gap-6 py-4 bg-gray-50 rounded-xl border border-dashed border-gray-300">
+                    <div className="flex flex-col items-center">
+                      <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center text-green-600 mb-1">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
                       </div>
-                      <div>
-                        <div className="font-medium">SSLCommerz</div>
-                        <div className="text-sm text-gray-500">Pay with Card/MFS</div>
+                      <span className="text-[9px] font-bold text-gray-500 uppercase tracking-tight">Secure SSL</span>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 mb-1">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                      </div>
+                      <span className="text-[9px] font-bold text-gray-500 uppercase tracking-tight">Encrypted</span>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center text-purple-600 mb-1">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                      </div>
+                      <span className="text-[9px] font-bold text-gray-500 uppercase tracking-tight">Verified</span>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 mt-4 border-t border-gray-100">
+                    <button
+                      onClick={() => handlePayment('SSLCommerz')}
+                      disabled={processing || !agreedToTerms}
+                      className={`w-full py-4 px-6 rounded-2xl font-bold text-lg transition-all duration-300 flex items-center justify-center gap-3 shadow-lg ${
+                        !agreedToTerms 
+                          ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none' 
+                          : 'bg-[#E41D57] text-white hover:bg-[#C31A4A] hover:shadow-[#E41D57]/20 hover:-translate-y-1 active:scale-95'
+                      }`}
+                    >
+                      {processing ? (
+                        <>
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                          </svg>
+                          Pay BDT {formatPrice(usePoints ? finalAmount : payableAmount)} Now
+                        </>
+                      )}
+                    </button>
+                    
+                    <div className="mt-4 flex items-center justify-center gap-4 grayscale opacity-70">
+                      <img src="/images/ssl.png" alt="SSLCommerz" className="h-8 object-contain" />
+                      <div className="h-4 w-[1px] bg-gray-300"></div>
+                      <div className="text-[10px] text-gray-500 font-medium leading-tight">
+                        Supported: Visa, Mastercard, bKash, Nagad, Net Banking
                       </div>
                     </div>
-                  </button>
+                  </div>
 
+                  <div className="text-center">
+                    <p className="text-[10px] text-gray-400 font-medium">
+                      Your payment is processed securely via SSLCommerz. We do not store your card details.
+                    </p>
+                  </div>
                 </div>
 
                 {processing && (

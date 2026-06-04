@@ -98,31 +98,44 @@ const calculateBookingTotal = (basePrice, nights, cleaningFee = 0, securityDepos
   };
 };
 
-// Calculate refund amount with service charges
-const calculateRefundAmount = (originalAmount, cancellationPolicy, hoursBeforeCheckin) => {
-  let refundPercentage = 100;
-  let serviceCharge = 0;
-  let cancellationFee = 0;
-
-  // Apply cancellation policy
-  if (hoursBeforeCheckin < cancellationPolicy.free_cancellation_hours) {
-    refundPercentage = 100 - cancellationPolicy.cancellation_fee_percentage;
-    cancellationFee = (originalAmount * cancellationPolicy.cancellation_fee_percentage) / 100;
+/**
+ * Calculate refund amount based on KeyHost24 Policy:
+ * 1. Free cancellation (100% refund) up to 48 hours before check-in.
+ * 2. Within 48 hours: Non-refundable (0% refund).
+ * 3. Marked as Non-Refundable: 0% refund.
+ */
+const calculateRefundAmount = (amountPaid, checkInDate, isNonRefundable = false, cancellationTime = null) => {
+  if (isNonRefundable) {
+    return {
+      originalAmount: parseFloat(amountPaid.toFixed(2)),
+      refundAmount: 0,
+      refundPercentage: 0,
+      isEligible: false,
+      reason: 'Non-refundable booking'
+    };
   }
 
-  // Calculate service charge (5% minimum)
-  serviceCharge = Math.max(originalAmount * 0.05, 50);
+  const referenceTime = cancellationTime ? moment(cancellationTime) : moment();
+  const checkIn = moment(checkInDate);
+  const hoursUntilCheckIn = checkIn.diff(referenceTime, 'hours');
 
-  const refundAmount = (originalAmount * refundPercentage) / 100;
-  const netRefund = Math.max(0, refundAmount - serviceCharge);
-
-  return {
-    originalAmount: parseFloat(originalAmount.toFixed(2)),
-    refundAmount: parseFloat(refundAmount.toFixed(2)),
-    serviceCharge: parseFloat(serviceCharge.toFixed(2)),
-    cancellationFee: parseFloat(cancellationFee.toFixed(2)),
-    netRefund: parseFloat(netRefund.toFixed(2))
-  };
+  if (hoursUntilCheckIn >= 48) {
+    return {
+      originalAmount: parseFloat(amountPaid.toFixed(2)),
+      refundAmount: parseFloat(amountPaid.toFixed(2)),
+      refundPercentage: 100,
+      isEligible: true,
+      reason: 'Cancelled more than 48 hours before check-in'
+    };
+  } else {
+    return {
+      originalAmount: parseFloat(amountPaid.toFixed(2)),
+      refundAmount: 0,
+      refundPercentage: 0,
+      isEligible: false,
+      reason: 'Cancelled within 48 hours of check-in'
+    };
+  }
 };
 
 // Format date for database

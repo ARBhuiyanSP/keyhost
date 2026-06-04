@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
-import { FiDollarSign, FiUser, FiHome, FiCalendar, FiDownload, FiCheckCircle, FiX, FiEye } from 'react-icons/fi';
+import { FiDollarSign, FiUser, FiHome, FiCalendar, FiDownload, FiCheckCircle, FiX, FiEye, FiClock } from 'react-icons/fi';
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 
@@ -240,10 +240,22 @@ const AdminAccounting = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600">Total Amount</p>
-                  <p className="text-2xl font-bold text-blue-600">BDT {(transactionsData.summary.total_dr || 0).toLocaleString()}</p>
+                  <p className="text-2xl font-bold text-blue-600">BDT {(transactionsData.summary.total_guest_payments || 0).toLocaleString()}</p>
                   <p className="text-xs text-gray-500 mt-1">Received from guests</p>
                 </div>
                 <FiDollarSign className="w-8 h-8 text-blue-600" />
+              </div>
+            </div>
+
+            {/* Pending Guest Payments */}
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Pending Payments</p>
+                  <p className="text-2xl font-bold text-yellow-600">BDT {(transactionsData.summary.pending_guest_payments || 0).toLocaleString()}</p>
+                  <p className="text-xs text-gray-500 mt-1">Due from guests</p>
+                </div>
+                <FiClock className="w-8 h-8 text-yellow-600" />
               </div>
             </div>
 

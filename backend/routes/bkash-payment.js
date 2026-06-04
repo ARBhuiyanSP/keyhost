@@ -1,6 +1,7 @@
 const express = require('express');
 const { pool } = require('../config/database');
 const { formatResponse } = require('../utils/helpers');
+const { syncPaymentToHMSAccounts } = require('../utils/hms-sync');
 const { verifyToken } = require('../middleware/auth');
 const BkashPaymentGateway = require('../utils/bkash-gateway');
 
@@ -451,6 +452,13 @@ router.post('/execute', verifyToken, async (req, res) => {
         console.error('❌ Points awarding error in bKash execute:', pointsError);
         // Continue even if points awarding fails
       }
+
+      // Sync to HMS Accounts
+      try {
+        await syncPaymentToHMSAccounts(crInsertResult.insertId);
+      } catch (hmsError) {
+        console.error('HMS Sync error in bKash execute:', hmsError);
+      }
     }
 
     res.json(formatResponse(true, 'bKash payment executed successfully', {
@@ -733,6 +741,13 @@ router.post('/callback', async (req, res) => {
         } catch (pointsError) {
           console.error('❌ Points awarding error in bKash callback:', pointsError);
           // Continue even if points awarding fails
+        }
+
+        // Sync to HMS Accounts
+        try {
+          await syncPaymentToHMSAccounts(crInsertResult.insertId);
+        } catch (hmsError) {
+          console.error('HMS Sync error in bKash callback:', hmsError);
         }
       }
     } else if (status === 'failed' || status === 'cancelled') {

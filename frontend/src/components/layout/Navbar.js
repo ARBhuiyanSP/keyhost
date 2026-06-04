@@ -46,6 +46,50 @@ const Navbar = () => {
   const location = useLocation();
   const { user, isAuthenticated, logout, isAdmin, isPropertyOwner, becomeHost } = useAuthStore();
   const { settings, loadPublicSettings } = useSettingsStore();
+
+  // Fetch menu notification counts reactively via React Query for logged-in users
+  const { data: notificationCounts } = useQuery(
+    'menu-notifications-navbar',
+    async () => {
+      const response = await api.get('/users/menu-notifications');
+      return response.data?.data || {};
+    },
+    {
+      enabled: isAuthenticated && !!user,
+      refetchInterval: 30000, // Poll every 30 seconds
+      refetchOnWindowFocus: true,
+      staleTime: 10000
+    }
+  );
+
+  const getNotificationCount = (menuName) => {
+    if (!notificationCounts) return 0;
+    const name = menuName.toLowerCase();
+    
+    if (name === 'my bookings') {
+      return notificationCounts.guestPendingBookings || 0;
+    }
+    if (name === 'bookings' || name === 'all bookings' || name === 'bookings [owner ]' || name === 'hms reservations' || name === 'pms reservations') {
+      return notificationCounts.pendingBookings || 0;
+    }
+    if (name === 'messages') {
+      return notificationCounts.unreadMessages || 0;
+    }
+    if (name === 'support') {
+      return notificationCounts.supportTickets || 0;
+    }
+    if (name === 'users') {
+      return notificationCounts.pendingVerifications || 0;
+    }
+    if (name === 'contact messages') {
+      return notificationCounts.unreadContacts || 0;
+    }
+    if (name === 'refunds') {
+      return notificationCounts.pendingRefunds || 0;
+    }
+    return 0;
+  };
+
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -100,7 +144,7 @@ const Navbar = () => {
   const [headerDateOpen, setHeaderDateOpen] = useState(false);
   const [showGuestsDropdown, setShowGuestsDropdown] = useState(false);
   // Determine initial search active state: default false for property/contact pages
-  const isDetailOrContact = location.pathname.startsWith('/property/') || location.pathname.startsWith('/properties/') || location.pathname.includes('/contact-host');
+  const isDetailOrContact = location.pathname.startsWith('/property/') || location.pathname.startsWith('/properties') || location.pathname.includes('/contact-host');
   const [isHeaderSearchActive, setIsHeaderSearchActive] = useState(false);
   const [headerHoverSection, setHeaderHoverSection] = useState(null);
   const [headerActivePillStyle, setHeaderActivePillStyle] = useState({ x: 0, w: 0, visible: false });
@@ -170,7 +214,7 @@ const Navbar = () => {
   // Define pathname checks early
   const isHome = location.pathname === '/';
   const isSearchPage = location.pathname === '/search';
-  const isPropertyDetail = location.pathname.startsWith('/property/') || location.pathname.startsWith('/properties/');
+  const isPropertyDetail = location.pathname.startsWith('/property/') || location.pathname.startsWith('/properties');
   const isContactHost = location.pathname.includes('/contact-host');
 
 
@@ -240,7 +284,7 @@ const Navbar = () => {
   // Sync active type from Home/SearchResults via custom event
   useEffect(() => {
     const handleActiveTypeChanged = (e) => {
-      if (e.detail) setHeaderActiveType(e.detail);
+      if (typeof e.detail === 'string') setHeaderActiveType(e.detail);
     };
     window.addEventListener('activePropertyTypeChanged', handleActiveTypeChanged);
     return () => window.removeEventListener('activePropertyTypeChanged', handleActiveTypeChanged);
@@ -258,9 +302,12 @@ const Navbar = () => {
   }, [isSearchPage, location.search]);
   // Reset search form state on route change
   useEffect(() => {
+    // On search page or properties list, we always want the compact sticky header by default
+    if (isSearchPage) {
+      setIsHeaderSearchActive(false);
+    }
     // Only close search if navigating away from main booking pages (Home, Search, Details)
-    // This allows Property Type tab switching (which navigates to /search) to keep the form open.
-    if (!isHome && !isSearchPage && !isPropertyDetail && !isContactHost) {
+    else if (!isHome && !isPropertyDetail && !isContactHost) {
       setIsHeaderSearchActive(false);
     }
   }, [location.pathname, isHome, isSearchPage, isPropertyDetail, isContactHost]);
@@ -476,11 +523,12 @@ const Navbar = () => {
     localStorage.setItem('searchState', JSON.stringify(searchState));
     window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
 
-    // Close all dropdowns
+    // Close all dropdowns and search active state
     setShowHeaderLocationSuggestions(false);
     setShowHeaderToSuggestions(false);
     setHeaderDateOpen(false);
     setShowGuestsDropdown(false);
+    setIsHeaderSearchActive(false);
 
     navigate(`${headerActiveType === 'flight' ? '/flight/results' : '/search'}?${params.toString()}`);
   };
@@ -569,7 +617,11 @@ const Navbar = () => {
     // EXCEPT for 'flight', which has its own form
     if (isSearchPage && normalized !== 'flight') {
       const params = new URLSearchParams(window.location.search);
-      params.set('property_type', normalized);
+      if (normalized) {
+        params.set('property_type', normalized);
+      } else {
+        params.delete('property_type');
+      }
       navigate(`/search?${params.toString()}`, { replace: true });
     } else if (!isHome) {
       // If NOT on Home and NOT on Search (e.g. BookingSuccess, PropertyDetail), navigate to search
@@ -603,7 +655,8 @@ const Navbar = () => {
       return [
         { name: 'Owner Dashboard', path: '/property-owner', icon: FiSettings },
         { name: 'My Properties', path: '/property-owner/properties', icon: FiBookOpen },
-        { name: 'Bookings', path: '/property-owner/bookings', icon: FiBookOpen },
+        { name: 'My Bookings', path: '/guest/bookings', icon: FiBookOpen },
+        { name: 'Bookings [Owner ]', path: '/property-owner/bookings', icon: FiBookOpen },
         { name: 'Calendar Sync', path: '/property-owner/calendar', icon: FiCalendar },
         { name: 'Analytics', path: '/property-owner/analytics', icon: FiSettings },
         { name: 'Earnings', path: '/property-owner/earnings', icon: FiDollarSign },
@@ -669,6 +722,27 @@ const Navbar = () => {
           <div className="hidden md:flex items-center flex-1 justify-center">
             {(isHome || isSearchPage || isPropertyDetail || location.pathname.startsWith('/flight') || location.pathname === '/booking' || location.pathname.startsWith('/booking-success') || location.pathname.startsWith('/ticket-issue') || location.pathname.startsWith('/react/ticket-issue')) && propertyTypes && propertyTypes.length > 0 ? (
               <div ref={propertyTypesRef} className="flex items-center gap-10 flex-wrap justify-center">
+                {/* All Property Tab */}
+                <button
+                  type="button"
+                  onClick={() => handleTypeClick('')}
+                  className={`flex flex-col items-center justify-center py-1.5 transition-colors group ${headerActiveType === ''
+                    ? 'text-gray-900'
+                    : 'text-gray-500 hover:text-gray-800'
+                    }`}
+                >
+                  <div className="flex flex-col items-center px-2">
+                    <div className="flex items-center gap-2">
+                      <FiGrid className={`w-8 h-8 transition-all duration-300 ${headerActiveType === '' ? 'opacity-100 grayscale-0' : 'opacity-70 grayscale'}`} />
+                      <span className="text-sm font-bold">All</span>
+                    </div>
+                    <span
+                      className={`mt-2 h-[3px] w-full ${headerActiveType === '' ? 'bg-black' : 'bg-transparent'
+                        }`}
+                    />
+                  </div>
+                </button>
+
                 {propertyTypes.map((type) => {
                   const isActiveTab = headerActiveType === (type.name || '').toLowerCase();
                   return (
@@ -715,13 +789,31 @@ const Navbar = () => {
 
           {/* Airbnb-style Auth Section */}
           <div className="hidden md:flex items-center gap-2">
-            {/* Become a host button */}
-            <button
-              onClick={handleBecomeHost}
-              className="text-sm font-semibold text-gray-800 hover:bg-gray-100 px-3 py-2 rounded-full transition-colors"
-            >
-              Become a host
-            </button>
+            {/* Become a host / Switch to dashboard button */}
+            {isAuthenticated ? (
+              (!isAdmin() && !isPropertyOwner() && user?.user_type !== 'staff') ? (
+                <button
+                  onClick={handleBecomeHost}
+                  className="text-sm font-semibold text-gray-800 hover:bg-gray-100 px-3 py-2 rounded-full transition-colors whitespace-nowrap"
+                >
+                  Become a host
+                </button>
+              ) : (isAdmin() || isPropertyOwner()) ? (
+                <Link
+                  to={isAdmin() ? '/admin' : '/property-owner'}
+                  className="text-sm font-semibold text-gray-800 hover:bg-gray-100 px-3 py-2 rounded-full transition-colors whitespace-nowrap"
+                >
+                  {isPropertyOwner() ? 'Switch to host' : 'Switch to dashboard'}
+                </Link>
+              ) : null
+            ) : (
+              <button
+                onClick={handleBecomeHost}
+                className="text-sm font-semibold text-gray-800 hover:bg-gray-100 px-3 py-2 rounded-full transition-colors whitespace-nowrap"
+              >
+                Become a host
+              </button>
+            )}
 
             {/* Globe icon and Custom Language Menu */}
             <div className="relative">
@@ -823,7 +915,7 @@ const Navbar = () => {
             <div className="relative" ref={dropdownRef}>
               <button
                 onClick={() => setIsProfileOpen(!isProfileOpen)}
-                className="flex items-center gap-3 border border-gray-300 rounded-full py-1.5 px-2 pr-1.5 hover:shadow-md transition-shadow"
+                className="flex items-center gap-3 border border-gray-300 rounded-full py-1.5 px-2 pr-1.5 hover:shadow-md transition-shadow relative"
                 aria-label="Main menu"
               >
                 {/* 3 horizontal bars */}
@@ -876,6 +968,11 @@ const Navbar = () => {
                   )}
 
                 </div>
+                {isAuthenticated && Object.values(notificationCounts || {}).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0) > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full min-w-[16px] h-[16px] flex items-center justify-center border border-white">
+                    {Object.values(notificationCounts || {}).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0)}
+                  </span>
+                )}
               </button>
 
               {/* Dropdown Modal */}
@@ -892,7 +989,7 @@ const Navbar = () => {
                           {user?.email}
                         </p>
                         <p className="text-xs text-primary-600 mt-1 font-medium">
-                          {isAdmin() ? 'Administrator' : isPropertyOwner() ? 'Property Owner' : 'Guest'}
+                          {isAdmin() ? 'Administrator' : isPropertyOwner() ? 'Property Owner' : user?.user_type === 'staff' ? 'Staff' : 'Guest'}
                         </p>
                       </div>
 
@@ -905,12 +1002,31 @@ const Navbar = () => {
                           Help Center
                         </Link>
                         <Link
-                          to={isAdmin() ? '/admin' : isPropertyOwner() ? '/property-owner' : '/guest'}
+                          to={isAdmin() ? '/admin' : isPropertyOwner() ? '/property-owner' : user?.user_type === 'staff' ? '/staff/attendance' : '/guest'}
                           onClick={() => setIsProfileOpen(false)}
-                          className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                          className="px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center justify-between"
                         >
-                          Dashboard
+                          <span>Dashboard</span>
+                          {Object.values(notificationCounts || {}).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0) > 0 && (
+                            <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                              {Object.values(notificationCounts || {}).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0)}
+                            </span>
+                          )}
                         </Link>
+                        {user?.user_type !== 'admin' && (
+                          <Link
+                            to="/messages"
+                            onClick={() => setIsProfileOpen(false)}
+                            className="px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center justify-between"
+                          >
+                            <span>Messages</span>
+                            {(notificationCounts?.unreadMessages || 0) > 0 && (
+                              <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                                {notificationCounts.unreadMessages}
+                              </span>
+                            )}
+                          </Link>
+                        )}
                         <Link
                           to={isAdmin() ? '/admin/settings' : isPropertyOwner() ? '/property-owner/profile' : '/guest/profile'}
                           onClick={() => setIsProfileOpen(false)}
@@ -1013,11 +1129,26 @@ const Navbar = () => {
             </div>
           </div>
 
-          {/* Mobile menu button */}
-          <div className="md:hidden">
+          {/* Mobile menu and CTA button */}
+          <div className="md:hidden flex items-center gap-2">
+            {isAuthenticated ? (
+              (!isAdmin() && !isPropertyOwner() && user?.user_type !== 'staff') ? (
+                <button onClick={handleBecomeHost} className="text-[11px] sm:text-xs font-bold text-gray-800 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-full whitespace-nowrap">
+                  Become host
+                </button>
+              ) : (isAdmin() || isPropertyOwner()) ? (
+                <Link to={isAdmin() ? '/admin' : '/property-owner'} className="text-[11px] sm:text-xs font-bold text-gray-800 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-full whitespace-nowrap">
+                  {isPropertyOwner() ? 'Switch to host' : 'Dashboard'}
+                </Link>
+              ) : null
+            ) : (
+              <button onClick={handleBecomeHost} className="text-[11px] sm:text-xs font-bold text-gray-800 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-full whitespace-nowrap hidden sm:block">
+                Become host
+              </button>
+            )}
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="text-gray-700 hover:text-primary-600 transition-colors duration-200"
+              className="text-gray-700 hover:text-primary-600 transition-colors duration-200 px-1"
             >
               {isMenuOpen ? <FiX className="w-6 h-6" /> : <FiMenu className="w-6 h-6" />}
             </button>
@@ -1736,16 +1867,55 @@ const Navbar = () => {
                       <Link
                         key={item.name}
                         to={item.path}
-                        className={`block px-3 py-2 text-base font-medium transition-colors duration-200 ${isActive(item.path)
+                        className={`flex items-center justify-between px-3 py-2 text-base font-medium transition-colors duration-200 ${isActive(item.path)
                           ? 'text-primary-600 bg-primary-50'
                           : 'text-gray-700 hover:text-primary-600 hover:bg-gray-50'
                           }`}
                         onClick={() => setIsMenuOpen(false)}
                       >
-                        {item.name}
+                        <span>{item.name}</span>
+                        {getNotificationCount(item.name) > 0 && (
+                          <span className="bg-red-500 text-white text-[11px] font-bold px-2 py-0.5 rounded-full shadow-sm">
+                            {getNotificationCount(item.name)}
+                          </span>
+                        )}
                       </Link>
                     ))}
                   </>
+                )}
+
+                {/* Mobile Host/Dashboard CTA */}
+                <div className="border-t border-gray-200 my-2"></div>
+                {isAuthenticated ? (
+                  (!isAdmin() && !isPropertyOwner()) ? (
+                    <button
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        handleBecomeHost();
+                      }}
+                      className="block w-full text-left px-3 py-3 text-base font-bold text-gray-900 bg-gray-50 hover:bg-gray-100 transition-colors rounded-lg mb-2"
+                    >
+                      Become a host
+                    </button>
+                  ) : (
+                    <Link
+                      to={isAdmin() ? '/admin' : '/property-owner'}
+                      onClick={() => setIsMenuOpen(false)}
+                      className="block w-full text-left px-3 py-3 text-base font-bold text-gray-900 bg-gray-50 hover:bg-gray-100 transition-colors rounded-lg mb-2"
+                    >
+                      {isPropertyOwner() ? 'Switch to host' : 'Switch to dashboard'}
+                    </Link>
+                  )
+                ) : (
+                  <button
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      handleBecomeHost();
+                    }}
+                    className="block w-full text-left px-3 py-3 text-base font-bold text-gray-900 bg-gray-50 hover:bg-gray-100 transition-colors rounded-lg mb-2"
+                  >
+                    Become a host
+                  </button>
                 )}
 
                 {/* Mobile Auth Section */}

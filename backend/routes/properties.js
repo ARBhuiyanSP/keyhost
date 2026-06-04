@@ -16,6 +16,21 @@ const { cacheMiddleware } = require('../middleware/cache');
 
 const router = express.Router();
 
+// Helper: generate a URL-friendly slug from property title + id
+function generateSlug(title, id) {
+  const slug = (title || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')   // remove diacritics
+    .replace(/[^a-z0-9\s-]/g, '')       // keep alphanumeric, spaces, hyphens
+    .trim()
+    .replace(/\s+/g, '-')               // spaces → hyphens
+    .replace(/-+/g, '-')                // collapse double hyphens
+    .substring(0, 80)                   // cap title part at 80 chars
+    .replace(/-$/, '');                 // strip trailing hyphen
+  return slug ? `${slug}-${id}` : `property-${id}`;
+}
+
 // Get all properties with filters and pagination
 router.get('/', optionalAuth, validatePagination, cacheMiddleware(30), async (req, res) => {
   try {
@@ -27,6 +42,9 @@ router.get('/', optionalAuth, validatePagination, cacheMiddleware(30), async (re
       min_price,
       max_price,
       min_guests,
+      bedrooms,
+      min_rating,
+      free_cancellation,
       amenities,
       check_in_date,
       check_out_date,
@@ -44,10 +62,22 @@ router.get('/', optionalAuth, validatePagination, cacheMiddleware(30), async (re
 
     // Handle owner filter
     if (owner === 'true' && req.user) {
+      const targetUserId = req.user.user_type === 'staff' ? req.user.host_id : req.user.id;
+      const [ownerRows] = await pool.execute('SELECT id FROM property_owners WHERE user_id = ?', [targetUserId]);
+      const ownerId = ownerRows.length > 0 ? ownerRows[0].id : -1;
       whereConditions.push('p.owner_id = ?');
-      queryParams.push(req.user.id);
-    } else if (owner !== 'true') {
+      queryParams.push(ownerId);
+    } else {
       whereConditions.push('p.status = "active"');
+      // If user is logged in, exclude their own properties from guest search
+      if (req.user) {
+        const targetUserId = req.user.user_type === 'staff' ? req.user.host_id : req.user.id;
+        const [ownerRows] = await pool.execute('SELECT id FROM property_owners WHERE user_id = ?', [targetUserId]);
+        if (ownerRows.length > 0) {
+          whereConditions.push('p.owner_id != ?');
+          queryParams.push(ownerRows[0].id);
+        }
+      }
     }
 
     // Handle status filter for property owners
@@ -91,6 +121,20 @@ router.get('/', optionalAuth, validatePagination, cacheMiddleware(30), async (re
     if (min_guests) {
       whereConditions.push('p.max_guests >= ?');
       queryParams.push(min_guests);
+    }
+
+    if (bedrooms) {
+      whereConditions.push('p.bedrooms >= ?');
+      queryParams.push(bedrooms);
+    }
+
+    if (min_rating) {
+      whereConditions.push('p.average_rating >= ?');
+      queryParams.push(min_rating);
+    }
+
+    if (free_cancellation === 'true') {
+      whereConditions.push('p.is_non_refundable = 0');
     }
 
     // Check availability if dates provided
@@ -148,7 +192,7 @@ router.get('/', optionalAuth, validatePagination, cacheMiddleware(30), async (re
         u.last_name as owner_last_name,
         u.email as owner_email,
         u.phone as owner_phone,
-        u.auto_accept_bookings as owner_auto_accept,
+        p.auto_accept_bookings as owner_auto_accept,
         po.business_name,
         po.is_verified as owner_verified
       FROM properties p
@@ -199,10 +243,16 @@ router.get('/', optionalAuth, validatePagination, cacheMiddleware(30), async (re
   }
 });
 
-// Get single property by ID
-router.get('/:id', optionalAuth, validateId, async (req, res) => {
+// Get single property by slug (SEO-friendly) or numeric ID (backward compat)
+// Route accepts both: /property/peaceful-3br-68  AND  /property/68
+router.get('/:slug', optionalAuth, async (req, res) => {
   try {
-    const { id } = req.params;
+    const { slug } = req.params;
+
+    // Determine lookup: pure numeric = legacy ID, otherwise treat as slug
+    const isNumericId = /^\d+$/.test(slug);
+    const whereClause = isNumericId ? 'p.id = ?' : 'p.slug = ?';
+    const lookupValue = isNumericId ? parseInt(slug) : slug;
 
     // Get property details
     const [properties] = await pool.execute(`
@@ -222,12 +272,15 @@ router.get('/:id', optionalAuth, validateId, async (req, res) => {
         u.languages as owner_languages,
         po.business_name,
         po.is_verified as owner_verified,
-        u.auto_accept_bookings as owner_auto_accept
+        p.auto_accept_bookings as owner_auto_accept
       FROM properties p
       JOIN property_owners po ON p.owner_id = po.id
       JOIN users u ON po.user_id = u.id
-      WHERE p.id = ?
-    `, [id]);
+      WHERE ${whereClause}
+    `, [lookupValue]);
+
+    // Derive the numeric id for sub-queries below
+    const id = properties.length > 0 ? properties[0].id : null;
 
     if (properties.length === 0) {
       return res.status(404).json(
@@ -267,6 +320,62 @@ router.get('/:id', optionalAuth, validateId, async (req, res) => {
       ORDER BY image_type, sort_order
     `, [id]);
     property.images = images;
+
+    // Get HMS rooms if enabled AND subscription is active
+    if (property.is_hms_enabled) {
+      // Check if host has an active HMS subscription
+      const [subs] = await pool.execute(
+        'SELECT status FROM hms_subscriptions WHERE host_id = ? LIMIT 1',
+        [property.po_user_id]
+      );
+
+      const hasActiveSub = subs.length > 0 && (subs[0].status === 'active' || subs[0].status === 'trialing');
+
+      if (hasActiveSub) {
+        const { check_in_date, check_out_date } = req.query;
+        
+        let roomsQuery = `
+          SELECT id, room_number, room_type, floor, price, status, features, images
+          FROM hms_rooms
+          WHERE property_id = ?
+        `;
+        const roomsParams = [id];
+
+        const [rooms] = await pool.execute(roomsQuery, roomsParams);
+        
+        // If dates are provided, check which rooms are available
+        if (check_in_date && check_out_date) {
+            const [conflicts] = await pool.execute(`
+                SELECT hms_room_id 
+                FROM bookings 
+                WHERE property_id = ? 
+                AND hms_room_id IS NOT NULL
+                AND status IN ('request_accepted', 'confirmed', 'checked_in')
+                AND DATE(check_in_date) < DATE(?) AND DATE(check_out_date) > DATE(?)
+            `, [id, check_out_date, check_in_date]);
+            
+            const conflictRoomIds = conflicts.map(c => c.hms_room_id);
+            
+            property.hms_rooms = rooms.map(room => ({
+                ...room,
+                is_available: !conflictRoomIds.includes(room.id),
+                features: room.features ? (typeof room.features === 'string' ? JSON.parse(room.features) : room.features) : [],
+                images: room.images ? (typeof room.images === 'string' ? JSON.parse(room.images) : room.images) : []
+            }));
+        } else {
+            property.hms_rooms = rooms.map(room => ({
+                ...room,
+                is_available: true,
+                features: room.features ? (typeof room.features === 'string' ? JSON.parse(room.features) : room.features) : [],
+                images: room.images ? (typeof room.images === 'string' ? JSON.parse(room.images) : room.images) : []
+            }));
+        }
+      } else {
+        // Disable HMS features for this request if subscription is not active
+        property.is_hms_enabled = 0;
+        property.hms_rooms = [];
+      }
+    }
 
     // Get property rules
     const [rules] = await pool.execute(`
@@ -405,6 +514,14 @@ router.post('/', verifyToken, requirePropertyOwner, validateProperty, async (req
 
     const ownerId = owners[0].id;
 
+    // Determine is_single_unit default if not provided
+    let isSingleUnitValue = req.body.is_single_unit;
+    if (isSingleUnitValue === undefined) {
+      isSingleUnitValue = !(property_type === 'hotel' || property_type === 'hotels') ? 1 : 0;
+    } else {
+      isSingleUnitValue = isSingleUnitValue ? 1 : 0;
+    }
+
     // Create property
     const [result] = await pool.execute(`
       INSERT INTO properties (
@@ -413,18 +530,22 @@ router.post('/', verifyToken, requirePropertyOwner, validateProperty, async (req
         bedrooms, bathrooms, max_guests, size_sqft, floor_number,
         base_price, cleaning_fee, security_deposit, extra_guest_fee,
         check_in_time, check_out_time, minimum_stay, maximum_stay,
-        is_instant_book, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_approval', NOW())
+        is_instant_book, is_single_unit, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_approval', NOW())
     `, [
       ownerId, title, description, property_type, property_category,
       address, city, state, country, postal_code, latitude, longitude,
       bedrooms, bathrooms, max_guests, size_sqft, floor_number,
       base_price, cleaning_fee, security_deposit, extra_guest_fee,
       check_in_time, check_out_time, minimum_stay, maximum_stay,
-      is_instant_book
+      is_instant_book, isSingleUnitValue
     ]);
 
     const propertyId = result.insertId;
+
+    // Generate and store slug
+    const newSlug = generateSlug(title, propertyId);
+    await pool.execute('UPDATE properties SET slug = ? WHERE id = ?', [newSlug, propertyId]);
 
     // Add amenities
     if (amenities.length > 0) {
@@ -479,7 +600,8 @@ router.put('/:id', verifyToken, requirePropertyOwner, validateId, async (req, re
       'latitude', 'longitude', 'bedrooms', 'bathrooms', 'max_guests',
       'size_sqft', 'floor_number', 'base_price', 'cleaning_fee',
       'security_deposit', 'extra_guest_fee', 'check_in_time',
-      'check_out_time', 'minimum_stay', 'maximum_stay', 'is_instant_book'
+      'check_out_time', 'minimum_stay', 'maximum_stay', 'is_instant_book',
+      'is_single_unit'
     ];
 
     const updateFields = [];
@@ -491,6 +613,35 @@ router.put('/:id', verifyToken, requirePropertyOwner, validateId, async (req, re
         updateValues.push(updateData[key]);
       }
     });
+
+    // Handle slug update
+    if (updateData.slug !== undefined && updateData.slug !== null && updateData.slug.trim() !== '') {
+      // Client provided a custom slug — sanitize it
+      const customSlug = updateData.slug
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+        .substring(0, 120);
+      const finalSlug = customSlug || generateSlug(updateData.title || '', id);
+      // Check uniqueness (exclude self)
+      const [existing] = await pool.execute(
+        'SELECT id FROM properties WHERE slug = ? AND id != ?',
+        [finalSlug, id]
+      );
+      if (existing.length > 0) {
+        return res.status(409).json(
+          formatResponse(false, 'This URL slug is already taken. Please choose a different one.')
+        );
+      }
+      updateFields.push('slug = ?');
+      updateValues.push(finalSlug);
+    } else if (updateData.title !== undefined) {
+      // No custom slug provided — regenerate from title
+      const newSlug = generateSlug(updateData.title, id);
+      updateFields.push('slug = ?');
+      updateValues.push(newSlug);
+    }
 
     if (updateFields.length === 0) {
       return res.status(400).json(
@@ -712,11 +863,9 @@ router.get('/:id/blocked-dates', validateId, async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Get all blocked date ranges from bookings
-    // Use DATE_FORMAT in SQL to avoid JS timezone conversion issues (MySQL DATE columns
-    // are returned as UTC midnight objects by Node.js, causing toISOString() to return 
-    // the wrong date for non-UTC timezones)
-    const [bookings] = await pool.execute(`
+    const { hms_room_id } = req.query;
+    
+    let query = `
       SELECT 
         DATE_FORMAT(check_in_date, '%Y-%m-%d') AS check_in_date,
         DATE_FORMAT(check_out_date, '%Y-%m-%d') AS check_out_date
@@ -724,8 +873,17 @@ router.get('/:id/blocked-dates', validateId, async (req, res) => {
       WHERE property_id = ? 
       AND status IN ('request_accepted', 'confirmed', 'checked_in')
       AND check_out_date >= CURDATE()
-      ORDER BY check_in_date ASC
-    `, [id]);
+    `;
+    const params = [id];
+    
+    if (hms_room_id) {
+        query += ' AND hms_room_id = ?';
+        params.push(hms_room_id);
+    }
+    
+    query += ' ORDER BY check_in_date ASC';
+    
+    const [bookings] = await pool.execute(query, params);
 
     // Generate array of all blocked dates
     const blockedDates = [];
@@ -778,7 +936,7 @@ router.get('/:id/blocked-dates', validateId, async (req, res) => {
 router.get('/:id/availability', validateId, async (req, res) => {
   try {
     const { id } = req.params;
-    const { check_in_date, check_out_date, exclude_booking_id } = req.query;
+    const { check_in_date, check_out_date, exclude_booking_id, hms_room_id } = req.query;
 
     if (!check_in_date || !check_out_date) {
       return res.status(400).json(
@@ -803,6 +961,11 @@ router.get('/:id/availability', validateId, async (req, res) => {
       AND DATE(check_in_date) < DATE(?) AND DATE(check_out_date) > DATE(?)
     `;
     const conflictParams = [id, check_out_date, check_in_date];
+
+    if (hms_room_id) {
+      conflictQuery += ' AND hms_room_id = ?';
+      conflictParams.push(hms_room_id);
+    }
 
     if (exclude_booking_id && !isNaN(parseInt(exclude_booking_id))) {
       conflictQuery += ' AND id != ?';

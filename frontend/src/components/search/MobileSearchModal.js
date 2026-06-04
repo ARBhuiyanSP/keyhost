@@ -12,7 +12,7 @@ import api from '../../utils/api';
 const MobileSearchModal = ({ isOpen, onClose, filters, onSearch }) => {
     const navigate = useNavigate();
     const [mobileSearchStep, setMobileSearchStep] = useState('location'); // 'location', 'dates', 'guests'
-    const [activePropertyType, setActivePropertyType] = useState(filters.property_type || 'room');
+    const [activePropertyType, setActivePropertyType] = useState(filters.property_type || '');
     const [airportList, setAirportList] = useState([]);
     const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
     const locationInputRef = useRef(null);
@@ -40,7 +40,7 @@ const MobileSearchModal = ({ isOpen, onClose, filters, onSearch }) => {
                 to: '',
                 tripType: 'oneWay'
             });
-            setActivePropertyType(filters.property_type || 'room');
+            setActivePropertyType(filters.property_type || '');
             setMobileSearchStep('location');
         }
     }, [isOpen, filters]);
@@ -168,6 +168,20 @@ const MobileSearchModal = ({ isOpen, onClose, filters, onSearch }) => {
 
                 {/* Property Type Tabs */}
                 <div className="flex items-center justify-center gap-6 overflow-x-auto scrollbar-hide px-10 w-full">
+                    {/* All Property Tab */}
+                    <button
+                        onClick={() => setActivePropertyType('')}
+                        className="flex flex-col items-center gap-2 min-w-[64px] flex-shrink-0 group cursor-pointer"
+                    >
+                        <div className={`transition-opacity duration-200 ${!activePropertyType ? 'opacity-100' : 'opacity-60 group-hover:opacity-80'}`}>
+                            <FiGrid className="w-5 h-5 text-black" />
+                        </div>
+                        <span className={`text-xs font-semibold whitespace-nowrap pb-2 border-b-2 transition-all duration-200 ${!activePropertyType ? 'text-black border-black' : 'text-gray-500 border-transparent group-hover:text-gray-800'
+                            }`}>
+                            All
+                        </span>
+                    </button>
+
                     {propertyTypes && propertyTypes.map((type) => {
                         const isActive = activePropertyType === (type.name || '').toLowerCase();
                         return (
@@ -187,18 +201,6 @@ const MobileSearchModal = ({ isOpen, onClose, filters, onSearch }) => {
                         );
                     })}
 
-                    {/* Manual Flight Tab - Moved to End */}
-                    <button
-                        onClick={() => setActivePropertyType('flight')}
-                        className="flex flex-col items-center gap-2 min-w-[64px] flex-shrink-0 group cursor-pointer"
-                    >
-                        <div className={`transition-opacity duration-200 ${activePropertyType === 'flight' ? 'opacity-100' : 'opacity-60 group-hover:opacity-100'}`}>
-                            <img src="/images/flight.png" alt="Flight" className={`w-5 h-5 object-contain transition-all duration-300 ${activePropertyType === 'flight' ? 'grayscale-0' : 'grayscale'}`} />
-                        </div>
-                        <span className={`text-xs font-semibold whitespace-nowrap pb-2 border-b-2 transition-all duration-200 ${activePropertyType === 'flight' ? 'text-black border-black' : 'text-gray-500 border-transparent group-hover:text-gray-900 group-hover:border-gray-300'}`}>
-                            Flight
-                        </span>
-                    </button>
                 </div>
             </div>
 

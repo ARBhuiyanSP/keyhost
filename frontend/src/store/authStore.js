@@ -205,11 +205,23 @@ const useAuthStore = create(
       },
 
 
+      fetchProfile: async () => {
+        try {
+          const response = await api.get('/users/profile');
+          if (response.data?.data?.user) {
+            set({ user: response.data.data.user });
+          }
+        } catch (error) {
+          console.error("Failed to fetch fresh profile context:", error);
+        }
+      },
+
       initializeAuth: () => {
         const { token } = get();
         if (token) {
           api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
           set({ isAuthenticated: true });
+          get().fetchProfile();
         }
         set({ isLoading: false });
       },

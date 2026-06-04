@@ -72,7 +72,8 @@ const AdminSettings = () => {
         'registration_enabled', 'facebook_url', 'twitter_url', 'instagram_url',
         'linkedin_url', 'youtube_url', 'tiktok_url', 'google_analytics_id',
         'seo_meta_title', 'seo_meta_description', 'seo_keywords', 'seo_og_image',
-        'google_client_id', 'google_maps_api_key'
+        'google_client_id', 'google_maps_api_key',
+        'terms_of_service', 'privacy_policy', 'refund_policy'
       ];
 
       Object.keys(updatedSettings).forEach(key => {
@@ -1030,7 +1031,7 @@ const AdminSettings = () => {
                         value={settings.payment_time_limit_minutes || 15}
                         onChange={(e) => handleInputChange('payment_time_limit_minutes', parseInt(e.target.value))}
                         className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
-                        min="5"
+                        min="1"
                         max="1440"
                         step="1"
                       />
@@ -1038,6 +1039,25 @@ const AdminSettings = () => {
                         Time limit (in minutes) for guests to complete payment after owner accepts booking request. Default: 15 minutes.
                       </p>
                     </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                        Pending Booking Auto-Cancel Timeout (Minutes)
+                      </label>
+                      <input
+                        type="number"
+                        value={settings.pending_booking_timeout_minutes || 1440}
+                        onChange={(e) => handleInputChange('pending_booking_timeout_minutes', parseInt(e.target.value))}
+                        className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                        min="1"
+                        max="10080"
+                        step="1"
+                      />
+                      <p className="mt-1.5 text-xs text-gray-500 font-medium">
+                        If a host does not accept a booking request within this many minutes, the booking is automatically cancelled and the guest is notified via SMS. Default: 1440 minutes (24 hours). Max: 10080 minutes (7 days).
+                      </p>
+                    </div>
+
 
                     <div className="border-t pt-6">
                       <h3 className="text-lg font-medium text-gray-900 mb-4">Payment Gateway Settings</h3>

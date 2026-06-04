@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useQuery, useMutation } from 'react-query';
+import { useQuery, useMutation, useQueryClient } from 'react-query';
 import {
   FiHome, FiMapPin, FiDollarSign, FiUsers, FiImage, FiSave, FiX, FiWifi, FiDroplet, FiCoffee,
   FiTv, FiShield, FiSun, FiEye, FiBriefcase, FiTruck, FiWind, FiThermometer, FiMonitor,
@@ -24,13 +24,17 @@ const libraries = ['places'];
 const EditProperty = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { showSuccess, showError } = useToast();
   const [currentStep, setCurrentStep] = useState(1);
   const [propertyStatus, setPropertyStatus] = useState(null);
   const [images, setImages] = useState([]);
+  // Ref to block auto-save after final submit (prevents race condition overwriting status)
+  const isFinalSubmitting = React.useRef(false);
   const [selectedAmenities, setSelectedAmenities] = useState([]);
   const [formData, setFormData] = useState({
     title: '',
+    slug: '',
     description: '',
     property_type: 'room',
     property_category: 'standard',
@@ -50,8 +54,15 @@ const EditProperty = () => {
     minimum_stay: 1,
     maximum_stay: '',
     check_in_time: '15:00',
-    check_out_time: '11:00'
+    check_out_time: '11:00',
+    is_non_refundable: false,
+    is_hms_enabled: false,
+    is_single_unit: true,
+    auto_accept_bookings: false
   });
+
+  // Track whether user has manually edited the slug
+  const slugManuallyEdited = React.useRef(false);
 
   const [selectedCountry, setSelectedCountry] = useState(null);
   const [selectedState, setSelectedState] = useState(null);
@@ -167,6 +178,7 @@ const EditProperty = () => {
     (propertyData) => api.put(`/property-owner/properties/${id}`, propertyData),
     {
       onSuccess: () => {
+        queryClient.invalidateQueries('owner-properties');
         showSuccess('Property updated successfully!');
         navigate('/property-owner/properties');
       },
@@ -176,11 +188,16 @@ const EditProperty = () => {
     }
   );
 
-  // Auto-save draft on any core data change for in_progress properties
+
+
+  // Auto-save draft on any core data change for in_progress properties (NO images)
   React.useEffect(() => {
     if (propertyStatus !== 'in_progress') return;
 
     const timer = setTimeout(() => {
+      // GUARD: skip auto-save if final submit is in progress (prevents race condition)
+      if (isFinalSubmitting.current) return;
+
       // Sync to Database
       if (formData.title && formData.title.length > 2) {
         const draftPayload = {
@@ -207,8 +224,13 @@ const EditProperty = () => {
           check_out_time: formData.check_out_time || '11:00:00',
           minimum_stay: parseInt(formData.minimum_stay) || 1,
           maximum_stay: formData.maximum_stay ? parseInt(formData.maximum_stay) : null,
+          is_non_refundable: formData.is_non_refundable || false,
+          is_hms_enabled: formData.is_hms_enabled || false,
+          is_single_unit: formData.is_single_unit || false,
+          auto_accept_bookings: formData.auto_accept_bookings || false,
           amenities: selectedAmenities,
-          images: images.map(img => img.preview), // Array of base64 strings
+          // NOTE: images are NOT included in auto-save - only sent on final submit
+          // This prevents huge payloads being sent every 1.5s causing timeouts
           is_draft: true
         };
         api.put(`/property-owner/properties/${id}`, draftPayload, { silent: true })
@@ -218,7 +240,8 @@ const EditProperty = () => {
       }
     }, 1500); // 1.5-second debounce for auto-save
     return () => clearTimeout(timer);
-  }, [formData, currentStep, selectedAmenities, addressValue, images, propertyStatus, id]);
+  }, [formData, currentStep, selectedAmenities, addressValue, propertyStatus, id]);
+  // ⚠️ images intentionally NOT in deps array above
 
   // Fetch amenities
   const { data: amenitiesData } = useQuery(
@@ -228,6 +251,17 @@ const EditProperty = () => {
       select: (response) => response.data?.data?.amenities || [],
     }
   );
+
+  // Fetch user profile for HMS status
+  const { data: profileData } = useQuery(
+    'user-profile',
+    () => api.get('/users/profile'),
+    {
+      select: (response) => response.data?.data?.user || {},
+    }
+  );
+
+  const hmsStatus = profileData?.hms_status || 'inactive';
 
   // Fetch property types
   const { data: propertyTypesData } = useQuery(
@@ -264,6 +298,7 @@ const EditProperty = () => {
       setFormData(prev => ({
         ...prev,
         title: property.title || '',
+        slug: property.slug || '',
         description: property.description || '',
         property_type: property.property_type || 'room',
         property_category: property.property_category || 'standard',
@@ -285,7 +320,11 @@ const EditProperty = () => {
         minimum_stay: property.minimum_stay || 1,
         maximum_stay: property.maximum_stay || '',
         check_in_time: property.check_in_time || '15:00',
-        check_out_time: property.check_out_time || '11:00'
+        check_out_time: property.check_out_time || '11:00',
+        is_non_refundable: property.is_non_refundable === 1 || property.is_non_refundable === true,
+        is_hms_enabled: property.is_hms_enabled === 1 || property.is_hms_enabled === true,
+        is_single_unit: property.is_single_unit === 1 || property.is_single_unit === true,
+        auto_accept_bookings: property.auto_accept_bookings === 1 || property.auto_accept_bookings === true
       }));
 
       // Setup dropdown state from fetched property
@@ -414,34 +453,65 @@ const EditProperty = () => {
 
     let sanitizedValue = value;
 
-    if (type !== 'number' && typeof value === 'string' && name !== 'property_type' && name !== 'property_category') {
+    if (type !== 'number' && typeof value === 'string' && name !== 'property_type' && name !== 'property_category' && name !== 'slug') {
       sanitizedValue = sanitizeText(value);
       // extra check for time fields if needed, but our regex allows :
     }
 
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'number' ? parseFloat(value) || 0 : sanitizedValue
-    }));
+    setFormData(prev => {
+      const updated = {
+        ...prev,
+        [name]: type === 'number' ? parseFloat(value) || 0 : sanitizedValue
+      };
+      // If user edits slug field directly, lock it
+      if (name === 'slug') {
+        slugManuallyEdited.current = true;
+        updated.slug = value.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-/, '');
+      }
+      return updated;
+    });
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
 
-    if (!formData.title || !formData.description || !formData.base_price) {
-      showError('Please fill in all required fields');
+    // Comprehensive validation for final submit
+    if (!formData.title || !formData.description || !formData.property_type || !formData.property_category) {
+      showError('Please fill in all required basic info fields');
+      setCurrentStep(1);
       return;
     }
 
-    // Prepare data - convert undefined to null
-    // Ensure property_type is always sent (required field)
-    if (!formData.property_type || formData.property_type.trim() === '') {
-      showError('Please select a property type');
+    if (!formData.address || !formData.city || !formData.state || !formData.country) {
+      showError('Please fill in required location details');
+      setCurrentStep(2);
       return;
     }
+
+    if (!formData.bedrooms || !formData.bathrooms || !formData.max_guests) {
+      showError('Please fill in property details correctly');
+      setCurrentStep(3);
+      return;
+    }
+
+    if (!formData.base_price || !formData.check_in_time || !formData.check_out_time) {
+      showError('Please fill in pricing and check-in/out details');
+      setCurrentStep(4);
+      return;
+    }
+
+    if (images.length < 2) {
+      showError('Please upload a minimum of 2 images.');
+      setCurrentStep(6);
+      return;
+    }
+
+    // CRITICAL: Block auto-save immediately so it cannot race with final submit
+    isFinalSubmitting.current = true;
 
     const propertyData = {
       title: formData.title,
+      slug: formData.slug || undefined,
       description: formData.description,
       // store lowercase to match existing column/enum values
       property_type: (formData.property_type || '').toLowerCase(),
@@ -465,6 +535,10 @@ const EditProperty = () => {
       check_out_time: formData.check_out_time || '11:00:00',
       minimum_stay: parseInt(formData.minimum_stay) || 1,
       maximum_stay: formData.maximum_stay ? parseInt(formData.maximum_stay) : null,
+      is_non_refundable: formData.is_non_refundable || false,
+      is_hms_enabled: formData.is_hms_enabled || false,
+      is_single_unit: formData.is_single_unit || false,
+      auto_accept_bookings: formData.auto_accept_bookings || false,
       amenities: selectedAmenities,
       images: images.map(img => img.preview), // Base64 strings
       is_final_submit: propertyStatus === 'in_progress' ? true : undefined
@@ -492,12 +566,20 @@ const EditProperty = () => {
 
   const handleNext = () => {
     if (currentStep === 1) {
-      if (!formData.title || !formData.description || !formData.property_type) {
+      if (!formData.title || !formData.description || !formData.property_type || !formData.property_category) {
         showError('Please fill in all required basic info fields'); return;
       }
     } else if (currentStep === 2) {
-      if (!formData.address || !formData.city || !formData.state) {
+      if (!formData.address || !formData.city || !formData.state || !formData.country) {
         showError('Please fill in location details'); return;
+      }
+    } else if (currentStep === 3) {
+      if (!formData.bedrooms || !formData.bathrooms || !formData.max_guests) {
+        showError('Please fill in all required property details'); return;
+      }
+    } else if (currentStep === 4) {
+      if (!formData.base_price || !formData.check_in_time || !formData.check_out_time) {
+        showError('Please fill in all required pricing details'); return;
       }
     }
     if (currentStep < totalSteps) {
@@ -515,52 +597,97 @@ const EditProperty = () => {
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="mb-8 flex items-center justify-between">
+        {/* Optimized Header */}
+        <div className="mb-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Edit Property</h1>
-            <p className="mt-2 text-gray-600">Update your property details</p>
+            <h1 className="text-3xl font-black text-gray-900 tracking-tight">Edit Property</h1>
+            <p className="mt-1 text-gray-500 font-medium">Update your property details to keep them accurate</p>
           </div>
-          <button
-            onClick={() => navigate('/property-owner/properties')}
-            className="btn-outline flex items-center"
-          >
-            <FiX className="mr-2" />
-            Cancel
-          </button>
+          <div className="flex items-center gap-3">
+             {propertyStatus === 'in_progress' && (
+               <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-green-50 text-green-700 rounded-full text-xs font-bold border border-green-100">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  Auto-saved Draft
+               </div>
+             )}
+            <button
+              onClick={() => {
+                if (propertyStatus === 'in_progress') {
+                  showSuccess('Draft saved automatically. You can resume later.');
+                }
+                navigate('/property-owner/properties');
+              }}
+              className="px-5 py-2.5 rounded-xl text-gray-600 font-bold text-sm bg-white border border-gray-200 hover:bg-gray-50 transition-all flex items-center gap-2 shadow-sm"
+              type="button"
+            >
+              <FiSave className="w-4 h-4" />
+              {propertyStatus === 'in_progress' ? 'Save & Exit' : 'Exit without Saving'}
+            </button>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+           {/* Sidebar Checklist */}
+           <div className="lg:col-span-3">
+              <div className="bg-white rounded-[24px] shadow-sm border border-gray-100 p-6 sticky top-24">
+                 <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-6">Listing Checklist</h3>
+                 <div className="space-y-6">
+                    {steps.map((step) => {
+                       const isComplete = (id) => {
+                          if (id === 1) return formData.title.length > 2 && formData.description.length > 10;
+                          if (id === 2) return formData.address && formData.city;
+                          if (id === 3) return formData.bedrooms && formData.max_guests;
+                          if (id === 4) return formData.base_price > 0;
+                          if (id === 5) return selectedAmenities.length > 0;
+                          if (id === 6) return images.length >= 2;
+                          return false;
+                       };
+                       
+                       const active = currentStep === step.id;
+                       const done = isComplete(step.id);
 
-          {/* Progress Bar */}
-          <div className="mb-8 relative">
-            <div className="flex items-center justify-between">
-              {steps.map((step, index) => (
-                <div key={step.id} className="flex flex-col items-center relative z-10 w-full">
-                  <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center font-medium transition-all duration-300 ${currentStep === step.id
-                      ? 'bg-primary-600 text-white shadow-lg scale-110'
-                      : currentStep > step.id
-                        ? 'bg-green-500 text-white'
-                        : 'bg-white border-2 border-gray-200 text-gray-400'
-                      }`}
-                  >
-                    {currentStep > step.id ? <FiCheck className="w-5 h-5" /> : step.id}
-                  </div>
-                  <span className={`text-xs mt-3 font-medium transition-colors ${currentStep === step.id ? 'text-primary-600' : currentStep > step.id ? 'text-green-600' : 'text-gray-400'}`}>
-                    {step.name}
-                  </span>
-                </div>
-              ))}
-              {/* Connector Lines */}
-              <div className="absolute top-5 left-[10%] right-[10%] h-1 bg-gray-200 -z-10 rounded-full">
-                <div
-                  className="h-full bg-green-500 transition-all duration-500 rounded-full"
-                  style={{ width: `${((currentStep - 1) / (totalSteps - 1)) * 100}%` }}
-                />
+                       return (
+                          <div 
+                             key={step.id} 
+                             className={`flex items-center gap-3 cursor-pointer group transition-all ${active ? 'scale-105' : ''}`}
+                             onClick={() => setCurrentStep(step.id)}
+                          >
+                             <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+                                done ? 'bg-green-500 text-white' : 
+                                active ? 'bg-primary-600 text-white ring-4 ring-primary-50' : 
+                                'bg-gray-100 text-gray-400 group-hover:bg-gray-200'
+                             }`}>
+                                {done ? <FiCheck className="w-3.5 h-3.5" /> : <span className="text-[10px] font-bold">{step.id}</span>}
+                             </div>
+                             <span className={`text-sm font-bold transition-colors ${
+                                active ? 'text-gray-900' : 
+                                done ? 'text-gray-600' : 
+                                'text-gray-400 group-hover:text-gray-500'
+                             }`}>
+                                {step.name}
+                             </span>
+                          </div>
+                       );
+                    })}
+                 </div>
+
+
+
+                 <div className="mt-6 pt-6 border-t border-gray-50">
+                    <div className="bg-gray-50 rounded-xl p-4">
+                       <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Editor Mode</h4>
+                       <p className="text-[11px] text-gray-600 leading-relaxed">
+                          Keeping your property info up to date improves search ranking and trust.
+                       </p>
+                    </div>
+                 </div>
               </div>
-            </div>
-          </div>
+           </div>
+
+           {/* Main Form Area */}
+           <div className="lg:col-span-9">
+              <form onSubmit={handleSubmit} className="space-y-8">
+                 {/* Current Step Content */}
 
 
           {currentStep === 1 && (
@@ -587,6 +714,30 @@ const EditProperty = () => {
                     />
                   </div>
 
+                  {/* SEO Slug Field */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      URL Slug <span className="text-gray-400 font-normal text-xs">(editable)</span>
+                    </label>
+                    <div className="flex items-center rounded-xl border border-gray-200 bg-gray-50 overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
+                      <span className="px-3 py-2.5 text-xs text-gray-400 font-mono whitespace-nowrap border-r border-gray-200 bg-gray-100 select-none">
+                        /property/
+                      </span>
+                      <input
+                        type="text"
+                        name="slug"
+                        value={formData.slug}
+                        onChange={handleInputChange}
+                        className="flex-1 px-3 py-2.5 bg-transparent text-sm font-mono text-gray-800 outline-none"
+                        placeholder="your-property-slug"
+                        spellCheck={false}
+                      />
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Changing this will update your property's URL. Only letters, numbers and hyphens allowed.
+                    </p>
+                  </div>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Description *
@@ -601,7 +752,7 @@ const EditProperty = () => {
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Property Type *
@@ -648,7 +799,25 @@ const EditProperty = () => {
                         <option value="luxury">Luxury</option>
                       </select>
                     </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Rental Structure *
+                      </label>
+                      <select
+                        name="is_single_unit"
+                        value={formData.is_single_unit ? 'true' : 'false'}
+                        onChange={(e) => setFormData(prev => ({ ...prev, is_single_unit: e.target.value === 'true' }))}
+                        className="input-field"
+                        required
+                      >
+                        <option value="true">Single Unit (Entire Villa, House, Flat)</option>
+                        <option value="false">Multi Unit (Hotel, Apartment Building)</option>
+                      </select>
+                    </div>
                   </div>
+
+
                 </div>
               </div>
 
@@ -975,6 +1144,49 @@ const EditProperty = () => {
                     />
                   </div>
                 </div>
+
+                {/* Refund Policy Toggle */}
+                <div className="mt-8 pt-6 border-t border-gray-100">
+                  <label className="flex items-start cursor-pointer group">
+                    <div className="flex items-center h-5">
+                      <input
+                        type="checkbox"
+                        name="is_non_refundable"
+                        checked={formData.is_non_refundable}
+                        onChange={(e) => setFormData(prev => ({ ...prev, is_non_refundable: e.target.checked }))}
+                        className="w-5 h-5 text-primary-600 border-gray-300 rounded focus:ring-primary-500 cursor-pointer"
+                      />
+                    </div>
+                    <div className="ml-3">
+                      <span className="text-sm font-bold text-gray-900 group-hover:text-primary-600 transition-colors">Mark as Non-Refundable</span>
+                      <p className="text-xs text-gray-500 mt-1">
+                        If checked, guests will not be eligible for any refund regardless of when they cancel. 
+                        Otherwise, the standard 48-hour free cancellation policy applies.
+                      </p>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Auto-Accept Toggle */}
+                <div className="mt-6 pt-6 border-t border-gray-100">
+                  <label className="flex items-start cursor-pointer group">
+                    <div className="flex items-center h-5">
+                      <input
+                        type="checkbox"
+                        name="auto_accept_bookings"
+                        checked={formData.auto_accept_bookings}
+                        onChange={(e) => setFormData(prev => ({ ...prev, auto_accept_bookings: e.target.checked }))}
+                        className="w-5 h-5 text-primary-600 border-gray-300 rounded focus:ring-primary-500 cursor-pointer"
+                      />
+                    </div>
+                    <div className="ml-3">
+                      <span className="text-sm font-bold text-gray-900 group-hover:text-primary-600 transition-colors">Auto Accept Bookings</span>
+                      <p className="text-xs text-gray-500 mt-1">
+                        If checked, guests can book this property and complete payment immediately without manual approval.
+                      </p>
+                    </div>
+                  </label>
+                </div>
               </div>
 
 
@@ -1095,20 +1307,29 @@ const EditProperty = () => {
                   images={images}
                   onImagesChange={setImages}
                   maxImages={10}
-                  maxSize={5 * 1024 * 1024}
+                  maxSize={10 * 1024 * 1024}
                 />
+
+                {/* Tips */}
+                <div className="mt-4 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+                  <span className="text-amber-500 text-lg mt-0.5">💡</span>
+                  <div>
+                    <p className="text-sm font-medium text-amber-800">Tip</p>
+                    <p className="text-sm text-amber-700">More images can increase booking rate. Minimum 2 required, but 5+ is recommended.</p>
+                  </div>
+                </div>
               </div>
 
             </>
           )}
 
           {/* Navigation Buttons */}
-          <div className="flex justify-between items-center bg-white rounded-lg shadow-sm p-4 mt-8 border-t border-gray-100">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-between gap-3 bg-white rounded-lg shadow-sm p-4 mt-8 border-t border-gray-100">
             <button
               type="button"
               onClick={handlePrev}
               disabled={currentStep === 1}
-              className={`px-6 py-2.5 rounded-lg flex items-center font-medium transition-colors ${currentStep === 1 ? 'opacity-50 cursor-not-allowed bg-gray-50 text-gray-400 border border-gray-200' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'}`}
+              className={`px-6 py-2.5 rounded-lg flex items-center justify-center font-medium transition-colors w-full sm:w-auto ${currentStep === 1 ? 'opacity-50 cursor-not-allowed bg-gray-50 text-gray-400 border border-gray-200' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'}`}
             >
               <FiChevronLeft className="mr-2" />
               Back
@@ -1118,24 +1339,24 @@ const EditProperty = () => {
               <button
                 type="button"
                 onClick={handleNext}
-                className="btn-primary flex items-center px-6 py-2.5"
+                className="btn-primary flex items-center justify-center px-6 py-2.5 w-full sm:w-auto"
               >
                 {propertyStatus === 'in_progress' ? 'Save & Next' : 'Next'}
                 <FiChevronRight className="ml-2" />
               </button>
             ) : (
-              <div className="flex space-x-4">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 w-full sm:w-auto">
                 <button
                   type="button"
                   onClick={() => navigate('/property-owner/properties')}
-                  className="btn-outline px-6 py-2.5"
+                  className="btn-outline px-6 py-2.5 w-full sm:w-auto"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={updatePropertyMutation.isLoading}
-                  className="btn-primary flex items-center px-6 py-2.5 shadow-lg shadow-primary-500/30"
+                  className="btn-primary flex items-center justify-center px-6 py-2.5 shadow-lg shadow-primary-500/30 w-full sm:w-auto"
                 >
                   <FiSave className="mr-2" />
                   {updatePropertyMutation.isLoading ? 'Saving...' : propertyStatus === 'in_progress' ? 'Submit Property' : 'Update Property'}
@@ -1146,6 +1367,8 @@ const EditProperty = () => {
         </form>
       </div>
     </div>
+  </div>
+</div>
   );
 };
 

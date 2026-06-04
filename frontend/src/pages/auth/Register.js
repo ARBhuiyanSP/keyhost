@@ -100,6 +100,7 @@ const Register = () => {
             if (bookingData.check_in_date) params.set('check_in_date', bookingData.check_in_date);
             if (bookingData.check_out_date) params.set('check_out_date', bookingData.check_out_date);
             if (bookingData.number_of_guests) params.set('guests', bookingData.number_of_guests.toString());
+            if (bookingData.hms_room_id) params.set('hms_room_id', bookingData.hms_room_id.toString());
             const queryString = params.toString();
 
             const bookingUrl = `/guest/booking/new/${bookingData.property_id}${queryString ? `?${queryString}` : ''}`;
@@ -168,6 +169,7 @@ const Register = () => {
           if (bookingData.check_in_date) params.set('check_in_date', bookingData.check_in_date);
           if (bookingData.check_out_date) params.set('check_out_date', bookingData.check_out_date);
           if (bookingData.number_of_guests) params.set('guests', bookingData.number_of_guests.toString());
+          if (bookingData.hms_room_id) params.set('hms_room_id', bookingData.hms_room_id.toString());
           const queryString = params.toString();
 
           const bookingUrl = `/guest/booking/new/${bookingData.property_id}${queryString ? `?${queryString}` : ''}`;

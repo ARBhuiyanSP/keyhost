@@ -10,6 +10,8 @@ const {
 } = require('../../middleware/validation');
 const { verifyToken, requireAdmin } = require('../../middleware/auth');
 const { cache } = require('../../middleware/cache');
+const { syncRefundToHMSAccounts } = require('../../utils/hms-sync');
+const { syncHmsAccessForHost } = require('../../utils/hms-helper');
 
 // Helper: instantly clear all property-types cache entries
 const clearPropertyTypesCache = () => {
@@ -17,6 +19,24 @@ const clearPropertyTypesCache = () => {
     const allKeys = cache.keys();
     allKeys.forEach(key => {
       if (key.includes('property-types') || key.includes('property_types')) {
+        cache.del(key);
+      }
+    });
+  } catch (e) { /* ignore */ }
+};
+
+// Helper: clear properties related cache
+const clearPropertiesCache = () => {
+  try {
+    const allKeys = cache.keys();
+    allKeys.forEach(key => {
+      if (
+        key.includes('properties') || 
+        key.includes('recommended') || 
+        key.includes('featured') ||
+        key.includes('display-categories') ||
+        key.includes('guest')
+      ) {
         cache.del(key);
       }
     });
@@ -32,6 +52,16 @@ const ownerPayoutRoutes = require('./admin-owner-payouts');
 // Apply authentication and admin middleware to all routes
 router.use(verifyToken);
 router.use(requireAdmin);
+
+// Clear all cache
+router.post('/clear-cache', (req, res) => {
+  try {
+    cache.flushAll();
+    res.json(formatResponse(true, 'All cache cleared successfully'));
+  } catch (error) {
+    res.status(500).json(formatResponse(false, 'Failed to clear cache', null, error.message));
+  }
+});
 
 // Get admin dashboard statistics
 router.get('/dashboard', async (req, res) => {
@@ -139,19 +169,41 @@ router.get('/users', validatePagination, async (req, res) => {
     const [users] = await pool.execute(`
       SELECT 
         u.id, u.first_name, u.last_name, u.email, u.phone, u.user_type,
-        u.is_active, u.email_verified_at, u.last_login_at, u.created_at
+        u.is_active, u.auto_accept_bookings, u.email_verified_at, u.last_login_at, u.created_at,
+        u.phone_verified_at, u.address, u.city, u.state, u.country, u.postal_code, u.bio,
+        hs.status as hms_status, 
+        hs.trial_ends_at as hms_trial_ends_at, 
+        hs.subscription_ends_at as hms_subscription_ends_at,
+        po.is_verified as owner_verified,
+        po.business_name, po.business_license, po.tax_id,
+        po.bank_account_number, po.bank_name, po.bank_routing_number, po.commission_rate
       FROM users u
+      LEFT JOIN hms_subscriptions hs ON u.id = hs.host_id
+      LEFT JOIN property_owners po ON u.id = po.user_id
       ${whereClause}
       ORDER BY u.created_at DESC
       LIMIT ? OFFSET ?
     `, [...queryParams, parseInt(limit), offset]);
+
+    // Get stats
+    const [statsRows] = await pool.execute(`
+      SELECT 
+        (SELECT COUNT(*) FROM users) as total_users,
+        (SELECT COUNT(*) FROM users WHERE user_type = 'property_owner') as total_hosts,
+        (SELECT COUNT(*) FROM property_owners WHERE is_verified = 1) as verified_hosts,
+        (SELECT COUNT(*) FROM property_owners WHERE is_verified = 0) as pending_hosts,
+        (SELECT COUNT(*) FROM users WHERE is_active = 1) as active_users,
+        (SELECT COUNT(*) FROM users WHERE is_active = 0) as blocked_users
+    `);
+    const statsResult = statsRows[0] || {};
 
     const pagination = generatePagination(parseInt(page), parseInt(limit), total);
 
     res.json(
       formatResponse(true, 'Users retrieved successfully', {
         users,
-        pagination
+        pagination,
+        stats: statsResult
       })
     );
 
@@ -489,7 +541,7 @@ router.patch('/reviews/:id/status', validateId, async (req, res) => {
 router.put('/users/:id', validateId, async (req, res) => {
   try {
     const { id } = req.params;
-    const { first_name, last_name, email, phone, user_type } = req.body;
+    const { first_name, last_name, email, phone, user_type, auto_accept_bookings, owner_verified } = req.body;
 
     // Validate required fields
     if (!first_name || !last_name || !email || !user_type) {
@@ -518,11 +570,20 @@ router.put('/users/:id', validateId, async (req, res) => {
     }
 
     // Update user
+    let queryArgs = [first_name, last_name, email, phone || null, user_type];
+    let querySets = 'first_name = ?, last_name = ?, email = ?, phone = ?, user_type = ?';
+
+    if (auto_accept_bookings !== undefined) {
+      querySets += ', auto_accept_bookings = ?';
+      queryArgs.push(auto_accept_bookings ? 1 : 0);
+    }
+    
+    querySets += ', updated_at = NOW()';
+    queryArgs.push(id);
+
     const [result] = await pool.execute(
-      `UPDATE users 
-       SET first_name = ?, last_name = ?, email = ?, phone = ?, user_type = ?, updated_at = NOW() 
-       WHERE id = ?`,
-      [first_name, last_name, email, phone || null, user_type, id]
+      `UPDATE users SET ${querySets} WHERE id = ?`,
+      queryArgs
     );
 
     if (result.affectedRows === 0) {
@@ -531,11 +592,41 @@ router.put('/users/:id', validateId, async (req, res) => {
       );
     }
 
+    // Update owner verification status if user type is property_owner
+    if (user_type === 'property_owner') {
+      const [existingOwner] = await pool.execute(
+        'SELECT id FROM property_owners WHERE user_id = ?',
+        [id]
+      );
+      
+      const isVerifiedVal = owner_verified !== undefined ? (owner_verified ? 1 : 0) : 0;
+      
+      if (existingOwner.length > 0) {
+        await pool.execute(
+          'UPDATE property_owners SET is_verified = ? WHERE user_id = ?',
+          [isVerifiedVal, id]
+        );
+      } else {
+        await pool.execute(
+          'INSERT INTO property_owners (user_id, commission_rate, is_verified, created_at) VALUES (?, 0, ?, NOW())',
+          [id, isVerifiedVal]
+        );
+      }
+    }
+
     // Get updated user data
-    const [updatedUser] = await pool.execute(
-      'SELECT id, first_name, last_name, email, phone, user_type, is_active, created_at FROM users WHERE id = ?',
-      [id]
-    );
+    const [updatedUser] = await pool.execute(`
+      SELECT 
+        u.id, u.first_name, u.last_name, u.email, u.phone, u.user_type, 
+        u.is_active, u.auto_accept_bookings, u.created_at,
+        u.phone_verified_at, u.address, u.city, u.state, u.country, u.postal_code, u.bio,
+        po.is_verified as owner_verified,
+        po.business_name, po.business_license, po.tax_id,
+        po.bank_account_number, po.bank_name, po.bank_routing_number, po.commission_rate
+      FROM users u
+      LEFT JOIN property_owners po ON u.id = po.user_id
+      WHERE u.id = ?
+    `, [id]);
 
     res.json(
       formatResponse(true, 'User updated successfully', updatedUser[0])
@@ -711,6 +802,9 @@ router.patch('/properties/:id/status', validateId, async (req, res) => {
         formatResponse(false, 'Property not found')
       );
     }
+
+    // Clear cache
+    clearPropertiesCache();
 
     res.json(
       formatResponse(true, 'Property status updated successfully')
@@ -2173,6 +2267,10 @@ router.get('/accounting/ledger', async (req, res) => {
     // Calculate summary
     const totalDR = transactions.reduce((sum, txn) => sum + parseFloat(txn.dr_amount || 0), 0);
     const totalCR = transactions.reduce((sum, txn) => sum + parseFloat(txn.cr_amount || 0), 0);
+    const totalGuestPayments = transactions
+      .filter(txn => txn.transaction_type === 'guest_payment')
+      .reduce((sum, txn) => sum + parseFloat(txn.cr_amount || 0), 0);
+    const pendingGuestPayments = totalDR - totalGuestPayments;
     const outstanding = totalDR - totalCR;
 
     const uniqueBookings = new Set(transactions.map(txn => txn.booking_id));
@@ -2199,7 +2297,7 @@ router.get('/accounting/ledger', async (req, res) => {
       FROM admin_earnings ae
       JOIN bookings b ON ae.booking_id = b.id
       WHERE ${commissionWhereClause.join(' AND ')}
-        AND b.status != 'cancelled'
+        AND b.status != 'cancelled' AND b.payment_status = 'paid'
     `, commissionQueryParams);
 
     // Get owner earnings summary
@@ -2223,7 +2321,7 @@ router.get('/accounting/ledger', async (req, res) => {
       FROM bookings b
       JOIN properties pr ON b.property_id = pr.id
       WHERE ${ownerEarningsWhereClause.join(' AND ')}
-        AND b.status != 'cancelled'
+        AND b.status != 'cancelled' AND b.payment_status = 'paid'
     `, ownerEarningsQueryParams);
 
     // Get owner payouts summary
@@ -2266,6 +2364,8 @@ router.get('/accounting/ledger', async (req, res) => {
         summary: {
           total_dr: totalDR,
           total_cr: totalCR,
+          total_guest_payments: totalGuestPayments,
+          pending_guest_payments: pendingGuestPayments,
           outstanding: outstanding,
           total_bookings: uniqueBookings.size,
           // New summary fields
@@ -2315,7 +2415,7 @@ router.get('/accounting/owners', async (req, res) => {
       FROM property_owners po
       JOIN users u ON po.user_id = u.id
       LEFT JOIN properties pr ON pr.owner_id = po.id
-      LEFT JOIN bookings b ON b.property_id = pr.id AND b.status IN ('confirmed', 'checked_in', 'checked_out') AND b.status != 'cancelled'
+      LEFT JOIN bookings b ON b.property_id = pr.id AND b.status IN ('confirmed', 'checked_in', 'checked_out') AND b.status != 'cancelled' AND b.payment_status = 'paid'
       GROUP BY po.id, po.business_name, u.first_name, u.last_name, u.email
       ORDER BY total_revenue DESC
     `);
@@ -2380,5 +2480,622 @@ router.use('/earnings', earningsRoutes);
 
 // Use owner payout routes
 router.use('/owner-payouts', ownerPayoutRoutes);
+
+// =============================================
+// REFUND MANAGEMENT
+// =============================================
+
+// Get all refund requests
+router.get('/refunds', validatePagination, async (req, res) => {
+  try {
+    const { page = 1, limit = 10, status, search } = req.query;
+    const offset = (page - 1) * limit;
+
+    let whereConditions = [];
+    let queryParams = [];
+
+    if (status) {
+      whereConditions.push('r.status = ?');
+      queryParams.push(status);
+    }
+
+    if (search) {
+      whereConditions.push('(b.booking_reference LIKE ? OR u.first_name LIKE ? OR p.title LIKE ?)');
+      queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    // Get total count
+    const [countResult] = await pool.execute(`
+      SELECT COUNT(*) as total 
+      FROM refunds r
+      JOIN bookings b ON r.booking_id = b.id
+      JOIN users u ON b.guest_id = u.id
+      JOIN properties p ON b.property_id = p.id
+      ${whereClause}
+    `, queryParams);
+
+    const total = countResult[0].total;
+
+    // Get refunds
+    const [refunds] = await pool.execute(`
+      SELECT 
+        r.*,
+        b.booking_reference, b.total_amount as booking_total,
+        u.first_name as guest_first_name, u.last_name as guest_last_name, u.email as guest_email,
+        p.title as property_title
+      FROM refunds r
+      JOIN bookings b ON r.booking_id = b.id
+      JOIN users u ON b.guest_id = u.id
+      JOIN properties p ON b.property_id = p.id
+      ${whereClause}
+      ORDER BY r.requested_at DESC
+      LIMIT ? OFFSET ?
+    `, [...queryParams, parseInt(limit), offset]);
+
+    res.json(
+      formatResponse(true, 'Refund requests retrieved successfully', {
+        refunds,
+        pagination: generatePagination(parseInt(page), parseInt(limit), total)
+      })
+    );
+
+  } catch (error) {
+    console.error('Get refunds error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to retrieve refund requests', null, error.message));
+  }
+});
+
+// Approve refund
+router.patch('/refunds/:id/approve', validateId, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body;
+
+    // Get refund details and payment info
+    const [refunds] = await pool.execute(`
+      SELECT r.*, p.gateway_transaction_id, p.bank_tran_id, p.payment_method 
+      FROM refunds r
+      LEFT JOIN payments p ON r.payment_id = p.id
+      WHERE r.id = ?
+    `, [id]);
+
+    if (refunds.length === 0) return res.status(404).json(formatResponse(false, 'Refund record not found'));
+    
+    const refund = refunds[0];
+    if (refund.status !== 'pending') return res.status(400).json(formatResponse(false, 'Only pending refunds can be approved'));
+    
+    const refundRemarks = notes || refund.refund_reason || 'Admin Approved Refund';
+    let gatewayResponseStr = null;
+    let newStatus = 'processing';
+
+    // Trigger actual refund via SSLCommerz using official sslcommerz-lts library
+    if (refund.payment_method === 'sslcommerz' && refund.gateway_transaction_id) {
+      try {
+        const [sslConfig] = await pool.execute("SELECT store_id, store_password, is_live FROM payment_settings WHERE provider_name = 'sslcommerz'");
+        if (sslConfig.length > 0) {
+          const SSLCommerzPayment = require('sslcommerz-lts');
+          const config = sslConfig[0];
+          const isLive = Boolean(config.is_live);
+          const sslcz = new SSLCommerzPayment(config.store_id, config.store_password, isLive);
+
+          const refundData = {
+            refund_amount: Number(parseFloat(refund.refund_amount).toFixed(2)),
+            refund_remarks: String(refundRemarks).substring(0, 255),
+            bank_tran_id: refund.bank_tran_id || refund.gateway_transaction_id,
+            refe_id: String(refund.refund_reference).substring(0, 50),
+          };
+
+          console.log('--- SSL REFUND CALL (sslcommerz-lts) ---');
+          console.log('Store ID:', config.store_id, '| isLive:', isLive);
+          console.log('Refund Data:', refundData);
+
+          const refundApiRes = await sslcz.initiateRefund(refundData);
+          gatewayResponseStr = JSON.stringify(refundApiRes);
+          console.log('SSL Refund Raw Response:', refundApiRes);
+
+          const apiConnect = refundApiRes?.APIConnect || '';
+
+          // Check for IP not whitelisted error
+          if (apiConnect.startsWith('REQUEST_FROM_INVALID_SOURCE')) {
+            const ip = apiConnect.replace('REQUEST_FROM_INVALID_SOURCE_', '');
+            console.error('SSL IP NOT WHITELISTED:', ip);
+            return res.status(400).json(formatResponse(false, 
+              `SSL Gateway rejected request: Your server IP (${ip}) is not whitelisted. Please whitelist this IP in SSLCommerz panel.`,
+              { gatewayResponse: refundApiRes, serverIp: ip }
+            ));
+          }
+
+          // Check for authentication failure
+          if (apiConnect === 'FAILED' || apiConnect === 'INACTIVE') {
+            return res.status(400).json(formatResponse(false,
+              `SSL Gateway authentication failed (${apiConnect}). Please check Store ID and Password.`,
+              { gatewayResponse: refundApiRes }
+            ));
+          }
+
+          // Check for successful refund initiation (APIConnect === 'DONE')
+          if (apiConnect === 'DONE') {
+            const refundStatus = refundApiRes?.status || '';
+            const errorReason = refundApiRes?.errorReason || '';
+
+            // Handle duplicate request within same minute - refund already submitted
+            if (errorReason === 'FAILED_SAME_REQ_IN_SAME_MIN') {
+              // Refund was already submitted to SSLCommerz, mark as processing
+              newStatus = 'processing';
+              console.log('ℹ️ SSL: Duplicate request in same minute - refund already submitted, marking as processing');
+            } else if (refundStatus === 'success' || refundStatus === 'refunded') {
+              newStatus = 'completed';
+            } else if (refundStatus === 'processing') {
+              newStatus = 'processing';
+            } else if (refundStatus === 'failed') {
+              return res.status(400).json(formatResponse(false, `SSL Gateway Error: ${errorReason || 'Refund failed at gateway'}`, { gatewayResponse: refundApiRes }));
+            } else {
+              // Unknown status but DONE connection - treat as processing
+              newStatus = 'processing';
+            }
+          } else if (apiConnect.startsWith('FAILED_SAME_REQ')) {
+            // Some versions return this at APIConnect level
+            newStatus = 'processing';
+            console.log('ℹ️ SSL: Duplicate request - marking as processing');
+          } else {
+            // Unrecognized APIConnect response
+            return res.status(400).json(formatResponse(false,
+              `Unexpected SSL Gateway response: ${apiConnect}`,
+              { gatewayResponse: refundApiRes }
+            ));
+          }
+        }
+      } catch (sslErr) {
+        console.error('SSL Refund Exception:', sslErr);
+        return res.status(500).json(formatResponse(false, 'SSLCommerz connection error', null, sslErr.message));
+      }
+    }
+
+    // Update refund status in DB (ignoring 'notes' since it does not exist)
+    await pool.execute(
+      'UPDATE refunds SET status = ?, approved_at = NOW(), refund_reason = ?, gateway_response = ? WHERE id = ?',
+      [newStatus, refundRemarks, gatewayResponseStr, id]
+    );
+
+    // If completed (auto-refunded), sync to HMS accounts
+    if (newStatus === 'completed') {
+      try {
+        await syncRefundToHMSAccounts(id);
+      } catch (hmsErr) {
+        console.error('[ADMIN-REFUND] HMS Sync failed on approval:', hmsErr);
+      }
+    }
+
+    res.json(formatResponse(true, `Refund ${newStatus === 'completed' ? 'processed' : 'approved'} successfully`));
+
+  } catch (error) {
+    console.error('Approve refund error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to approve refund', null, error.message));
+  }
+});
+
+// Mark refund as completed
+router.patch('/refunds/:id/complete', validateId, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { transaction_id, notes } = req.body;
+
+    // Get refund details
+    const [refunds] = await pool.execute('SELECT * FROM refunds WHERE id = ?', [id]);
+    if (refunds.length === 0) return res.status(404).json(formatResponse(false, 'Refund record not found'));
+    
+    const refund = refunds[0];
+    if (refund.status !== 'processing') return res.status(400).json(formatResponse(false, 'Only approved/processing refunds can be marked as completed'));
+
+    // Update refund status
+    await pool.execute(
+      'UPDATE refunds SET status = "completed", completed_at = NOW(), transaction_id = ?, notes = ? WHERE id = ?',
+      [transaction_id || null, notes || refund.notes, id]
+    );
+
+    // Sync to HMS accounts
+    try {
+      await syncRefundToHMSAccounts(id);
+    } catch (hmsErr) {
+      console.error('[ADMIN-REFUND] HMS Sync failed on manual completion:', hmsErr);
+    }
+
+    res.json(formatResponse(true, 'Refund marked as completed successfully'));
+
+  } catch (error) {
+    console.error('Complete refund error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to complete refund', null, error.message));
+  }
+});
+
+// Reject refund
+router.patch('/refunds/:id/reject', validateId, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body;
+
+    // Get refund details
+    const [refunds] = await pool.execute('SELECT * FROM refunds WHERE id = ?', [id]);
+    if (refunds.length === 0) return res.status(404).json(formatResponse(false, 'Refund record not found'));
+    
+    const refund = refunds[0];
+    if (refund.status !== 'pending') return res.status(400).json(formatResponse(false, 'Only pending refunds can be rejected'));
+
+    // Update refund status
+    await pool.execute(
+      'UPDATE refunds SET status = "rejected", notes = ? WHERE id = ?',
+      [notes || refund.notes, id]
+    );
+
+    res.json(formatResponse(true, 'Refund request rejected'));
+
+  } catch (error) {
+    console.error('Reject refund error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to reject refund', null, error.message));
+  }
+});
+
+// Deduct from security deposit and initiate refund
+router.post('/bookings/:id/security-deposit-deduction', validateId, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { deduction_amount, reason, notes } = req.body;
+
+    // Get booking details
+    const [bookings] = await pool.execute('SELECT * FROM bookings WHERE id = ?', [id]);
+    if (bookings.length === 0) return res.status(404).json(formatResponse(false, 'Booking not found'));
+    
+    const booking = bookings[0];
+    if (booking.status !== 'checked_out') {
+      return res.status(400).json(formatResponse(false, 'Security deposit can only be processed after check-out'));
+    }
+
+    const securityDeposit = parseFloat(booking.security_deposit || 0);
+    const deduction = parseFloat(deduction_amount || 0);
+    
+    if (deduction > securityDeposit) {
+      return res.status(400).json(formatResponse(false, 'Deduction cannot exceed security deposit amount'));
+    }
+
+    const refundAmount = securityDeposit - deduction;
+
+    // Find payment id for refund
+    const [payments] = await pool.execute("SELECT id FROM payments WHERE booking_id = ? AND status = 'completed' ORDER BY id DESC LIMIT 1", [id]);
+    const paymentId = payments.length > 0 ? payments[0].id : 0;
+    const refundRef = `SEC-REF-${Date.now()}-${id}`;
+
+    // Create refund record
+    await pool.execute(`
+      INSERT INTO refunds (
+        booking_id, payment_id, refund_reference, original_amount, refund_amount, net_refund,
+        refund_reason, refund_type, cancellation_policy_applied, status, requested_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'partial', ?, 'pending', NOW())
+    `, [
+        id, 
+        paymentId, 
+        refundRef, 
+        securityDeposit, 
+        refundAmount, 
+        refundAmount, 
+        'Security Deposit Return', 
+        `Deduction: ৳${deduction}. Reason: ${reason}. ${notes || ''}`
+    ]);
+
+    // Update booking to indicate security deposit processed and increase owner earnings
+    const [result] = await pool.execute(
+      `UPDATE bookings b
+       JOIN properties p ON b.property_id = p.id
+       SET b.security_deposit_status = "processed", 
+           b.security_deposit_deduction_amount = ?,
+           b.property_owner_earnings = b.property_owner_earnings + ?,
+           b.updated_at = NOW() 
+       WHERE b.id = ?`,
+      [deduction, deduction, id]
+    );
+
+    // Get owner_id for balance update
+    const [bookingDetails] = await pool.execute(`
+      SELECT p.owner_id 
+      FROM bookings b 
+      JOIN properties p ON b.property_id = p.id 
+      WHERE b.id = ?
+    `, [id]);
+
+    if (bookingDetails.length > 0) {
+      const ownerId = bookingDetails[0].owner_id;
+      
+      // Update owner balance summary
+      await pool.execute(`
+        UPDATE owner_balances 
+        SET total_earnings = total_earnings + ?,
+            current_balance = current_balance + ?,
+            last_updated = NOW()
+        WHERE property_owner_id = ?
+      `, [deduction, deduction, ownerId]);
+
+      // Record a payment transaction for transparency
+      await pool.execute(`
+        INSERT INTO payments (
+          booking_id, payment_reference, payment_method, payment_type,
+          amount, dr_amount, cr_amount, transaction_type, notes,
+          status, payment_date, created_at
+        ) VALUES (?, ?, 'adjustment', 'credit', ?, ?, ?, 'security_deposit_claim', ?, 'completed', NOW(), NOW())
+      `, [
+        id,
+        `CLAIM-${id}-${Date.now()}`,
+        deduction,
+        deduction, // dr_amount: add to guest's debt for the damage
+        deduction, // cr_amount: add to host's received amount from deposit
+        `Security deposit deduction credit to host: ${reason}`
+      ]);
+    }
+
+    res.json(formatResponse(true, 'Security deposit deduction processed and refund initiated', {
+      refundableAmount: refundAmount,
+      deductionAmount: deduction
+    }));
+
+  } catch (error) {
+    console.error('Security deposit deduction error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to process security deposit deduction', null, error.message));
+  }
+});
+
+// =============================================
+// HMS MANAGEMENT
+// =============================================
+
+// Get all HMS packages
+router.get('/hms/packages', async (req, res) => {
+  try {
+    const [packages] = await pool.execute('SELECT * FROM hms_packages ORDER BY created_at ASC');
+    // Ensure features is parsed JSON
+    packages.forEach(pkg => {
+      try {
+         pkg.features = typeof pkg.features === 'string' ? JSON.parse(pkg.features) : pkg.features;
+      } catch(e) {
+         pkg.features = []; 
+      }
+    });
+    res.json(formatResponse(true, 'Packages retrieved successfully', packages));
+  } catch (error) {
+    console.error('Get packages error', error);
+    res.status(500).json(formatResponse(false, 'Failed to get packages', null, error.message));
+  }
+});
+
+// Create HMS Package
+router.post('/hms/packages', async (req, res) => {
+  try {
+    const { name, price, billing_cycle, is_trial, duration_days, trial_days, features, is_active } = req.body;
+    await pool.execute(
+      'INSERT INTO hms_packages (name, price, billing_cycle, is_trial, duration_days, trial_days, features, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [name, price, billing_cycle || 'monthly', is_trial ? true : false, duration_days || 30, is_trial ? (trial_days || 14) : 0, JSON.stringify(features || []), is_active !== false]
+    );
+    res.json(formatResponse(true, 'Package created successfully'));
+  } catch (error) {
+    res.status(500).json(formatResponse(false, 'Failed to create package', null, error.message));
+  }
+});
+
+// Update HMS Package
+router.put('/hms/packages/:id', async (req, res) => {
+  try {
+    const { name, price, billing_cycle, is_trial, duration_days, trial_days, features, is_active } = req.body;
+    await pool.execute(
+      'UPDATE hms_packages SET name=?, price=?, billing_cycle=?, is_trial=?, duration_days=?, trial_days=?, features=?, is_active=? WHERE id=?',
+      [name, price, billing_cycle || 'monthly', is_trial ? true : false, duration_days || 30, is_trial ? (trial_days || 14) : 0, JSON.stringify(features || []), is_active !== false, req.params.id]
+    );
+    res.json(formatResponse(true, 'Package updated successfully'));
+  } catch (error) {
+    console.error('PUT /hms/packages/:id Error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to update package', null, error.message));
+  }
+});
+
+// Delete HMS Package
+router.delete('/hms/packages/:id', async (req, res) => {
+  try {
+    await pool.execute('DELETE FROM hms_packages WHERE id=?', [req.params.id]);
+    res.json(formatResponse(true, 'Package deleted successfully'));
+  } catch (error) {
+    res.status(500).json(formatResponse(false, 'Failed to delete package', null, error.message));
+  }
+});
+
+// Toggle HMS Status manually
+router.patch('/hms/toggle', async (req, res) => {
+  try {
+    const { host_id, status } = req.body;
+
+    if (!['active', 'inactive', 'trialing', 'expired'].includes(status)) {
+      return res.status(400).json(formatResponse(false, 'Invalid status'));
+    }
+
+    let extraUpdates = '';
+    let pkgId = null;
+
+    if (status === 'trialing') {
+      const [tp] = await pool.execute('SELECT duration_days, id FROM hms_packages WHERE is_trial = true AND is_active = true ORDER BY duration_days DESC LIMIT 1');
+      const trialDays = tp.length > 0 ? tp[0].duration_days : 14;
+      pkgId = tp.length > 0 ? tp[0].id : null;
+      extraUpdates = `, trial_started_at = NOW(), trial_ends_at = DATE_ADD(NOW(), INTERVAL ${trialDays} DAY)`;
+    } else if (status === 'active') {
+      const [ap] = await pool.execute('SELECT duration_days, id FROM hms_packages WHERE is_trial = false AND is_active = true ORDER BY price ASC LIMIT 1');
+      const activeDays = ap.length > 0 ? ap[0].duration_days || 30 : 30;
+      pkgId = ap.length > 0 ? ap[0].id : null;
+      extraUpdates = `, subscription_ends_at = DATE_ADD(NOW(), INTERVAL ${activeDays} DAY)`;
+    }
+
+    if (pkgId) {
+       extraUpdates += `, package_id = ${pkgId}`;
+    }
+
+    // Insert or update HMS sub
+    const [existing] = await pool.execute('SELECT id FROM hms_subscriptions WHERE host_id = ?', [host_id]);
+    
+    if (existing.length > 0) {
+      await pool.execute(
+        `UPDATE hms_subscriptions SET status = ? ${extraUpdates} WHERE host_id = ?`,
+        [status, host_id]
+      );
+    } else {
+      let q = `INSERT INTO hms_subscriptions (host_id, status) VALUES (?, ?)`;
+      if (status === 'trialing') {
+         const tDays = extraUpdates.match(/INTERVAL (\d+) DAY/)?.[1] || 14;
+         q = `INSERT INTO hms_subscriptions (host_id, status, trial_started_at, trial_ends_at${pkgId ? ', package_id' : ''}) VALUES (?, ?, NOW(), DATE_ADD(NOW(), INTERVAL ${tDays} DAY)${pkgId ? ', ' + pkgId : ''})`;
+      } else if (status === 'active') {
+         const aDays = extraUpdates.match(/INTERVAL (\d+) DAY/)?.[1] || 30;
+         q = `INSERT INTO hms_subscriptions (host_id, status, subscription_ends_at${pkgId ? ', package_id' : ''}) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ${aDays} DAY)${pkgId ? ', ' + pkgId : ''})`;
+      }
+      await pool.execute(q, [host_id, status]);
+    }
+
+    const hasAccess = status === 'active' || status === 'trialing';
+    await syncHmsAccessForHost(host_id, hasAccess);
+
+    res.json(formatResponse(true, `HMS status updated to ${status} for host ${host_id}`));
+  } catch (error) {
+    console.error('Toggle HMS status error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to toggle HMS status', null, error.message));
+  }
+});
+
+// Set HMS Trial Duration
+router.post('/hms/trial', async (req, res) => {
+  try {
+    const { host_id, days } = req.body;
+    
+    if (!host_id || !days || isNaN(days)) {
+      return res.status(400).json(formatResponse(false, 'Valid host_id and days are required'));
+    }
+
+    const [existing] = await pool.execute('SELECT id FROM hms_subscriptions WHERE host_id = ?', [host_id]);
+    
+    // Add days to now
+    if (existing.length > 0) {
+      await pool.execute(
+        'UPDATE hms_subscriptions SET status = "trialing", trial_started_at = NOW(), trial_ends_at = DATE_ADD(NOW(), INTERVAL ? DAY), is_trial_used = TRUE WHERE host_id = ?',
+        [days, host_id]
+      );
+    } else {
+      await pool.execute(
+        'INSERT INTO hms_subscriptions (host_id, status, trial_started_at, trial_ends_at, is_trial_used) VALUES (?, "trialing", NOW(), DATE_ADD(NOW(), INTERVAL ? DAY), TRUE)',
+        [host_id, days]
+      );
+    }
+
+    await syncHmsAccessForHost(host_id, true);
+
+    res.json(formatResponse(true, `HMS trial activated for ${days} days for host ${host_id}`));
+  } catch (error) {
+    console.error('Set HMS trial error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to set HMS trial', null, error.message));
+  }
+});
+
+// =============================================
+// COUPONS MANAGEMENT
+// =============================================
+
+// Get all coupons
+router.get('/coupons', async (req, res) => {
+  try {
+    const [coupons] = await pool.execute(`
+      SELECT * FROM coupons 
+      ORDER BY created_at DESC
+    `);
+    res.json(formatResponse(true, 'Coupons retrieved successfully', { coupons }));
+  } catch (error) {
+    console.error('Get coupons error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to retrieve coupons', null, error.message));
+  }
+});
+
+// Create a coupon
+router.post('/coupons', async (req, res) => {
+  try {
+    const { 
+      code, name, description, discount_type, discount_value, 
+      minimum_amount, maximum_discount, usage_limit, user_limit, 
+      valid_from, valid_until, is_active 
+    } = req.body;
+    
+    if (!code || !discount_type || !discount_value) {
+      return res.status(400).json(formatResponse(false, 'Code, discount type, and discount value are required'));
+    }
+
+    const [result] = await pool.execute(`
+      INSERT INTO coupons (
+        code, name, description, discount_type, discount_value, 
+        minimum_amount, maximum_discount, usage_limit, user_limit, 
+        valid_from, valid_until, is_active, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+    `, [
+      code, name || null, description || null, discount_type, discount_value, 
+      minimum_amount || 0, maximum_discount || null, usage_limit || null, user_limit || null, 
+      valid_from || null, valid_until || null, is_active !== undefined ? is_active : 1
+    ]);
+
+    res.json(formatResponse(true, 'Coupon created successfully', { id: result.insertId }));
+  } catch (error) {
+    console.error('Create coupon error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to create coupon', null, error.message));
+  }
+});
+
+// Update a coupon
+router.put('/coupons/:id', validateId, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { 
+      code, name, description, discount_type, discount_value, 
+      minimum_amount, maximum_discount, usage_limit, user_limit, 
+      valid_from, valid_until, is_active 
+    } = req.body;
+
+    const [result] = await pool.execute(`
+      UPDATE coupons 
+      SET code = ?, name = ?, description = ?, discount_type = ?, discount_value = ?, 
+          minimum_amount = ?, maximum_discount = ?, usage_limit = ?, user_limit = ?, 
+          valid_from = ?, valid_until = ?, is_active = ?, updated_at = NOW()
+      WHERE id = ?
+    `, [
+      code, name, description, discount_type, discount_value, 
+      minimum_amount, maximum_discount, usage_limit, user_limit, 
+      valid_from, valid_until, is_active, id
+    ]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json(formatResponse(false, 'Coupon not found'));
+    }
+
+    res.json(formatResponse(true, 'Coupon updated successfully'));
+  } catch (error) {
+    console.error('Update coupon error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to update coupon', null, error.message));
+  }
+});
+
+// Delete a coupon
+router.delete('/coupons/:id', validateId, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [result] = await pool.execute('DELETE FROM coupons WHERE id = ?', [id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json(formatResponse(false, 'Coupon not found'));
+    }
+
+    res.json(formatResponse(true, 'Coupon deleted successfully'));
+  } catch (error) {
+    console.error('Delete coupon error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to delete coupon', null, error.message));
+  }
+});
 
 module.exports = router;

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, lazy, Suspense } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { FiSearch, FiUser, FiLogOut, FiSettings, FiHeart, FiBookOpen, FiChevronDown, FiDollarSign, FiChevronLeft, FiMinus, FiPlus, FiMapPin, FiX, FiGlobe, FiCalendar } from 'react-icons/fi';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { FiSearch, FiUser, FiLogOut, FiSettings, FiHeart, FiBookOpen, FiChevronDown, FiDollarSign, FiChevronLeft, FiMinus, FiPlus, FiMapPin, FiX, FiGlobe, FiCalendar, FiGrid } from 'react-icons/fi';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { useQuery } from 'react-query';
@@ -23,9 +23,11 @@ const StickySearchHeader = ({
 
   isVisible = true,
   showBackButton = false,
-  initialPropertyType = ''
+  initialPropertyType = '',
+  onShowFilters = null
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [showMobileSearch, setShowMobileSearch] = useState(false);
   const [showDesktopExpanded, setShowDesktopExpanded] = useState(false);
@@ -96,6 +98,14 @@ const StickySearchHeader = ({
 
   const [searchData, setSearchData] = useState(loadSearchState);
   const [activePropertyType, setActivePropertyType] = useState(initialPropertyType || searchData.propertyType || '');
+  
+  // Sync activePropertyType with prop updates
+  useEffect(() => {
+    if (typeof initialPropertyType === 'string') {
+      setActivePropertyType(initialPropertyType);
+    }
+  }, [initialPropertyType]);
+
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [langSearchQuery, setLangSearchQuery] = useState('');
@@ -384,7 +394,15 @@ const StickySearchHeader = ({
     };
     localStorage.setItem('searchState', JSON.stringify(searchState));
 
-    navigate(`${activePropertyType === 'flight' ? '/flight/results' : '/search'}?${params.toString()}`);
+    if (activePropertyType === 'flight') {
+      navigate(`/flight/results?${params.toString()}`);
+    } else {
+      if (location.pathname === '/properties') {
+        navigate(`/properties?${params.toString()}`);
+      } else {
+        navigate(`/search?${params.toString()}`);
+      }
+    }
   };
 
   const handleInputChange = (field, value) => {
@@ -579,6 +597,9 @@ const StickySearchHeader = ({
     const newVal = activePropertyType === normalized ? '' : normalized;
     setActivePropertyType(newVal);
 
+    // Notify other components (Navbar, Home, etc.)
+    window.dispatchEvent(new CustomEvent('setActivePropertyType', { detail: newVal }));
+
     if (newVal === 'flight') {
       setFlightActiveSection('from');
       return;
@@ -602,7 +623,15 @@ const StickySearchHeader = ({
     };
     localStorage.setItem('searchState', JSON.stringify(searchState));
 
-    navigate(`${activePropertyType === 'flight' ? '/flight/results' : '/search'}?${params.toString()}`);
+    if (activePropertyType === 'flight') {
+      navigate(`/flight/results?${params.toString()}`);
+    } else {
+      if (location.pathname === '/properties') {
+        navigate(`/properties?${params.toString()}`);
+      } else {
+        navigate(`/search?${params.toString()}`);
+      }
+    }
   };
 
   return (
@@ -619,14 +648,14 @@ const StickySearchHeader = ({
       >
         <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 h-full flex items-center py-1.5 md:py-0 md:h-20 relative" ref={desktopSearchRef}>
           {/* Mobile: back + search pill */}
-          <div className="md:hidden w-full flex items-center justify-center px-4">
-            <div className="flex items-center gap-2 w-full max-w-sm">
+          <div className="md:hidden w-full flex items-center justify-center px-2">
+            <div className="flex items-center gap-1 w-full max-w-sm">
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   navigate(-1);
                 }}
-                className="p-2 rounded-full bg-white border border-gray-200 shadow hover:bg-gray-50 transition"
+                className="p-1 sm:p-2 rounded-full bg-white border border-gray-200 shadow hover:bg-gray-50 transition"
                 aria-label="Go back"
               >
                 <FiChevronLeft className="w-5 h-5 text-gray-700" />
@@ -634,14 +663,44 @@ const StickySearchHeader = ({
               {/* Search button - pill shaped */}
               <button
                 onClick={() => setShowMobileSearch(true)}
-                className="flex-1 flex items-center justify-start gap-3 bg-white rounded-full px-4 py-2.5 shadow-md text-left hover:bg-gray-50 transition-colors"
+                className="flex-1 flex items-center justify-start gap-2 bg-white rounded-full px-3 py-2 shadow-md text-left hover:bg-gray-50 transition-colors min-w-0"
               >
                 <FiSearch className="w-4 h-4 text-gray-900 flex-shrink-0" />
-                <div className="flex flex-col items-start leading-tight">
-                  <span className="text-sm font-semibold text-gray-900">{summaryTitle}</span>
-                  <span className="text-xs text-gray-500">{summarySubtitle()}</span>
+                <div className="flex flex-col items-start leading-tight min-w-0">
+                  <span className="text-[11px] sm:text-sm font-semibold text-gray-900 truncate max-w-[120px] sm:max-w-[160px]">{summaryTitle}</span>
+                  <span className="text-[10px] sm:text-xs text-gray-500 truncate max-w-[120px]">{summarySubtitle()}</span>
                 </div>
               </button>
+
+              {/* Mobile CTA */}
+              <div className="flex-shrink-0 flex items-center gap-2">
+                {onShowFilters && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onShowFilters();
+                    }}
+                    className="p-2 border border-gray-300 rounded-full bg-white shadow-sm hover:border-gray-900 transition-colors"
+                  >
+                    <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" role="presentation" focusable="false" style={{display: 'block', height: '14px', width: '14px', fill: 'currentcolor'}}><path d="M5 8a3 3 0 0 1 2.83 2H14v2H7.83A3 3 0 1 1 5 8zm0 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm6-8a3 3 0 1 1-2.83 4H2V4h6.17A3 3 0 0 1 11 2zm0 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"></path></svg>
+                  </button>
+                )}
+                {isAuthenticated ? (
+                  (!isAdmin() && !isPropertyOwner()) ? (
+                    <button onClick={handleBecomeHost} className="text-[10px] sm:text-xs font-bold text-gray-800 bg-gray-100 hover:bg-gray-200 px-2 py-1.5 rounded-full whitespace-nowrap">
+                      Host
+                    </button>
+                  ) : (
+                    <Link to={isAdmin() ? '/admin' : '/property-owner'} className="text-[10px] sm:text-xs font-bold text-gray-800 bg-gray-100 border border-gray-200 shadow-sm hover:bg-gray-200 px-2 py-1.5 rounded-full whitespace-nowrap shadow-sm">
+                      {isPropertyOwner() ? 'Switch to host' : 'Dashboard'}
+                    </Link>
+                  )
+                ) : (
+                  <button onClick={handleBecomeHost} className="text-[10px] sm:text-xs font-bold text-gray-800 bg-gray-100 hover:bg-gray-200 px-2 py-1.5 rounded-full whitespace-nowrap">
+                    Host
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -657,6 +716,20 @@ const StickySearchHeader = ({
                   <FiX className="w-4 h-4 text-black" />
                 </button>
                 <div ref={mobilePropertyTypesRef} className="flex items-center justify-center gap-6 overflow-x-auto scrollbar-hide px-10 w-full">
+                  {/* All Property Tab */}
+                  <button
+                    onClick={() => handlePropertyTypeClick('')}
+                    className="flex flex-col items-center gap-2 min-w-[64px] flex-shrink-0 group cursor-pointer"
+                  >
+                    <div className={`transition-opacity duration-200 ${!activePropertyType ? 'opacity-100' : 'opacity-60 group-hover:opacity-80'}`}>
+                      <FiGrid className="w-8 h-8" />
+                    </div>
+                    <span className={`text-xs font-semibold whitespace-nowrap pb-2 border-b-2 transition-all duration-200 ${!activePropertyType ? 'text-black border-black' : 'text-gray-500 border-transparent group-hover:text-gray-800'
+                      }`}>
+                      All
+                    </span>
+                  </button>
+
                   {(propertyTypes?.length ? propertyTypes : [{ id: 'def-stays', name: 'Stays' }, { id: 'def-flight', name: 'Flight' }]).map((type) => {
                     const isActive = activePropertyType === (type.name || '').toLowerCase();
                     return (
@@ -1160,15 +1233,46 @@ const StickySearchHeader = ({
               {/* Animated dropdown form removed; sticky search now routes to main header */}
             </div>
 
+            {/* Filter Button */}
+            {onShowFilters && (
+              <div className="hidden md:flex items-center ml-2 mr-4">
+                <button
+                  onClick={onShowFilters}
+                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-full hover:border-gray-900 transition-colors shadow-sm bg-white"
+                >
+                  <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" role="presentation" focusable="false" style={{display: 'block', height: '14px', width: '14px', fill: 'currentcolor'}}><path d="M5 8a3 3 0 0 1 2.83 2H14v2H7.83A3 3 0 1 1 5 8zm0 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm6-8a3 3 0 1 1-2.83 4H2V4h6.17A3 3 0 0 1 11 2zm0 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"></path></svg>
+                  <span className="text-sm font-medium text-gray-900">Filters</span>
+                </button>
+              </div>
+            )}
+
             {/* Airbnb-style User menu */}
             <div className="hidden md:flex items-center gap-2 flex-shrink-0">
-              {/* Become a host button */}
-              <button
-                onClick={handleBecomeHost}
-                className="text-sm font-semibold text-gray-800 hover:bg-gray-100 px-3 py-2 rounded-full transition-colors"
-              >
-                Become a host
-              </button>
+              {/* Become a host / Switch to dashboard button */}
+              {isAuthenticated ? (
+                (!isAdmin() && !isPropertyOwner() && user?.user_type !== 'staff') ? (
+                  <button
+                    onClick={handleBecomeHost}
+                    className="text-sm font-semibold text-gray-800 hover:bg-gray-100 px-3 py-2 rounded-full transition-colors whitespace-nowrap"
+                  >
+                    Become a host
+                  </button>
+                ) : (isAdmin() || isPropertyOwner()) ? (
+                  <Link
+                    to={isAdmin() ? '/admin' : '/property-owner'}
+                    className="text-sm font-semibold text-gray-800 hover:bg-gray-100 px-3 py-2 rounded-full transition-colors whitespace-nowrap"
+                  >
+                    {isPropertyOwner() ? 'Switch to host' : 'Switch to dashboard'}
+                  </Link>
+                ) : null
+              ) : (
+                <button
+                  onClick={handleBecomeHost}
+                  className="text-sm font-semibold text-gray-800 hover:bg-gray-100 px-3 py-2 rounded-full transition-colors whitespace-nowrap"
+                >
+                  Become a host
+                </button>
+              )}
 
               {/* Globe icon and Custom Language Menu */}
               <div className="relative">
@@ -1310,7 +1414,7 @@ const StickySearchHeader = ({
                           <p className="text-xs text-gray-500 mt-1">{user?.email}</p>
                         </div>
                         {/* Become a host button for guests */}
-                        {!isPropertyOwner() && !isAdmin() && (
+                        {!isPropertyOwner() && !isAdmin() && user?.user_type !== 'staff' && (
                           <button
                             onClick={handleBecomeHost}
                             className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
@@ -1425,6 +1529,19 @@ const StickySearchHeader = ({
             <div className="hidden md:block border-t border-gray-100 bg-white animate-fadeIn">
               <div className="max-w-7xl mx-auto px-4 lg:px-8">
                 <div ref={propertyTypesStickyRef} className="flex items-center gap-8 py-3 overflow-x-auto scrollbar-hide">
+                  {/* All Property Tab */}
+                  <button
+                    onClick={() => handlePropertyTypeClick('')}
+                    className={`flex flex-col items-center gap-1 min-w-max group cursor-pointer transition-all duration-200 ${!activePropertyType ? 'opacity-100' : 'opacity-60 hover:opacity-80'}`}
+                  >
+                    <div className={`w-6 h-6 object-contain flex items-center justify-center transition-all duration-300 ${!activePropertyType ? 'grayscale-0' : 'grayscale'}`}>
+                      <FiGrid className="w-5 h-5" />
+                    </div>
+                    <span className={`text-xs font-semibold whitespace-nowrap pb-1 border-b-2 transition-all duration-200 ${!activePropertyType ? 'text-black border-black' : 'text-gray-500 border-transparent hover:text-gray-800'}`}>
+                      All
+                    </span>
+                  </button>
+
                   {propertyTypes && propertyTypes.map((type) => {
                     const isActive = activePropertyType === (type.name || '').toLowerCase();
                     return (

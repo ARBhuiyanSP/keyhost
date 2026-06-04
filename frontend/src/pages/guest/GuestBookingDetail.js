@@ -11,6 +11,8 @@ import {
 } from 'react-icons/fi';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import CancellationModal from '../../components/bookings/CancellationModal';
+import { formatPrice } from '../../utils/textUtils';
 
 const GuestBookingDetail = () => {
   const { id } = useParams();
@@ -30,6 +32,9 @@ const GuestBookingDetail = () => {
   const [nextDayAvailable, setNextDayAvailable] = useState(true);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [blockedDates, setBlockedDates] = useState([]);
+  
+  // Cancellation state
+  const [showCancelModal, setShowCancelModal] = useState(false);
 
   useEffect(() => {
     if (id) fetchBooking();
@@ -101,10 +106,9 @@ const GuestBookingDetail = () => {
     return null;
   };
 
-  const handleCancelBooking = async () => {
-    if (!window.confirm('Are you sure you want to cancel this booking?')) return;
+  const handleCancelBooking = async (bookingId, reason) => {
     try {
-      const response = await api.patch(`/guest/bookings/${id}/cancel`, { reason: 'Cancelled by guest' });
+      const response = await api.patch(`/guest/bookings/${bookingId}/cancel`, { reason });
       showSuccess('Booking cancelled successfully');
       if (response.data?.data?.booking) setBooking(response.data.data.booking);
       else fetchBooking();
@@ -159,6 +163,7 @@ const GuestBookingDetail = () => {
   const getStatusDot = (s) => ({ confirmed: 'bg-green-500', pending: 'bg-yellow-500', cancelled: 'bg-red-500', checked_in: 'bg-blue-500', checked_out: 'bg-gray-400', request_accepted: 'bg-blue-500' }[s] || 'bg-gray-400');
   const getPayStatusColor = (s) => ({ paid: 'bg-green-100 text-green-800', completed: 'bg-green-100 text-green-800', pending: 'bg-yellow-100 text-yellow-800', processing: 'bg-blue-100 text-blue-800', failed: 'bg-red-100 text-red-800', refunded: 'bg-purple-100 text-purple-800', cancelled: 'bg-gray-100 text-gray-800' }[s] || 'bg-gray-100 text-gray-800');
   const getPayMethodDisplay = (m) => ({ bkash: 'bKash', nagad: 'Nagad', rocket: 'Rocket', bank_transfer: 'Bank Transfer', credit_card: 'Credit Card', cash: 'Cash on Arrival' }[m?.toLowerCase()] || m);
+  const getRefundStatusColor = (s) => ({ pending: 'bg-yellow-100 text-yellow-800', processing: 'bg-blue-100 text-blue-800', completed: 'bg-green-100 text-green-800', failed: 'bg-red-100 text-red-800', cancelled: 'bg-gray-100 text-gray-800' }[s?.toLowerCase()] || 'bg-gray-100 text-gray-800');
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : '—';
   const fmtDateShort = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
 
@@ -171,7 +176,7 @@ const GuestBookingDetail = () => {
   const totalCR = booking.payments?.reduce((s, p) => s + parseFloat(p.cr_amount || 0), 0) || 0;
   const remaining = totalDR - totalCR;
 
-  const heroImage = booking.property_image || booking.main_image || null;
+  const heroImage = booking.property_image || booking.main_image || booking.property_images?.[0]?.image_url || null;
   const canCancel = ['pending', 'request_accepted'].includes(booking.status) ||
     (booking.status === 'confirmed' && new Date(booking.check_in_date).setHours(0, 0, 0, 0) > new Date().setHours(0, 0, 0, 0));
   const canExtend = ['confirmed', 'checked_in'].includes(booking.status);
@@ -193,20 +198,21 @@ const GuestBookingDetail = () => {
       <div className="min-h-screen bg-white">
 
         {/* ── Hero ── */}
-        <div className="w-full h-[38vh] md:h-[50vh] bg-gray-100 relative overflow-hidden">
+        <div className="w-full h-[40vh] md:h-[55vh] bg-gray-100 relative overflow-hidden">
           {heroImage ? (
             <img src={heroImage} alt={booking.property_title} className="w-full h-full object-cover" />
           ) : (
-            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
-              <FiHome className="w-24 h-24 text-gray-300" />
+            <div className="w-full h-full flex items-center justify-center bg-gray-200">
+              <FiHome className="w-20 h-20 text-gray-400" />
             </div>
           )}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-transparent" />
+          {/* Dark overlay gradient */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
 
           {/* Back button */}
           <button
             onClick={() => navigate('/guest/bookings')}
-            className="no-print absolute top-4 left-4 z-10 flex items-center gap-2 px-4 py-2 bg-white/90 backdrop-blur-sm rounded-full shadow-md hover:bg-white transition-all text-gray-900 font-medium text-sm"
+            className="no-print absolute top-4 left-4 z-10 flex items-center gap-2 px-4 py-2 bg-white/90 backdrop-blur-sm rounded-full shadow-md hover:shadow-lg hover:bg-white transition-all text-gray-900 font-medium text-sm"
           >
             <FiChevronLeft className="w-4 h-4" />
             My Bookings
@@ -215,7 +221,7 @@ const GuestBookingDetail = () => {
           {/* Print button */}
           <button
             onClick={() => window.print()}
-            className="no-print absolute top-4 right-4 z-10 flex items-center gap-2 px-4 py-2 bg-white/90 backdrop-blur-sm rounded-full shadow-md hover:bg-white transition-all text-gray-900 font-medium text-sm"
+            className="no-print absolute top-4 right-4 z-10 flex items-center gap-2 px-4 py-2 bg-white/90 backdrop-blur-sm rounded-full shadow-md hover:shadow-lg hover:bg-white transition-all text-gray-900 font-medium text-sm"
           >
             <FiPrinter className="w-4 h-4" />
             Print
@@ -229,11 +235,12 @@ const GuestBookingDetail = () => {
                 {booking.status?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
               </span>
             </div>
-            <h1 className="text-2xl md:text-3xl font-bold leading-tight">{booking.property_title || 'Property Booking'}</h1>
-            <div className="flex flex-wrap items-center gap-3 mt-1.5 text-sm text-white/80">
+            <h1 className="text-2xl md:text-4xl font-bold leading-tight mt-1">{booking.property_title || 'Property Booking'}</h1>
+            <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-white/90">
               {booking.property_address && <span className="flex items-center gap-1"><FiMapPin className="w-3.5 h-3.5" />{booking.property_address}</span>}
               <span className="flex items-center gap-1"><FiCalendar className="w-3.5 h-3.5" />{fmtDateShort(booking.check_in_date)} → {fmtDateShort(booking.check_out_date)}</span>
               {nights > 0 && <span>{nights} night{nights > 1 ? 's' : ''}</span>}
+              <span className="flex items-center gap-1"><FiUsers className="w-3.5 h-3.5" /> {booking.number_of_guests} guest{booking.number_of_guests > 1 ? 's' : ''}</span>
             </div>
           </div>
         </div>
@@ -368,9 +375,17 @@ const GuestBookingDetail = () => {
                       <span className="text-sm font-semibold text-gray-900">{booking.property_type}</span>
                     </div>
                   )}
+                  {booking.hms_room_number && (
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
+                      <span className="text-sm text-gray-500">Room</span>
+                      <span className="text-sm font-bold text-[#E41D57]">
+                        Room {booking.hms_room_number} ({booking.hms_room_type})
+                      </span>
+                    </div>
+                  )}
                 </div>
                 {booking.status === 'confirmed' && (
-                  <button onClick={() => navigate(`/property/${booking.property_id}`)} className="mt-4 text-sm text-[#E41D57] font-semibold underline-offset-2 hover:underline">
+                  <button onClick={() => navigate(`/property/${booking.property_slug || booking.property_id}`)} className="mt-4 text-sm text-[#E41D57] font-semibold underline-offset-2 hover:underline">
                     View property →
                   </button>
                 )}
@@ -418,27 +433,62 @@ const GuestBookingDetail = () => {
                     <div className={`grid gap-3 mb-5 ${booking.points_discount > 0 ? 'grid-cols-4' : 'grid-cols-3'}`}>
                       <div className="text-center bg-gray-50 rounded-2xl p-4">
                         <p className="text-xs font-semibold text-gray-400 uppercase mb-1">Base Price</p>
-                        <p className="text-xl font-bold text-gray-900">BDT {Number(booking.total_amount || 0).toLocaleString()}</p>
+                        <p className="text-xl font-bold text-gray-900">BDT {formatPrice(booking.total_amount || 0)}</p>
                         <p className="text-xs text-gray-400 mt-0.5">Total</p>
                       </div>
                       {booking.points_discount > 0 && (
                         <div className="text-center bg-yellow-50 rounded-2xl p-4">
                           <p className="text-xs font-semibold text-gray-400 uppercase mb-1">Discount</p>
-                          <p className="text-xl font-bold text-yellow-600">- BDT {Number(booking.points_discount).toLocaleString()}</p>
+                          <p className="text-xl font-bold text-yellow-600">- BDT {formatPrice(booking.points_discount)}</p>
                           <p className="text-xs text-gray-400 mt-0.5">Points</p>
                         </div>
                       )}
                       <div className="text-center bg-green-50 rounded-2xl p-4">
                         <p className="text-xs font-semibold text-gray-400 uppercase mb-1">Paid (CR)</p>
-                        <p className="text-xl font-bold text-green-600">BDT {totalCR.toFixed(0)}</p>
+                        <p className="text-xl font-bold text-green-600">BDT {formatPrice(totalCR)}</p>
                         <p className="text-xs text-gray-400 mt-0.5">Received</p>
                       </div>
                       <div className="text-center bg-orange-50 rounded-2xl p-4">
                         <p className="text-xs font-semibold text-gray-400 uppercase mb-1">Remaining</p>
-                        <p className={`text-xl font-bold ${remaining > 0 ? 'text-orange-600' : 'text-green-600'}`}>BDT {remaining.toFixed(0)}</p>
+                        <p className={`text-xl font-bold ${remaining > 0 ? 'text-orange-600' : 'text-green-600'}`}>BDT {formatPrice(remaining)}</p>
                         <p className="text-xs text-gray-400 mt-0.5">Due</p>
                       </div>
                     </div>
+
+                    {/* Refund Information */}
+                    {booking.refunds && booking.refunds.length > 0 && (
+                      <div className="mb-6 bg-rose-50/50 border border-rose-100 rounded-2xl p-5">
+                        <div className="flex items-center justify-between mb-4">
+                          <h4 className="text-sm font-bold text-rose-800 uppercase tracking-wider">Refund Information</h4>
+                          <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${getRefundStatusColor(booking.refunds[0].status)}`}>
+                            {booking.refunds[0].status}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                          <div>
+                            <p className="text-xs text-rose-600/70 font-semibold uppercase mb-1">Refund Amount</p>
+                            <p className="text-lg font-bold text-rose-600">BDT {formatPrice(booking.refunds[0].refund_amount)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-rose-600/70 font-semibold uppercase mb-1">Requested At</p>
+                            <p className="text-sm font-bold text-gray-900">{fmtDateShort(booking.refunds[0].requested_at)}</p>
+                          </div>
+                          <div className="col-span-2 sm:col-span-1">
+                            <p className="text-xs text-rose-600/70 font-semibold uppercase mb-1">Refund ID</p>
+                            <p className="text-xs font-mono font-bold text-gray-600 truncate">{booking.refunds[0].refund_reference}</p>
+                          </div>
+                        </div>
+                        {booking.refunds[0].admin_notes && (
+                          <div className="mt-4 pt-4 border-t border-rose-100">
+                            <p className="text-xs text-rose-600/70 font-semibold uppercase mb-1">Admin Notes</p>
+                            <p className="text-sm text-gray-700 italic">"{booking.refunds[0].admin_notes}"</p>
+                          </div>
+                        )}
+                        <p className="mt-4 text-[10px] text-rose-400 leading-tight italic">
+                          * Refunds are typically processed within 7-10 business days after approval.
+                        </p>
+                      </div>
+                    )}
 
                     {/* Transaction history */}
                     <div>
@@ -465,9 +515,9 @@ const GuestBookingDetail = () => {
                               </p>
                             </div>
                             <div className="text-right ml-4">
-                              {payment.dr_amount > 0 && <p className="text-sm font-bold text-red-600">DR: BDT {parseFloat(payment.dr_amount).toFixed(0)}</p>}
-                              {payment.cr_amount > 0 && <p className="text-sm font-bold text-green-600">CR: BDT {parseFloat(payment.cr_amount).toFixed(0)}</p>}
-                              <p className="text-xs text-gray-500 mt-0.5">Bal: <span className={`font-semibold ${payment.running_balance > 0 ? 'text-orange-600' : 'text-green-600'}`}>BDT {parseFloat(payment.running_balance || 0).toFixed(0)}</span></p>
+                              {payment.dr_amount > 0 && <p className="text-sm font-bold text-red-600">DR: BDT {formatPrice(payment.dr_amount)}</p>}
+                              {payment.cr_amount > 0 && <p className="text-sm font-bold text-green-600">CR: BDT {formatPrice(payment.cr_amount)}</p>}
+                              <p className="text-xs text-gray-500 mt-0.5">Bal: <span className={`font-semibold ${payment.running_balance > 0 ? 'text-orange-600' : 'text-green-600'}`}>BDT {formatPrice(payment.running_balance || 0)}</span></p>
                               <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-semibold ${payment.status === 'completed' ? 'bg-green-100 text-green-700' : payment.status === 'pending' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'}`}>
                                 {payment.status}
                               </span>
@@ -521,7 +571,7 @@ const GuestBookingDetail = () => {
                   </div>
                 )}
                 {canCancel && (
-                  <button onClick={handleCancelBooking} className="px-5 py-2.5 bg-red-500 text-white text-sm font-semibold rounded-xl hover:bg-red-600 transition-colors">
+                  <button onClick={() => setShowCancelModal(true)} className="px-5 py-2.5 bg-red-500 text-white text-sm font-semibold rounded-xl hover:bg-red-600 transition-colors">
                     Cancel booking
                   </button>
                 )}
@@ -552,7 +602,7 @@ const GuestBookingDetail = () => {
                   <div className="p-6 border-b border-gray-100">
                     <div className="flex items-center justify-between mb-3">
                       <div>
-                        <p className="text-2xl font-bold text-gray-900">BDT {Number(booking.total_amount || 0).toLocaleString()}</p>
+                        <p className="text-2xl font-bold text-gray-900">BDT {formatPrice(booking.total_amount || 0)}</p>
                         <p className="text-sm text-gray-400">Total amount</p>
                       </div>
                       <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${getPayStatusColor(booking.payment_status)}`}>
@@ -609,22 +659,22 @@ const GuestBookingDetail = () => {
                   {booking.payments?.length > 0 && (
                     <div className="p-6 space-y-2 text-sm border-b border-gray-100">
                       <div className="flex justify-between text-gray-600">
-                        <span>Total amount</span><span className="font-semibold text-gray-600">BDT {Number(booking.total_amount || 0).toLocaleString()}</span>
+                        <span>Total amount</span><span className="font-semibold text-gray-600">BDT {formatPrice(booking.total_amount || 0)}</span>
                       </div>
                       {booking.points_discount > 0 && (
                         <div className="flex justify-between text-yellow-600 font-semibold">
-                          <span>Points discount</span><span>- BDT {Number(booking.points_discount).toLocaleString()}</span>
+                          <span>Points discount</span><span>- BDT {formatPrice(booking.points_discount)}</span>
                         </div>
                       )}
                       <div className="flex justify-between text-gray-600 border-t border-gray-100 pt-2">
-                        <span>Net receivable</span><span className="font-semibold text-red-600">BDT {totalDR.toFixed(0)}</span>
+                        <span>Net receivable</span><span className="font-semibold text-red-600">BDT {formatPrice(totalDR)}</span>
                       </div>
                       <div className="flex justify-between text-gray-600">
-                        <span>Paid</span><span className="font-semibold text-green-600">BDT {totalCR.toFixed(0)}</span>
+                        <span>Paid</span><span className="font-semibold text-green-600">BDT {formatPrice(totalCR)}</span>
                       </div>
                       <div className="flex justify-between font-bold text-gray-900 pt-2 border-t border-gray-100">
                         <span>Remaining</span>
-                        <span className={remaining > 0 ? 'text-orange-600' : 'text-green-600'}>BDT {remaining.toFixed(0)}</span>
+                        <span className={remaining > 0 ? 'text-orange-600' : 'text-green-600'}>BDT {formatPrice(remaining)}</span>
                       </div>
                     </div>
                   )}
@@ -655,12 +705,12 @@ const GuestBookingDetail = () => {
                       </button>
                     )}
                     {canCancel && (
-                      <button onClick={handleCancelBooking} className="w-full py-3 rounded-xl border border-red-200 text-red-600 font-semibold text-sm hover:bg-red-50 transition-colors">
+                      <button onClick={() => setShowCancelModal(true)} className="w-full py-3 rounded-xl border border-red-200 text-red-600 font-semibold text-sm hover:bg-red-50 transition-colors">
                         Cancel booking
                       </button>
                     )}
                     {booking.status === 'confirmed' && (
-                      <button onClick={() => navigate(`/property/${booking.property_id}`)} className="w-full py-3 rounded-xl border border-gray-200 text-gray-700 font-semibold text-sm hover:bg-gray-50 transition-colors">
+                      <button onClick={() => navigate(`/property/${booking.property_slug || booking.property_id}`)} className="w-full py-3 rounded-xl border border-gray-200 text-gray-700 font-semibold text-sm hover:bg-gray-50 transition-colors">
                         View property
                       </button>
                     )}
@@ -848,6 +898,14 @@ const GuestBookingDetail = () => {
           </div>
         </div>
       )}
+
+      {/* ── Cancellation Modal ── */}
+      <CancellationModal
+        isOpen={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        bookingId={id}
+        onConfirm={handleCancelBooking}
+      />
     </>
   );
 };

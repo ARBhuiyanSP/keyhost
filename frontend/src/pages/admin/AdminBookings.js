@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useQuery } from 'react-query';
-import { FiCalendar, FiSearch, FiFilter, FiEye, FiUser, FiHome, FiDollarSign, FiMapPin, FiX, FiPrinter } from 'react-icons/fi';
+import { FiCalendar, FiSearch, FiFilter, FiEye, FiUser, FiHome, FiDollarSign, FiMapPin, FiX, FiPrinter, FiCheckCircle } from 'react-icons/fi';
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
+import { formatPrice } from '../../utils/textUtils';
 
 const ExpandablePropertyTitle = ({ title, maxLength = 25 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -38,6 +39,10 @@ const AdminBookings = () => {
 
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showDeductionModal, setShowDeductionModal] = useState(false);
+  const [deductionAmount, setDeductionAmount] = useState('0');
+  const [deductionReason, setDeductionReason] = useState('Full release');
+  const [isProcessingDeduction, setIsProcessingDeduction] = useState(false);
 
   // Fetch bookings
   const { data: bookingsData, isLoading, refetch } = useQuery(
@@ -313,9 +318,9 @@ const AdminBookings = () => {
           <div class="section">
             <div class="section-title">Payment Information</div>
             <div class="payment-box">
-              <div class="payment-row">
+              <div className="payment-row">
                 <span>Total Amount:</span>
-                <span class="payment-total">BDT ${selectedBooking.total_amount}</span>
+                <span className="payment-total">BDT {formatPrice(selectedBooking.total_amount)}</span>
               </div>
               <div class="payment-row">
                 <span>Payment Status:</span>
@@ -529,7 +534,7 @@ const AdminBookings = () => {
                       <td className="px-3 py-4 whitespace-normal">
                         <div className="text-sm font-medium text-gray-900 flex items-center flex-wrap leading-tight">
                           <FiDollarSign className="w-3 h-3 shrink-0" />
-                          <span className="font-bold text-red-600 break-all">{booking.total_amount}</span>
+                          <span className="font-bold text-red-600 break-all">{formatPrice(booking.total_amount)}</span>
                         </div>
                         <div className="text-xs text-gray-500 mt-1">
                           {booking.payment_status || 'Pending'}
@@ -720,7 +725,7 @@ const AdminBookings = () => {
                       <div className="bg-gray-50 rounded-lg p-4">
                         <div className="flex justify-between items-center mb-2">
                           <span className="text-sm text-gray-600">Total Amount</span>
-                          <span className="text-lg font-bold text-gray-900">BDT {selectedBooking.total_amount}</span>
+                          <span className="text-lg font-bold text-gray-900">BDT {formatPrice(selectedBooking.total_amount)}</span>
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-sm text-gray-600">Payment Status</span>
@@ -743,6 +748,65 @@ const AdminBookings = () => {
                         </span>
                       </div>
                     </div>
+
+                    {/* Security Deposit Management */}
+                    {selectedBooking.status === 'checked_out' && (
+                      <div className="bg-red-50 border border-red-200 p-4 rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-sm font-bold text-red-800">Security Deposit Management</h4>
+                          <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${
+                            selectedBooking.security_deposit_status === 'processed' 
+                              ? 'bg-green-100 text-green-700' 
+                              : selectedBooking.security_deposit_status === 'claim_requested'
+                              ? 'bg-red-100 text-red-700 animate-pulse'
+                              : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            {selectedBooking.security_deposit_status?.replace('_', ' ') || 'Pending'}
+                          </span>
+                        </div>
+                        
+                        <div className="space-y-3">
+                          <p className="text-xs text-red-700">
+                            Security Deposit Amount: <span className="font-bold">৳{formatPrice(selectedBooking.security_deposit || 0)}</span>
+                          </p>
+
+                          {selectedBooking.security_deposit_status === 'claim_requested' && (
+                            <div className="bg-white border-l-4 border-red-500 p-3 rounded shadow-sm">
+                              <p className="text-[10px] font-bold text-red-600 uppercase mb-1">Host Deduction Request</p>
+                              <p className="text-sm font-black text-gray-900 mb-1">৳{formatPrice(selectedBooking.security_deposit_claim_amount)}</p>
+                              <p className="text-xs text-gray-600 italic">"{selectedBooking.security_deposit_claim_reason}"</p>
+                              <p className="text-[9px] text-gray-400 mt-2">Requested on {new Date(selectedBooking.security_deposit_claim_at).toLocaleString()}</p>
+                            </div>
+                          )}
+                          
+                          {selectedBooking.security_deposit_status !== 'processed' && (
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => {
+                                  if (selectedBooking.security_deposit_status === 'claim_requested') {
+                                    setDeductionAmount(selectedBooking.security_deposit_claim_amount.toString());
+                                    setDeductionReason(selectedBooking.security_deposit_claim_reason);
+                                  } else {
+                                    setDeductionAmount('0');
+                                    setDeductionReason('Full release');
+                                  }
+                                  setShowDeductionModal(true);
+                                }}
+                                className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-bold hover:bg-red-700 transition-colors shadow-sm w-full flex items-center justify-center gap-2"
+                              >
+                                <FiDollarSign />
+                                {selectedBooking.security_deposit_status === 'claim_requested' ? 'Process Host Claim' : 'Process Return / Deduction'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        {selectedBooking.security_deposit_status === 'processed' && (
+                          <p className="text-xs font-bold text-green-700 flex items-center gap-1">
+                            <FiCheckCircle /> Security deposit has been processed.
+                          </p>
+                        )}
+                      </div>
+                    )}
 
                     {/* Payment History */}
                     {selectedBooking.payments && selectedBooking.payments.length > 0 && (
@@ -855,6 +919,131 @@ const AdminBookings = () => {
           </div>
         )}
       </div>
+      {/* Admin Security Deduction Modal */}
+      {showDeductionModal && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-slideUp">
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-100 rounded-lg">
+                  <FiDollarSign className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">Security Deposit</h3>
+                  <p className="text-xs text-gray-500">Ref: #{selectedBooking?.booking_reference}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowDeductionModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                disabled={isProcessingDeduction}
+              >
+                <FiX className="w-6 h-6 text-gray-400" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div className="flex items-center justify-between bg-blue-50 p-4 rounded-xl border border-blue-100">
+                <div>
+                  <p className="text-xs text-blue-600 font-semibold uppercase tracking-wider">Deposit Amount</p>
+                  <p className="text-2xl font-black text-blue-900">BDT {selectedBooking?.security_deposit || 0}</p>
+                </div>
+                <div className="text-right">
+                  <span className="px-2 py-1 bg-blue-200 text-blue-700 text-[10px] font-bold rounded uppercase">Holding</span>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Deduction Amount</label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">BDT</span>
+                    <input 
+                      type="number"
+                      value={deductionAmount}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setDeductionAmount(val);
+                        if (parseFloat(val) === 0) setDeductionReason('Full release');
+                        else if (deductionReason === 'Full release') setDeductionReason('');
+                      }}
+                      className="w-full pl-14 pr-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-red-500 focus:ring-0 transition-all outline-none font-bold text-lg"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <p className="mt-1 text-[10px] text-gray-400 uppercase font-medium">Enter 0 for a full refund to guest</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Processing Reason</label>
+                  <textarea 
+                    value={deductionReason}
+                    onChange={(e) => setDeductionReason(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-red-500 focus:ring-0 transition-all outline-none min-h-[100px] text-sm"
+                    placeholder="e.g. Damage to furniture, missing linens, etc."
+                  ></textarea>
+                </div>
+              </div>
+
+              {/* Summary calculation */}
+              <div className="bg-gray-50 rounded-xl p-4 space-y-2 border border-dashed border-gray-200">
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>To be Refunded:</span>
+                  <span className="font-bold text-green-600">BDT {Math.max(0, (selectedBooking?.security_deposit || 0) - (parseFloat(deductionAmount) || 0))}</span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>To be Deducted:</span>
+                  <span className="font-bold text-red-600">BDT {parseFloat(deductionAmount) || 0}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 bg-gray-50 flex gap-3">
+              <button 
+                onClick={() => setShowDeductionModal(false)}
+                className="flex-1 py-3 font-bold text-gray-500 hover:text-gray-700 transition-colors"
+                disabled={isProcessingDeduction}
+              >
+                Close
+              </button>
+              <button 
+                onClick={async () => {
+                  if (parseFloat(deductionAmount) > (selectedBooking?.security_deposit || 0)) {
+                    alert('Deduction cannot exceed security deposit');
+                    return;
+                  }
+                  if (parseFloat(deductionAmount) > 0 && !deductionReason.trim()) {
+                    alert('Reason is required for deductions');
+                    return;
+                  }
+
+                  setIsProcessingDeduction(true);
+                  try {
+                    await api.post(`/admin/bookings/${selectedBooking.id}/security-deposit-deduction`, {
+                      deduction_amount: deductionAmount,
+                      reason: deductionReason
+                    });
+                    setShowDeductionModal(false);
+                    handleCloseModal();
+                    refetch();
+                  } catch (err) {
+                    alert('Failed to process security deposit.');
+                  } finally {
+                    setIsProcessingDeduction(false);
+                  }
+                }}
+                disabled={isProcessingDeduction}
+                className="flex-[2] py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-200 flex items-center justify-center gap-2 disabled:bg-gray-300"
+              >
+                {isProcessingDeduction ? (
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                ) : <FiX className="w-5 h-5" />}
+                Process Security Deposit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

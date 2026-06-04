@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin from '@fullcalendar/interaction';
-import { FiCalendar, FiLink, FiCopy, FiTrash2, FiPlus, FiChevronDown, FiSearch, FiMapPin, FiX, FiSave, FiAlertCircle } from 'react-icons/fi';
+import { FiCalendar, FiLink, FiCopy, FiTrash2, FiPlus, FiChevronDown, FiSearch, FiMapPin, FiX, FiSave, FiAlertCircle, FiRefreshCw } from 'react-icons/fi';
 import api from '../../utils/api';
 import useToast from '../../hooks/useToast';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
@@ -25,8 +25,16 @@ const PropertyOwnerCalendar = () => {
 
     // Rate modal state
     const [rateModalOpen, setRateModalOpen] = useState(false);
-    const [selectedDate, setSelectedDate] = useState(null);
+    const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
+    const isMultiSelectModeRef = useRef(false); // Ref to avoid stale closures
+    const [selectedDates, setSelectedDates] = useState([]); // Multiple selection
+    const [dateRange, setDateRange] = useState({ start: null, end: null });
     const [rateForm, setRateForm] = useState({ price: '', is_available: true, minimum_stay: 1 });
+    
+    // Keep ref in sync
+    useEffect(() => {
+        isMultiSelectModeRef.current = isMultiSelectMode;
+    }, [isMultiSelectMode]);
 
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -81,6 +89,8 @@ const PropertyOwnerCalendar = () => {
             onSuccess: () => {
                 showSuccess('Rate updated successfully!');
                 setRateModalOpen(false);
+                setSelectedDates([]);
+                setDateRange({ start: null, end: null });
                 refetchRates();
             },
             onError: (error) => {
@@ -126,6 +136,21 @@ const PropertyOwnerCalendar = () => {
             },
             onError: (error) => {
                 showError('Failed to remove calendar link');
+            }
+        }
+    );
+
+    // Sync Property Calendars Mutation (Manual)
+    const syncPropertyCalendarsMutation = useMutation(
+        () => api.get(`/ical/sync-property/${selectedPropertyId}`),
+        {
+            onSuccess: () => {
+                showSuccess('Calendars synchronized successfully!');
+                queryClient.invalidateQueries(['owner-external-calendars', selectedPropertyId]);
+                queryClient.invalidateQueries(['owner-calendar-bookings', selectedPropertyId]);
+            },
+            onError: (error) => {
+                showError(error.response?.data?.message || 'Failed to sync calendars');
             }
         }
     );
@@ -178,12 +203,20 @@ const PropertyOwnerCalendar = () => {
 
     const handleRateSubmit = (e) => {
         e.preventDefault();
-        updateRateMutation.mutate({
-            date: selectedDate,
-            price: rateForm.price || null,
+        const payload = {
             is_available: rateForm.is_available,
+            price: rateForm.price || null,
             minimum_stay: rateForm.minimum_stay || null
-        });
+        };
+
+        if (dateRange.start && dateRange.end) {
+            payload.startDate = dateRange.start;
+            payload.endDate = dateRange.end;
+        } else if (selectedDates.length > 0) {
+            payload.dates = selectedDates;
+        }
+
+        updateRateMutation.mutate(payload);
     };
 
     const handleDateClick = (arg) => {
@@ -195,14 +228,66 @@ const PropertyOwnerCalendar = () => {
             return; // Past dates
         }
         
-        const existingRate = ratesData?.rates?.find(r => r.date === clickedDate);
-        setSelectedDate(clickedDate);
-        setRateForm({
-            price: existingRate?.price || ratesData?.base_price || '',
-            is_available: existingRate ? !!existingRate.is_available : true,
-            minimum_stay: existingRate?.minimum_stay || 1
-        });
-        setRateModalOpen(true);
+        if (isMultiSelectModeRef.current || arg.jsEvent.ctrlKey || arg.jsEvent.shiftKey || arg.jsEvent.metaKey) {
+            // Toggle selection
+            setSelectedDates(prev => 
+                prev.includes(clickedDate) 
+                    ? prev.filter(d => d !== clickedDate) 
+                    : [...prev, clickedDate]
+            );
+            setDateRange({ start: null, end: null });
+        } else {
+            // Normal click: open modal immediately
+            setSelectedDates([]);
+            setDateRange({ start: null, end: null });
+
+            const existingRate = ratesData?.rates?.find(r => r.date === clickedDate);
+            setSelectedDates([clickedDate]); 
+            setRateForm({
+                price: existingRate?.price || ratesData?.base_price || '',
+                is_available: existingRate ? !!existingRate.is_available : true,
+                minimum_stay: existingRate?.minimum_stay || 1
+            });
+            setRateModalOpen(true);
+        }
+    };
+
+    const handleDateSelect = (arg) => {
+        const now = new Date();
+        const todayStr = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
+        
+        if (arg.startStr < todayStr) {
+            return; // Don't allow selecting past dates
+        }
+
+        const newDates = [];
+        let curr = new Date(arg.startStr);
+        const end = new Date(arg.endStr);
+        while (curr < end) {
+            newDates.push(curr.toISOString().split('T')[0]);
+            curr.setDate(curr.getDate() + 1);
+        }
+
+        // If it's just a single day selection, let dateClick handle it to avoid conflicts
+        if (newDates.length <= 1) return;
+
+        if (isMultiSelectModeRef.current) {
+            // Add range to multi-selection WITHOUT opening modal
+            setSelectedDates(prev => [...new Set([...prev, ...newDates])]);
+            setDateRange({ start: null, end: null });
+        } else {
+            // Normal range select: open modal immediately
+            setSelectedDates(newDates);
+            setDateRange({ start: arg.startStr, end: arg.endStr });
+
+            const existingRate = ratesData?.rates?.find(r => r.date === newDates[0]);
+            setRateForm({
+                price: existingRate?.price || ratesData?.base_price || '',
+                is_available: existingRate ? !!existingRate.is_available : true,
+                minimum_stay: existingRate?.minimum_stay || 1
+            });
+            setRateModalOpen(true);
+        }
     };
 
     const renderDayCell = (arg) => {
@@ -211,18 +296,19 @@ const PropertyOwnerCalendar = () => {
         const todayStr = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
         
         const isPast = dateStr < todayStr;
+        const isSelected = selectedDates.includes(dateStr);
         const existingRate = ratesData?.rates?.find(r => r.date === dateStr);
         const price = Math.round(Number(existingRate?.price || ratesData?.base_price || 0));
         const isAvailable = existingRate ? !!existingRate.is_available : true;
         
         return (
-            <div className={`w-full h-full min-h-[45px] flex flex-col items-center justify-center p-1 cursor-pointer transition-colors ${isPast ? 'opacity-40 bg-gray-100 cursor-not-allowed' : (!isAvailable ? 'bg-red-50/60 hover:bg-red-50' : 'hover:bg-blue-50/30')} rounded`}>
-                <div className="text-[10px] sm:text-xs md:text-sm font-semibold text-gray-800 leading-none mb-0.5">{arg.dayNumberText}</div>
+            <div className={`w-full h-full min-h-[45px] flex flex-col items-center justify-center p-1 cursor-pointer transition-all duration-200 ${isPast ? 'opacity-40 bg-gray-100 cursor-not-allowed' : (isSelected ? 'bg-primary-600/90 text-white shadow-[0_0_10px_rgba(37,99,235,0.3)] z-10 scale-[1.02]' : (!isAvailable ? 'bg-red-50/60 hover:bg-red-50' : 'hover:bg-blue-50/30'))} rounded-lg`}>
+                <div className={`text-[10px] sm:text-xs md:text-sm font-bold leading-none mb-0.5 ${isSelected ? 'text-white' : 'text-gray-800'}`}>{arg.dayNumberText}</div>
                 <div className="text-center">
                     {!isAvailable ? (
-                        <span className="text-[8px] sm:text-[10px] md:text-xs font-semibold text-red-500 block bg-red-100/50 rounded px-1 py-0.5">Blocked</span>
+                        <span className={`text-[8px] sm:text-[10px] md:text-xs font-semibold block bg-red-100/50 rounded px-1 py-0.5 ${isSelected ? 'text-white' : 'text-red-500'}`}>Blocked</span>
                     ) : (
-                        <span className="text-[8px] sm:text-[10px] md:text-xs font-semibold text-primary-600 block leading-tight">৳{price.toLocaleString('en-IN')}</span>
+                        <span className={`text-[8px] sm:text-[10px] md:text-xs font-semibold block leading-tight ${isSelected ? 'text-white/90' : 'text-primary-600'}`}>৳{price.toLocaleString('en-IN')}</span>
                     )}
                 </div>
             </div>
@@ -315,32 +401,89 @@ const PropertyOwnerCalendar = () => {
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
                         {/* Calendar View */}
-                        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm p-4 md:p-6 border border-gray-100 w-full overflow-hidden">
-                            {bookingsLoading ? <LoadingSpinner /> : (
-                                <div className="calendar-container w-full pb-2">
-                                    <FullCalendar
-                                        plugins={[dayGridPlugin, interactionPlugin]}
-                                        initialView="dayGridMonth"
-                                        events={calendarEvents}
-                                        dateClick={handleDateClick}
-                                        dayCellContent={renderDayCell}
-                                        headerToolbar={{
-                                            left: 'prev,next',
-                                            center: 'title',
-                                            right: 'today'
-                                        }}
-                                        height="auto"
-                                        contentHeight="auto"
-                                        aspectRatio={1}
-                                        eventClick={(info) => {
-                                            // show message or modal
-                                            const { booking } = info.event.extendedProps;
-                                            const msg = `Booking Ref: ${booking.booking_reference}\nGuest: ${booking.guest_name || 'External'}\nStatus: ${booking.status}\nSource: ${booking.source || 'Internal'}`;
-                                            alert(msg);
+                        <div className="lg:col-span-2 space-y-4">
+                            <div className="flex items-center justify-between bg-white px-5 py-3 rounded-xl shadow-sm border border-gray-100">
+                                <div className="flex items-center gap-3">
+                                    <div className={`p-2 rounded-lg ${isMultiSelectMode ? 'bg-primary-100 text-primary-600' : 'bg-gray-100 text-gray-400'}`}>
+                                        <FiPlus size={18} />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-bold text-gray-900">Multi-Select Mode</p>
+                                        <p className="text-xs text-gray-500">{isMultiSelectMode ? 'Select multiple random dates' : 'Standard single edit'}</p>
+                                    </div>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        className="sr-only peer"
+                                        checked={isMultiSelectMode}
+                                        onChange={(e) => {
+                                            setIsMultiSelectMode(e.target.checked);
+                                            if (!e.target.checked) setSelectedDates([]);
                                         }}
                                     />
+                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
+                                </label>
+                            </div>
+
+                            {selectedDates.length > 0 && (
+                                <div className="bg-primary-600 text-white px-5 py-4 rounded-xl shadow-lg border-2 border-primary-400 flex items-center justify-between animate-fade-in-down">
+                                    <div className="flex items-center gap-4">
+                                        <div className="bg-white/20 p-2.5 rounded-xl">
+                                            <FiCalendar size={22} />
+                                        </div>
+                                        <div>
+                                            <p className="font-bold">{selectedDates.length} Days Selected</p>
+                                            <p className="text-xs text-white/80">Updating multiple dates at once</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button 
+                                            onClick={() => setSelectedDates([])}
+                                            className="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-sm font-medium transition-colors"
+                                        >
+                                            Clear
+                                        </button>
+                                        <button 
+                                            onClick={() => setRateModalOpen(true)}
+                                            className="px-4 py-1.5 bg-white text-primary-600 hover:bg-blue-50 rounded-lg text-sm font-bold transition-all shadow-sm"
+                                        >
+                                            Edit All
+                                        </button>
+                                    </div>
                                 </div>
                             )}
+
+                            <div className="bg-white rounded-xl shadow-sm p-4 md:p-6 border border-gray-100 w-full overflow-hidden">
+                                {bookingsLoading ? <LoadingSpinner /> : (
+                                    <div className="calendar-container w-full pb-2">
+                                        <FullCalendar
+                                            plugins={[dayGridPlugin, interactionPlugin]}
+                                            initialView="dayGridMonth"
+                                            events={calendarEvents}
+                                            dateClick={handleDateClick}
+                                            selectable={true}
+                                            selectMirror={true}
+                                            select={handleDateSelect}
+                                            dayCellContent={renderDayCell}
+                                            headerToolbar={{
+                                                left: 'prev,next',
+                                                center: 'title',
+                                                right: 'today'
+                                            }}
+                                            height="auto"
+                                            contentHeight="auto"
+                                            aspectRatio={1}
+                                            eventClick={(info) => {
+                                                // show message or modal
+                                                const { booking } = info.event.extendedProps;
+                                                const msg = `Booking Ref: ${booking.booking_reference}\nGuest: ${booking.guest_name || 'External'}\nStatus: ${booking.status}\nSource: ${booking.source || 'Internal'}`;
+                                                alert(msg);
+                                            }}
+                                        />
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         {/* Sync Settings View */}
@@ -447,7 +590,20 @@ const PropertyOwnerCalendar = () => {
 
                                 {/* Imported Links List */}
                                 <div className="mt-6">
-                                    <h4 className="font-semibold text-gray-800 text-sm mb-3">Active Sync Links</h4>
+                                    <div className="flex items-center justify-between mb-3">
+                                        <h4 className="font-semibold text-gray-800 text-sm">Active Sync Links</h4>
+                                        {calendarsData?.length > 0 && (
+                                            <button
+                                                onClick={() => syncPropertyCalendarsMutation.mutate()}
+                                                disabled={syncPropertyCalendarsMutation.isLoading}
+                                                className="flex items-center gap-1.5 text-xs font-semibold text-primary-600 hover:text-primary-700 disabled:opacity-50 transition-all px-2 py-1 bg-primary-50 rounded-md"
+                                                title="Sync all links now"
+                                            >
+                                                <FiRefreshCw className={`w-3.5 h-3.5 ${syncPropertyCalendarsMutation.isLoading ? 'animate-spin' : ''}`} />
+                                                {syncPropertyCalendarsMutation.isLoading ? 'Syncing...' : 'Sync Now'}
+                                            </button>
+                                        )}
+                                    </div>
                                     {calendarsLoading ? <LoadingSpinner size="small" /> : calendarsData?.length > 0 ? (
                                         <ul className="space-y-3">
                                             {calendarsData.map(cal => (
@@ -496,7 +652,13 @@ const PropertyOwnerCalendar = () => {
                             <form onSubmit={handleRateSubmit} className="p-5 space-y-4">
                                 <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm flex items-start gap-2 mb-4">
                                     <FiAlertCircle className="mt-0.5 flex-shrink-0" />
-                                    <p>Updating for date: <strong>{new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</strong></p>
+                                    <div>
+                                        {selectedDates.length > 0 ? (
+                                            <p>Updating for <strong>{selectedDates.length} selected days</strong></p>
+                                        ) : dateRange.start && dateRange.end ? (
+                                            <p>Updating for range: <strong>{new Date(dateRange.start).toLocaleDateString()}</strong> to <strong>{new Date(new Date(dateRange.end).getTime() - 86400000).toLocaleDateString()}</strong></p>
+                                        ) : null}
+                                    </div>
                                 </div>
                                 
                                 <div className="flex items-center justify-between p-3 border border-gray-200 rounded-xl bg-gray-50/50 hover:bg-gray-50 transition-colors">

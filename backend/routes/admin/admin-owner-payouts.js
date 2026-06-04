@@ -160,6 +160,7 @@ router.post('/payouts', async (req, res) => {
       LEFT JOIN admin_earnings ae ON b.id = ae.booking_id
       WHERE p.owner_id = ? 
         AND b.payment_status = 'paid'
+        AND (b.booking_source = 'website' OR b.source = 'Internal' OR b.payment_method = 'sslcommerz')
         AND DATE(b.created_at) BETWEEN ? AND ?
         AND b.id NOT IN (
           SELECT booking_id FROM owner_payout_items opi

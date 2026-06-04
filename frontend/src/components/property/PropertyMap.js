@@ -90,7 +90,7 @@ const PropertyMap = ({ properties, hoveredPropertyId, onMarkerClick, onMarkerHov
                     e.stopPropagation();
                     if (!detailView) {
                         setSelectedProperty(property);
-                        if (onMarkerClick) onMarkerClick(property.id);
+                        if (onMarkerClick) onMarkerClick(property.slug || property.id);
                     }
                 }}
                 onMouseEnter={() => !detailView && onMarkerHover && onMarkerHover(property.id)}
@@ -146,7 +146,7 @@ const PropertyMap = ({ properties, hoveredPropertyId, onMarkerClick, onMarkerHov
                             className="bg-white rounded-xl overflow-hidden shadow-xl"
                             style={{ width: '240px', position: 'absolute' }}
                         >
-                            <div className="cursor-pointer relative" onClick={() => navigate(`/property/${selectedProperty.id}`)}>
+                            <div className="cursor-pointer relative" onClick={() => navigate(`/property/${selectedProperty.slug || selectedProperty.id}`)}>
                                 {/* Close button */}
                                 <button
                                     className="absolute top-2 right-2 z-10 bg-white/50 hover:bg-white rounded-full p-1"

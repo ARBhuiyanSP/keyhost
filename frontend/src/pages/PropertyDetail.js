@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from 'react-query';
 import {
   FiStar, FiMapPin, FiUsers, FiWifi, FiTruck, FiCoffee, FiHeart, FiShare2,
-  FiCalendar, FiCheck, FiX, FiShield, FiTv, FiHome, FiChevronLeft, FiChevronRight,
+  FiCalendar, FiCheck, FiCheckCircle, FiX, FiShield, FiTv, FiHome, FiChevronLeft, FiChevronRight,
   FiClock, FiKey, FiWind, FiMonitor, FiSun, FiMoon, FiThermometer, FiLock,
   FiEye, FiEyeOff, FiMinus, FiPlus, FiDroplet, FiPackage, FiArrowUp, FiZap,
   FiRadio, FiMusic, FiVideo, FiBriefcase, FiTag, FiMessageSquare, FiSearch, FiFlag, FiChevronDown
@@ -19,12 +19,15 @@ import useSettingsStore from '../store/settingsStore';
 import StickySearchHeader from '../components/layout/StickySearchHeader';
 import PropertyImageSlider from '../components/property/PropertyImageSlider';
 import PropertyMap from '../components/property/PropertyMap';
-import { addToRecentlyViewed } from '../utils/recentlyViewed';
-import { sanitizeText } from '../utils/textUtils';
+import { addToRecentlyViewed, removeFromRecentlyViewed } from '../utils/recentlyViewed';
+import { sanitizeText, formatPrice } from '../utils/textUtils';
 import AuthModal from '../components/auth/AuthModal';
-
+import ShareModal from '../components/property/ShareModal';
 const PropertyDetail = () => {
-  const { id } = useParams();
+  const { slug } = useParams();
+  // Extract numeric id from slug tail (e.g. "peaceful-3br-near-68" -> 68)
+  // Falls back to treating the whole param as an id for old numeric-only links
+  const urlParamId = slug ? (slug.match(/-?(\d+)$/) ? slug.match(/-?(\d+)$/)[1] : slug) : null;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
@@ -42,6 +45,7 @@ const PropertyDetail = () => {
   const [showImageModal, setShowImageModal] = useState(false);
   const [showAllPhotos, setShowAllPhotos] = useState(false);
   const [showDescriptionModal, setShowDescriptionModal] = useState(false);
+  const [showMapMobile, setShowMapMobile] = useState(false);
   const [showMobileReserveForm, setShowMobileReserveForm] = useState(false);
   const [mobileSearchStep, setMobileSearchStep] = useState('dates'); // 'dates', 'guests'
   const [showStickySearchHeader, setShowStickySearchHeader] = useState(true); // Show on first load
@@ -56,17 +60,22 @@ const PropertyDetail = () => {
   const [authModalMode, setAuthModalMode] = useState('login');
   const [isGuestPickerOpen, setIsGuestPickerOpen] = useState(false);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
-
+  const [showShareModal, setShowShareModal] = useState(false);
   const datePickerRef = useRef(null);
   const datePickerTriggerRef = useRef(null);
   const guestPickerRef = useRef(null);
   const guestPickerTriggerRef = useRef(null);
 
-  // Get search params from URL (for when coming from search/properties pages)
+  // Get search params from URL (for when coming from search/properties pages or direct host links)
   const searchParams = new URLSearchParams(location.search);
-  const urlCheckIn = searchParams.get('check_in_date');
-  const urlCheckOut = searchParams.get('check_out_date');
+  const urlCheckIn = searchParams.get('checkin') || searchParams.get('checkIn') || searchParams.get('check_in_date');
+  const urlCheckOut = searchParams.get('checkout') || searchParams.get('checkOut') || searchParams.get('check_out_date');
   const urlGuests = searchParams.get('guests');
+  const isDirectLink = searchParams.get('direct') === 'true';
+  const urlRoomId = searchParams.get('hms_room_id');
+
+  const [selectedRoomId, setSelectedRoomId] = useState(urlRoomId ? parseInt(urlRoomId) : null);
+  const [selectedRoomGallery, setSelectedRoomGallery] = useState(null);
 
   // Helper function to format date in local timezone (YYYY-MM-DD) without timezone conversion
   const formatDateLocal = (date) => {
@@ -177,20 +186,82 @@ const PropertyDetail = () => {
 
 
 
-  // Fetch property details
+  // Fetch property details — pass the full slug so backend can do SEO-friendly lookup;
+  // sub-queries inside PropertyDetail still use the numeric id extracted above.
   const { data: property, isLoading, error } = useQuery(
-    ['property', id],
-    () => api.get(`/properties/${id}`),
+    ['property', slug, bookingData.check_in_date, bookingData.check_out_date],
+    () => api.get(`/properties/${slug}?check_in_date=${bookingData.check_in_date || ''}&check_out_date=${bookingData.check_out_date || ''}`),
     {
       select: (response) => response.data?.data?.property,
-      enabled: !!id,
+      enabled: !!slug,
+      keepPreviousData: true,
     }
   );
 
+  // Define actual numeric ID to use for sub-queries
+  const id = property?.id || urlParamId;
+
+  // SEO: Update page <title>, <meta description>, and Open Graph tags dynamically
+  React.useEffect(() => {
+    if (!property) return;
+    const siteName = settings?.site_name || 'KeyHost';
+    const title = `${property.title} — ${property.city}, ${property.state} | ${siteName}`;
+    const desc = property.description
+      ? property.description.substring(0, 160).replace(/\s+/g, ' ').trim()
+      : `Book ${property.title} in ${property.city}. ${property.bedrooms} bedrooms, up to ${property.max_guests} guests.`;
+    const img = property.images?.[0]?.image_url || '';
+    const canonical = `${window.location.origin}/property/${property.slug || slug}`;
+
+    document.title = title;
+
+    const setMeta = (name, content, attr = 'name') => {
+      let el = document.querySelector(`meta[${attr}="${name}"]`);
+      if (!el) { el = document.createElement('meta'); el.setAttribute(attr, name); document.head.appendChild(el); }
+      el.setAttribute('content', content);
+    };
+    const setLink = (rel, href) => {
+      let el = document.querySelector(`link[rel="${rel}"]`);
+      if (!el) { el = document.createElement('link'); el.setAttribute('rel', rel); document.head.appendChild(el); }
+      el.setAttribute('href', href);
+    };
+
+    setMeta('description', desc);
+    setMeta('og:title', title, 'property');
+    setMeta('og:description', desc, 'property');
+    setMeta('og:url', canonical, 'property');
+    setMeta('og:type', 'website', 'property');
+    if (img) setMeta('og:image', img, 'property');
+    setMeta('twitter:card', 'summary_large_image');
+    setMeta('twitter:title', title);
+    setMeta('twitter:description', desc);
+    if (img) setMeta('twitter:image', img);
+    setLink('canonical', canonical);
+
+    return () => {
+      document.title = siteName;
+    };
+  }, [property, settings, slug]);
+
+  // Auto-select the only room/flat unit if the property is a single unit, or pre-select room from URL query param
+  useEffect(() => {
+    if (property && property.is_hms_enabled) {
+      if (property.is_single_unit === 1 || property.is_single_unit === true) {
+        if (property.hms_rooms && property.hms_rooms.length > 0) {
+          setSelectedRoomId(property.hms_rooms[0].id);
+        }
+      } else if (urlRoomId) {
+        const roomIdInt = parseInt(urlRoomId);
+        if (property.hms_rooms?.some(r => r.id === roomIdInt)) {
+          setSelectedRoomId(roomIdInt);
+        }
+      }
+    }
+  }, [property, urlRoomId]);
+
   // Fetch blocked dates for calendar
   const { data: blockedDatesData } = useQuery(
-    ['blockedDates', id],
-    () => api.get(`/properties/${id}/blocked-dates`),
+    ['blockedDates', id, selectedRoomId],
+    () => api.get(`/properties/${id}/blocked-dates${selectedRoomId ? `?hms_room_id=${selectedRoomId}` : ''}`),
     {
       select: (response) => response.data?.data || { blockedDates: [], checkInDates: [] },
       enabled: !!id,
@@ -249,7 +320,7 @@ const PropertyDetail = () => {
     const isSelectingCheckout = bookingData.check_in_date && !bookingData.check_out_date;
     if (isSelectingCheckout && checkInDates.includes(dateStr)) {
       // Validate that the range doesn't cross *other* blocked dates
-      return false; 
+      return false;
     }
 
     return blockedDates.includes(dateStr);
@@ -261,7 +332,7 @@ const PropertyDetail = () => {
     if (isDateBlocked(date)) {
       return 'react-datepicker__day--blocked';
     }
-    
+
     // Timezone-safe date string format: YYYY-MM-DD
     const y = date.getFullYear();
     const mo = String(date.getMonth() + 1).padStart(2, '0');
@@ -271,7 +342,7 @@ const PropertyDetail = () => {
     const match = availabilityMap[dateStr];
     const hasSpecialRate = match && Number(match.is_available) === 1 && match.price &&
       parseFloat(match.price) !== parseFloat(property?.base_price);
-      
+
     if (hasSpecialRate) {
       return 'react-datepicker__day--available react-datepicker__day--special-rate';
     }
@@ -280,8 +351,8 @@ const PropertyDetail = () => {
 
   // Check availability
   const { data: availability } = useQuery(
-    ['availability', id, bookingData.check_in_date, bookingData.check_out_date],
-    () => api.get(`/properties/${id}/availability?check_in_date=${bookingData.check_in_date}&check_out_date=${bookingData.check_out_date}`),
+    ['availability', id, bookingData.check_in_date, bookingData.check_out_date, selectedRoomId],
+    () => api.get(`/properties/${id}/availability?check_in_date=${bookingData.check_in_date}&check_out_date=${bookingData.check_out_date}${selectedRoomId ? `&hms_room_id=${selectedRoomId}` : ''}`),
     {
       select: (response) => response.data?.data,
       enabled: !!bookingData.check_in_date && !!bookingData.check_out_date,
@@ -313,14 +384,14 @@ const PropertyDetail = () => {
           await api.get(`/ical/sync-property/${id}`);
           // Invalidate queries to fetch updated calendar availability
           queryClient.invalidateQueries(['blockedDates', id]);
-          
+
           if (bookingData.check_in_date && bookingData.check_out_date) {
             queryClient.invalidateQueries(['availability', id, bookingData.check_in_date, bookingData.check_out_date]);
-            
+
             // Explicitly check availability state to trigger alert
             const availRes = await api.get(`/properties/${id}/availability?check_in_date=${bookingData.check_in_date}&check_out_date=${bookingData.check_out_date}`);
             const isAvail = availRes.data?.data?.isAvailable;
-            
+
             if (isAvail === false) {
               toast.error('Already/just booked on another platform, please choose another date/property');
               setBookingData(prev => ({ ...prev, check_in_date: null, check_out_date: null }));
@@ -330,22 +401,37 @@ const PropertyDetail = () => {
           console.error('Failed to sync iCal on demand:', error);
         }
       };
-      
+
       syncExternalCalendars();
     }
   }, [id]); // Only run once per property load
-  
+
   // Scroll to top when property ID changes or component mounts
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, [id]);
 
-  // Track property view
+  // Track property view and handle direct booking logic
   useEffect(() => {
     if (property) {
       addToRecentlyViewed(property);
+
+      // If it's a direct link from a host
+      if (isDirectLink) {
+        // 1. If not authenticated, force login
+        if (!isAuthenticated) {
+          setAuthModalMode('login');
+          setAuthModalOpen(true);
+          toast.info('Please login to complete your booking');
+        } else {
+          // 2. If authenticated, scroll to booking section
+          setTimeout(() => {
+            scrollToSection('reserve');
+          }, 800);
+        }
+      }
     }
-  }, [property]);
+  }, [property, isDirectLink, isAuthenticated]);
 
   useEffect(() => {
     if (!property) return;
@@ -440,18 +526,23 @@ const PropertyDetail = () => {
         city: property.city,
         state: property.state,
         address: property.address,
-        main_image: property.main_image || property.images?.[0] || null
+        main_image: property.main_image || property.images?.[0] || null,
+        property_type: property.property_type,
+        is_hms_enabled: property.is_hms_enabled,
+        hms_rooms: property.hms_rooms
       } : null;
 
       const pendingBookingData = {
         property_id: id,
+        hms_room_id: selectedRoomId,
         check_in_date: bookingData.check_in_date,
         check_out_date: bookingData.check_out_date,
         number_of_guests: bookingData.number_of_guests,
         number_of_children: bookingData.number_of_children || 0,
         number_of_infants: bookingData.number_of_infants || 0,
         special_requests: bookingData.special_requests || '',
-        property: propertyData
+        property: propertyData,
+        customPrice: searchParams.get('customPrice') ? parseFloat(searchParams.get('customPrice')) : null
       };
 
       localStorage.setItem('pendingBooking', JSON.stringify(pendingBookingData));
@@ -462,13 +553,22 @@ const PropertyDetail = () => {
       return;
     }
 
+    if (property.is_hms_enabled && !selectedRoomId) {
+      toast.error('Please select a room before reserving');
+      scrollToSection('hms-rooms');
+      return;
+    }
+
     // Navigate to new booking page with property and booking data, also pass URL params
     const params = new URLSearchParams();
     if (bookingData.check_in_date) params.set('check_in_date', bookingData.check_in_date);
     if (bookingData.check_out_date) params.set('check_out_date', bookingData.check_out_date);
     if (bookingData.number_of_guests) params.set('guests', bookingData.number_of_guests.toString());
+    if (selectedRoomId) params.set('hms_room_id', selectedRoomId.toString());
+    const customPrice = searchParams.get('customPrice');
+    if (customPrice) params.set('customPrice', customPrice);
     const queryString = params.toString();
-    navigate(`/guest/booking/new/${id}${queryString ? `?${queryString}` : ''}`, { state: { bookingData, property } });
+    navigate(`/guest/booking/new/${id}${queryString ? `?${queryString}` : ''}`, { state: { bookingData: { ...bookingData, hms_room_id: selectedRoomId }, property } });
   };
 
   const toggleFavorite = async () => {
@@ -505,6 +605,13 @@ const PropertyDetail = () => {
   const getDateRate = (dateStr) => {
     const match = availabilityMap[dateStr];
     if (match && Number(match.is_available) === 1 && match.price) return parseFloat(match.price);
+
+    // If HMS is enabled and a room is selected, use room price as base
+    if (property.is_hms_enabled && selectedRoomId) {
+      const room = property.hms_rooms?.find(r => r.id === selectedRoomId);
+      if (room) return parseFloat(room.price) || 0;
+    }
+
     return parseFloat(property?.base_price) || 0;
   };
 
@@ -527,6 +634,9 @@ const PropertyDetail = () => {
 
 
   const calculateTotal = () => {
+    const customPrice = parseFloat(searchParams.get('customPrice')) || null;
+    if (customPrice && customPrice > 0) return customPrice;
+
     if (!property || !bookingData.check_in_date || !bookingData.check_out_date) {
       return 0;
     }
@@ -538,10 +648,10 @@ const PropertyDetail = () => {
     const cleaningFee = parseFloat(property.cleaning_fee) || 0;
     const securityDeposit = parseFloat(property.security_deposit) || 0;
     const extraGuestFee = bookingData.number_of_guests > 1 ? (bookingData.number_of_guests - 1) * (parseFloat(property.extra_guest_fee) || 0) : 0;
-    
+
     const serviceFeePercent = parseFloat(settings?.service_fee_percentage || 0) / 100;
     const taxPercent = parseFloat(settings?.tax_percentage || 0) / 100;
-    
+
     const serviceFee = basePrice * serviceFeePercent;
     const taxAmount = basePrice * taxPercent;
 
@@ -729,7 +839,7 @@ const PropertyDetail = () => {
     }, 350);
   };
 
-  if (isLoading) {
+  if (isLoading && !property) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <LoadingSpinner size="large" />
@@ -738,6 +848,11 @@ const PropertyDetail = () => {
   }
 
   if (error || !property) {
+    // If we've got an ID but the property is not found, remove it from recently viewed
+    if (id) {
+      removeFromRecentlyViewed(parseInt(id));
+    }
+
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -919,15 +1034,7 @@ const PropertyDetail = () => {
           </button>
           <button
             className="p-3 bg-white/90 hover:bg-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 backdrop-blur-sm"
-            onClick={() => {
-              if (navigator.share) {
-                navigator.share({
-                  title: property.title,
-                  text: property.description,
-                  url: window.location.href
-                });
-              }
-            }}
+            onClick={() => setShowShareModal(true)}
           >
             <FiShare2 className="w-5 h-5 text-gray-600" />
           </button>
@@ -1118,7 +1225,7 @@ const PropertyDetail = () => {
                   {bookingData.check_in_date && bookingData.check_out_date ? (
                     <div className="text-sm text-gray-900 whitespace-nowrap flex flex-col items-end">
                       <div className="font-bold text-red-600">
-                        BDT {(calculateTotal() || 0).toFixed(0)}
+                        BDT {formatPrice(calculateTotal() || 0)}
                       </div>
                       <div className="text-gray-600 text-xs">
                         {formatStickyDateRange()} · {calculateNights()} night{calculateNights() !== 1 ? 's' : ''}
@@ -1164,11 +1271,17 @@ const PropertyDetail = () => {
                   <span className="text-sm">{sanitizeText(property.address)}, {sanitizeText(property.city)}, {sanitizeText(property.state)}</span>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <div className="flex items-center">
-                    <FiStar className="text-yellow-400 mr-1 min-w-[16px]" />
-                    <span className="font-medium">{property.average_rating || 'New'}</span>
-                  </div>
-                  <span className="text-gray-500 md:ml-1 text-sm whitespace-nowrap">({property.total_reviews} reviews)</span>
+                  {property.total_reviews > 0 ? (
+                    <>
+                      <div className="flex items-center">
+                        <FiStar className="text-yellow-400 mr-1 min-w-[16px] fill-current" />
+                        <span className="font-semibold">{parseFloat(property.average_rating).toFixed(1)}</span>
+                      </div>
+                      <span className="text-gray-500 md:ml-1 text-sm whitespace-nowrap">({property.total_reviews} verified {property.total_reviews === 1 ? 'review' : 'reviews'})</span>
+                    </>
+                  ) : (
+                    <span className="text-sm text-gray-400 font-medium">No reviews yet</span>
+                  )}
                 </div>
               </div>
 
@@ -1216,8 +1329,13 @@ const PropertyDetail = () => {
                   )}
                 </div>
                 <div>
-                  <h3 className="font-bold text-[#222222] text-base">
+                  <h3 className="font-bold text-[#222222] text-base flex items-center gap-1.5">
                     Hosted by {property.owner_first_name}
+                    {!!property.owner_verified && (
+                      <svg className="w-4 h-4 text-blue-500 fill-current flex-shrink-0" viewBox="0 0 24 24" title="Verified Host">
+                        <path d="M23 12l-2.44-2.79.34-3.69-3.61-.82-1.89-3.2L12 2.96 8.6 1.5 6.71 4.7 3.1 5.52l.34 3.7L1 12l2.44 2.79-.34 3.7 3.61.82 1.89 3.2 3.4-1.46 3.4 1.46 1.89-3.2 3.61-.82-.34-3.7L23 12zm-13 5l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z" />
+                      </svg>
+                    )}
                   </h3>
                   <div className="text-gray-500 text-sm">
                     {property.owner_is_superhost ? 'Superhost · ' : ''}
@@ -1246,6 +1364,148 @@ const PropertyDetail = () => {
                 </button>
               )}
             </div>
+
+            {/* HMS Room Selection */}
+            {property.is_hms_enabled && !(property.is_single_unit === 1 || property.is_single_unit === true) && property.hms_rooms && property.hms_rooms.length > 0 && (
+              <div className="border-t pt-8" id="section-hms-rooms">
+                <h3 className="text-xl font-semibold mb-6 flex items-center">
+                  <FiPackage className="mr-2 text-[#E41D57]" />
+                  Select your room
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                  {(property.hms_rooms || [])
+                    .filter(room => !bookingData.check_in_date || !bookingData.check_out_date || room.is_available)
+                    .map((room) => {
+                      const roomImages = typeof room.images === 'string' ? JSON.parse(room.images) : (room.images || []);
+                      const coverImage = roomImages[0];
+                      const backendUrl = 'http://localhost:5000';
+                      const displayImage = coverImage ? (coverImage.startsWith('http') ? coverImage : `${backendUrl}${coverImage}`) : null;
+
+                      return (
+                        <div
+                          key={room.id}
+                          onClick={() => setSelectedRoomId(room.id)}
+                          className={`cursor-pointer overflow-hidden rounded-xl border-2 transition-all flex flex-col ${selectedRoomId === room.id
+                            ? 'border-[#E41D57] bg-rose-50 shadow-md transform scale-[1.01]'
+                            : 'border-gray-100 hover:border-gray-200 bg-white'
+                            }`}
+                        >
+                          {/* Room Photo Area */}
+                          <div className="w-full h-36 relative bg-gray-100 flex-shrink-0">
+                            {displayImage ? (
+                              <img
+                                src={displayImage}
+                                alt={`Room ${room.room_number}`}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-gray-400">
+                                <FiHome className="w-6 h-6" />
+                              </div>
+                            )}
+
+                            {roomImages.length > 1 && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedRoomGallery(room);
+                                }}
+                                className="absolute bottom-1.5 right-1.5 bg-white/90 backdrop-blur-sm hover:bg-white text-gray-900 px-1.5 py-0.5 rounded text-[9px] font-bold shadow-sm transition flex items-center gap-1"
+                              >
+                                <FiSearch size={10} />
+                                +{roomImages.length - 1}
+                              </button>
+                            )}
+
+                            <div className="absolute top-1.5 left-1.5">
+                              <span className="bg-black/60 backdrop-blur-sm text-white px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider">
+                                {room.room_type}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Room Info Area */}
+                          <div className="p-3 flex-1 flex flex-col">
+                            <div className="mb-2">
+                              <div className="flex justify-between items-start">
+                                <span className="text-sm font-bold text-gray-900">Room {room.room_number}</span>
+                                {selectedRoomId === room.id && (
+                                  <FiCheck className="text-[#E41D57] w-4 h-4" />
+                                )}
+                              </div>
+                              <div className="text-gray-500 text-[10px]">
+                                {room.floor ? `${room.floor} Floor` : 'Standard'}
+                              </div>
+                            </div>
+
+                            {room.features && room.features.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mb-3">
+                                {(typeof room.features === 'string' ? JSON.parse(room.features) : room.features).slice(0, 2).map((feature, idx) => (
+                                  <span key={idx} className="text-[8px] bg-gray-50 border border-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                                    {feature}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
+                            <div className="mt-auto flex items-center justify-between pt-2 border-t border-gray-50">
+                              <div className="text-[#E41D57] font-bold text-sm">
+                                ৳{formatPrice(room.price)}
+                              </div>
+                              <button
+                                className={`px-2 py-1 rounded text-[9px] font-bold transition-colors ${selectedRoomId === room.id
+                                  ? 'bg-[#E41D57] text-white'
+                                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                  }`}
+                              >
+                                {selectedRoomId === room.id ? 'Selected' : 'Choose'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+
+            {/* Room Gallery Modal */}
+            {selectedRoomGallery && (
+              <div
+                className="fixed inset-0 bg-black/95 z-[200] flex flex-col backdrop-blur-sm overflow-hidden animate-fadeIn"
+                onClick={() => setSelectedRoomGallery(null)}
+              >
+                <div className="flex items-center justify-between p-6">
+                  <h2 className="text-white text-xl font-semibold">
+                    Room {selectedRoomGallery.room_number} Gallery
+                  </h2>
+                  <button
+                    onClick={() => setSelectedRoomGallery(null)}
+                    className="p-3 bg-white hover:bg-gray-100 rounded-full text-gray-900 transition-all shadow-lg"
+                  >
+                    <FiX className="w-6 h-6" />
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto px-4 pb-8" onClick={(e) => e.stopPropagation()}>
+                  <div className="max-w-4xl mx-auto space-y-4">
+                    {(typeof selectedRoomGallery.images === 'string' ? JSON.parse(selectedRoomGallery.images) : selectedRoomGallery.images).map((img, idx) => {
+                      const backendUrl = 'http://localhost:5000';
+                      const fullUrl = img.startsWith('http') ? img : `${backendUrl}${img}`;
+                      return (
+                        <div key={idx} className="rounded-xl overflow-hidden shadow-2xl bg-gray-900">
+                          <img
+                            src={fullUrl}
+                            alt={`Room ${selectedRoomGallery.room_number} view ${idx + 1}`}
+                            className="w-full h-auto object-contain max-h-[80vh] mx-auto"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Amenities */}
             <div className="border-t pt-4 md:pt-8" id="section-amenities">
@@ -1293,6 +1553,67 @@ const PropertyDetail = () => {
               </div>
             )}
 
+            {/* Cancellation Policy Showcase */}
+            <div className="border-t pt-8" id="section-cancellation">
+              <h3 className="text-xl font-semibold mb-6">Cancellation policy</h3>
+              <div className="flex items-start gap-4 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                <div className={`p-3 rounded-full ${property.is_non_refundable ? 'bg-rose-100 text-rose-600' : 'bg-green-100 text-green-600'}`}>
+                  <FiShield className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-gray-900">
+                    {property.is_non_refundable ? 'Non-refundable booking' : 'Standard Flexible Policy'}
+                  </h4>
+                  <p className="text-gray-600 text-sm mt-1 leading-relaxed">
+                    {property.is_non_refundable
+                      ? 'This property is marked as non-refundable. No refund will be issued for cancellations at any time.'
+                      : 'Free cancellation up to 48 hours before check-in. Cancellations made within 48 hours of check-in are non-refundable.'}
+                  </p>
+                  <a href="/refund-policy" target="_blank" className="text-sm font-bold text-gray-900 underline mt-3 inline-block hover:text-gray-700">
+                    Learn more
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {/* Booking & Payment Policy (Trust Signals) */}
+            <div className="border-t pt-8 pb-4" id="section-payment-policy">
+              <h3 className="text-xl font-semibold mb-6">Booking & payment terms</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex items-start gap-4 p-4 rounded-xl border border-gray-200">
+                  <div className="mt-0.5">
+                    {property.owner_auto_accept ? (
+                      <FiZap className="w-5 h-5 text-amber-500" />
+                    ) : (
+                      <FiClock className="w-5 h-5 text-blue-500" />
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-gray-900 text-sm">
+                      {property.owner_auto_accept ? 'Instant Booking' : 'Manual Approval Required'}
+                    </h4>
+                    <p className="text-gray-600 text-xs mt-1 leading-relaxed">
+                      {property.owner_auto_accept
+                        ? 'Your booking is confirmed instantly. No need to wait for host approval.'
+                        : 'The host must approve your booking request within 24 hours before it is confirmed.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-4 p-4 rounded-xl border border-gray-200">
+                  <div className="mt-0.5">
+                    <FiLock className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-gray-900 text-sm">Secure Payment</h4>
+                    <p className="text-gray-600 text-xs mt-1 leading-relaxed">
+                      Once confirmed, you will have {settings?.payment_time_limit_hours || 24} hours to complete your payment securely. Unpaid bookings are automatically cancelled.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
           </div>
 
           {/* Booking Sidebar - Contact Host Style */}
@@ -1301,9 +1622,37 @@ const PropertyDetail = () => {
               <div className="bg-white border text-center border-gray-200 rounded-xl shadow-xl p-6 property-detail-booking-form">
                 <div className="flex gap-4 mb-6">
                   <div className="flex-1 text-left">
-                    <div className="text-2xl font-bold text-[#222222] mb-1">
-                      {calculateNights() > 0 ? `BDT ${calculateTotal()}` : `BDT ${property.base_price}`}
-                      <span className="text-base font-normal text-gray-500"> {calculateNights() > 0 ? `for ${calculateNights()} nights` : ' per night'}</span>
+                    <div className="text-xl font-bold text-[#222222] mb-1">
+                      {calculateNights() > 0 ? (
+                        <>
+                          BDT {formatPrice(calculateTotal())}
+                          <span className="text-sm font-normal text-gray-500 ml-1">for {calculateNights()} night{calculateNights() !== 1 ? 's' : ''}</span>
+                        </>
+                      ) : (
+                        <>
+                          {property.is_hms_enabled ? (
+                            selectedRoomId ? (
+                              <>
+                                BDT {formatPrice(property.hms_rooms.find(r => r.id === selectedRoomId)?.price || 0)}
+                                <span className="text-sm font-normal text-gray-500 ml-1">per night</span>
+                              </>
+                            ) : (
+                              <>
+                                <div className="text-xs text-gray-400 font-normal mb-1">Starts from</div>
+                                BDT {formatPrice(Math.min(...property.hms_rooms.map(r => parseFloat(r.price))))}
+                                <span className="mx-1 text-gray-300">-</span>
+                                {formatPrice(Math.max(...property.hms_rooms.map(r => parseFloat(r.price))))}
+                                <span className="text-sm font-normal text-gray-500 ml-1">per night</span>
+                              </>
+                            )
+                          ) : (
+                            <>
+                              BDT {formatPrice(property.base_price)}
+                              <span className="text-sm font-normal text-gray-500 ml-1">per night</span>
+                            </>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1601,6 +1950,21 @@ const PropertyDetail = () => {
                     {property?.owner_auto_accept ? 'Confirm Booking' : 'Reserve'}
                   </button>
 
+                  {/* Help/Support link near booking CTA */}
+                  <div className="text-center mb-4">
+                    <p className="text-xs text-gray-500">
+                      Need help with booking?{' '}
+                      <a 
+                        href="/contact" 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="font-bold text-gray-800 hover:text-black underline underline-offset-2"
+                      >
+                        Ask Help & Support
+                      </a>
+                    </p>
+                  </div>
+
                   {/* Price Breakdown */}
                   {calculateNights() > 0 && (
                     <div className="mt-1 mb-4 space-y-2 text-sm text-gray-700 border-t border-gray-100 pt-4">
@@ -1621,8 +1985,8 @@ const PropertyDetail = () => {
                             <div className="flex justify-between items-start">
                               <span className="underline underline-offset-2 text-gray-600">
                                 {hasSpecialRates
-                                  ? `BDT ${Math.round(parseFloat(property.base_price)).toLocaleString()} × ${nights} nights (special rates apply)`
-                                  : `BDT ${Math.round(parseFloat(property.base_price)).toLocaleString()} × ${nights} nights`}
+                                  ? `BDT ${formatPrice(property.base_price)} × ${nights} nights (special rates apply)`
+                                  : `BDT ${formatPrice(property.base_price)} × ${nights} nights`}
                               </span>
                               <span className="font-medium">BDT {Math.round(basePrice).toLocaleString()}</span>
                             </div>
@@ -1663,9 +2027,20 @@ const PropertyDetail = () => {
                                 <span className="font-medium">BDT {Math.round(taxAmount).toLocaleString()}</span>
                               </div>
                             )}
+                            {(() => {
+                              const totalBeforeCustom = parseFloat(property.cleaning_fee || 0) + parseFloat(property.security_deposit || 0) + extraGuestFee + serviceFee + taxAmount + basePrice;
+                              const customPrice = parseFloat(searchParams.get('customPrice')) || null;
+                              const discount = customPrice && customPrice > 0 ? Math.max(0, totalBeforeCustom - customPrice) : 0;
+                              return discount > 0 ? (
+                                <div className="flex justify-between text-green-600 font-semibold">
+                                  <span className="underline underline-offset-2">Host Discount</span>
+                                  <span>- BDT {Math.round(discount).toLocaleString()}</span>
+                                </div>
+                              ) : null;
+                            })()}
                             <div className="flex justify-between font-bold text-base pt-2 border-t border-gray-200 mt-1">
                               <span>Total (BDT)</span>
-                              <span>BDT {Math.round(parseFloat(property.cleaning_fee || 0) + parseFloat(property.security_deposit || 0) + extraGuestFee + serviceFee + taxAmount + basePrice).toLocaleString()}</span>
+                              <span>BDT {Math.round(calculateTotal()).toLocaleString()}</span>
                             </div>
                           </>
                         );
@@ -1697,9 +2072,15 @@ const PropertyDetail = () => {
           <div className="mb-12 border-b border-gray-200 pb-12">
             <h3 className="flex items-center text-[2rem] font-extrabold text-[#222222] mb-10 tracking-tight">
               <FiStar className="text-[#222222] w-8 h-8 fill-current mr-3" />
-              <span className="mr-3">{property.average_rating ? parseFloat(property.average_rating).toFixed(2) : 'New'}</span>
-              <span className="mx-3 text-4xl leading-none" style={{ marginTop: '-4px' }}>·</span>
-              <span className="text-[2rem]">{property.total_reviews} {property.total_reviews === 1 ? 'review' : 'reviews'}</span>
+              {property.total_reviews > 0 ? (
+                <>
+                  <span className="mr-3">{parseFloat(property.average_rating).toFixed(1)}</span>
+                  <span className="mx-3 text-4xl leading-none" style={{ marginTop: '-4px' }}>·</span>
+                  <span className="text-[2rem]">{property.total_reviews} verified {property.total_reviews === 1 ? 'review' : 'reviews'}</span>
+                </>
+              ) : (
+                <span className="text-[1.5rem] font-semibold text-gray-400">No reviews yet</span>
+              )}
             </h3>
 
             <div className="flex flex-col lg:flex-row lg:items-center gap-10 overflow-x-auto pb-4">
@@ -1786,7 +2167,7 @@ const PropertyDetail = () => {
 
                     {/* Review Content */}
                     <div>
-                      <div className="flex items-center gap-2 mb-2">
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
                         <div className="flex gap-0.5">
                           {[...Array(5)].map((_, i) => (
                             <FiStar key={i} className={`w-3 h-3 ${i < review.rating ? 'text-[#222222] fill-current' : 'text-[#222222]'}`} />
@@ -1802,6 +2183,11 @@ const PropertyDetail = () => {
                             <span className="text-sm text-gray-500">Stayed {review.stay_duration}</span>
                           </>
                         )}
+                        {/* Verified Stay Badge */}
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 border border-green-200 text-green-700 text-[10px] font-bold">
+                          <FiCheck className="w-2.5 h-2.5" />
+                          Verified Stay
+                        </span>
                       </div>
 
                       <p className="text-[#222222] leading-6 text-base line-clamp-4">
@@ -1844,10 +2230,31 @@ const PropertyDetail = () => {
       <div className="w-full border-t border-gray-200" id="section-location">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
           <h2 className="text-xl lg:text-2xl font-bold text-[#222222] mb-6">Where you'll be</h2>
-          <div className="h-[240px] md:h-[320px] lg:h-[480px] w-full rounded-xl overflow-hidden shadow-sm border border-gray-200 relative z-0">
+
+          <div className="hidden md:block h-[320px] lg:h-[480px] w-full rounded-xl overflow-hidden shadow-sm border border-gray-200 relative z-0">
             <PropertyMap properties={[property]} detailView={true} />
           </div>
-          <div className="mt-6">
+
+          <div className="md:hidden">
+            {showMapMobile ? (
+              <div className="h-[240px] w-full rounded-xl overflow-hidden shadow-sm border border-gray-200 relative z-0 mb-4 animate-fadeIn">
+                <PropertyMap properties={[property]} detailView={true} />
+              </div>
+            ) : (
+              <div className="w-full rounded-xl border border-gray-200 p-6 flex flex-col items-center justify-center bg-gray-50 mb-4">
+                <FiMapPin className="w-8 h-8 text-gray-400 mb-3" />
+                <p className="text-sm font-medium text-gray-600 mb-4 text-center">Map is hidden to save data on mobile</p>
+                <button
+                  onClick={() => setShowMapMobile(true)}
+                  className="px-6 py-2 border border-gray-900 rounded-lg text-sm font-semibold hover:bg-gray-50 transition-colors"
+                >
+                  Load Map
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 md:mt-6">
             <h3 className="font-semibold text-[#222222] text-lg">{sanitizeText(property.city)}, {sanitizeText(property.state)}</h3>
             <p className="mt-2 text-gray-600 max-w-3xl">
               Very dynamic and appreciated area. We will send you the exact location once your booking is confirmed.
@@ -1887,8 +2294,13 @@ const PropertyDetail = () => {
 
                 {/* Name & Title */}
                 <div>
-                  <h3 className="text-2xl lg:text-3xl font-bold text-[#222222] mb-1">
+                  <h3 className="text-2xl lg:text-3xl font-bold text-[#222222] mb-1 flex items-center justify-start lg:justify-center gap-1.5 flex-wrap">
                     {property.owner_first_name}
+                    {!!property.owner_verified && (
+                      <svg className="w-6 h-6 text-blue-500 fill-current flex-shrink-0" viewBox="0 0 24 24" title="Verified Host">
+                        <path d="M23 12l-2.44-2.79.34-3.69-3.61-.82-1.89-3.2L12 2.96 8.6 1.5 6.71 4.7 3.1 5.52l.34 3.7L1 12l2.44 2.79-.34 3.7 3.61.82 1.89 3.2 3.4-1.46 3.4 1.46 1.89-3.2 3.61-.82-.34-3.7L23 12zm-13 5l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z" />
+                      </svg>
+                    )}
                   </h3>
                   {!!property.owner_is_superhost && (
                     <div className="flex items-center justify-start lg:justify-center gap-2 text-[#222222] font-semibold text-sm">
@@ -2027,9 +2439,21 @@ const PropertyDetail = () => {
         !showMobileReserveForm && (
           <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 shadow-lg pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pl-[calc(1rem+env(safe-area-inset-left))] pr-[calc(1rem+env(safe-area-inset-right))]">
             <div className="flex items-center justify-between gap-3">
-              <div>
-                <span className="text-xl font-bold text-red-600">BDT {property.base_price || 0}</span>
-                <span className="text-gray-600 ml-1 text-sm">/ night</span>
+              <div className="flex flex-col">
+                <span className="text-xl font-bold text-red-600">
+                  {property.is_hms_enabled ? (
+                    selectedRoomId ? (
+                      `BDT ${formatPrice(property.hms_rooms.find(r => r.id === selectedRoomId)?.price || 0)}`
+                    ) : (
+                      `BDT ${formatPrice(Math.min(...property.hms_rooms.map(r => parseFloat(r.price))))} - ${formatPrice(Math.max(...property.hms_rooms.map(r => parseFloat(r.price))))}`
+                    )
+                  ) : (
+                    `BDT ${formatPrice(property.base_price || 0)}`
+                  )}
+                </span>
+                <span className="text-gray-600 text-xs">
+                  {property.is_hms_enabled && !selectedRoomId ? 'Starts from per night' : '/ night'}
+                </span>
               </div>
               <button
                 onClick={() => setShowMobileReserveForm(true)}
@@ -2049,9 +2473,25 @@ const PropertyDetail = () => {
           <div className="md:hidden fixed inset-0 z-[100] bg-white shadow-lg animate-slideUp flex flex-col property-detail-booking-form">
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-white z-10">
-              <div>
-                <span className="text-xl font-bold text-red-600">BDT {property.base_price || 0}</span>
-                <span className="text-gray-600 ml-1 text-sm">/ night</span>
+              <div className="flex flex-col">
+                <span className="text-lg font-bold text-red-600">
+                  {calculateNights() > 0 ? (
+                    `BDT ${formatPrice(calculateTotal())}`
+                  ) : (
+                    property.is_hms_enabled ? (
+                      selectedRoomId ? (
+                        `BDT ${formatPrice(property.hms_rooms.find(r => r.id === selectedRoomId)?.price || 0)}`
+                      ) : (
+                        `BDT ${formatPrice(Math.min(...property.hms_rooms.map(r => parseFloat(r.price))))} - ${formatPrice(Math.max(...property.hms_rooms.map(r => parseFloat(r.price))))}`
+                      )
+                    ) : (
+                      `BDT ${formatPrice(property.base_price || 0)}`
+                    )
+                  )}
+                </span>
+                <span className="text-gray-500 text-[10px]">
+                  {calculateNights() > 0 ? `Total for ${calculateNights()} nights` : (property.is_hms_enabled && !selectedRoomId ? 'Starts from per night' : 'per night')}
+                </span>
               </div>
               <button
                 onClick={() => setShowMobileReserveForm(false)}
@@ -2245,34 +2685,36 @@ const PropertyDetail = () => {
               </form>
             </div>
 
-            {/* Footer - Fixed Bottom */}
             <div className="border-t border-gray-200 bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pl-[calc(1rem+env(safe-area-inset-left))] pr-[calc(1rem+env(safe-area-inset-right))]">
               <div className="flex items-center justify-between gap-4">
-                {bookingData.check_in_date && bookingData.check_out_date && calculateNights() > 0 ? (
-                  <>
-                    <div className="flex flex-col">
-                      <span className="font-bold text-lg text-red-600">BDT {(calculateTotal() || 0).toFixed(0)}</span>
-                      <span className="text-xs text-gray-500 underline">Total for {calculateNights()} nights</span>
-                    </div>
-                    <button
-                      type="submit"
-                      form="mobile-reserve-form"
-                      disabled={!bookingData.check_in_date || !bookingData.check_out_date || (availability && !availability.isAvailable)}
-                      className="bg-[#E41D57] hover:bg-[#E41D57] disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium py-3 px-8 rounded-lg transition-colors duration-200 flex-shrink-0"
-                    >
-                      Reserve
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    type="submit"
-                    form="mobile-reserve-form"
-                    disabled={!bookingData.check_in_date || !bookingData.check_out_date || (availability && !availability.isAvailable)}
-                    className="w-full bg-[#E41D57] hover:bg-[#E41D57] disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200"
-                  >
-                    Check availability
-                  </button>
-                )}
+                <div className="flex flex-col">
+                  <span className="font-bold text-lg text-red-600">
+                    {calculateNights() > 0 ? (
+                      `BDT ${formatPrice(calculateTotal())}`
+                    ) : (
+                      property.is_hms_enabled ? (
+                        selectedRoomId ? (
+                          `BDT ${formatPrice(property.hms_rooms.find(r => r.id === selectedRoomId)?.price || 0)}`
+                        ) : (
+                          `BDT ${formatPrice(Math.min(...property.hms_rooms.map(r => parseFloat(r.price))))} - ${formatPrice(Math.max(...property.hms_rooms.map(r => parseFloat(r.price))))}`
+                        )
+                      ) : (
+                        `BDT ${formatPrice(property.base_price || 0)}`
+                      )
+                    )}
+                  </span>
+                  <span className="text-xs text-gray-500 underline">
+                    {calculateNights() > 0 ? `Total for ${calculateNights()} nights` : (property.is_hms_enabled && !selectedRoomId ? 'Starts from per night' : 'per night')}
+                  </span>
+                </div>
+                <button
+                  type="submit"
+                  form="mobile-reserve-form"
+                  disabled={!bookingData.check_in_date || !bookingData.check_out_date || (availability && !availability.isAvailable)}
+                  className="bg-[#E41D57] hover:bg-[#E41D57] disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium py-3 px-8 rounded-lg transition-colors duration-200 flex-shrink-0"
+                >
+                  {calculateNights() > 0 ? 'Reserve' : 'Check availability'}
+                </button>
               </div>
             </div>
           </div>
@@ -2314,7 +2756,11 @@ const PropertyDetail = () => {
                 <div className="hidden md:flex flex-col w-[360px] p-8 pt-16 border-r border-gray-200 overflow-y-auto">
                   <div className="flex items-center gap-3 mb-8">
                     <FiStar className="w-8 h-8 text-[#222222] fill-current" />
-                    <span className="text-[2rem] font-extrabold text-[#222222]">{parseFloat(property.average_rating || 0).toFixed(2)}</span>
+                    {property.total_reviews > 0 ? (
+                      <span className="text-[2rem] font-extrabold text-[#222222]">{parseFloat(property.average_rating || 0).toFixed(1)}</span>
+                    ) : (
+                      <span className="text-xl font-semibold text-gray-400">No reviews yet</span>
+                    )}
                   </div>
 
                   {/* Distribution */}
@@ -2365,7 +2811,7 @@ const PropertyDetail = () => {
                   {/* Header */}
                   <div className="p-6 pb-2 pt-16 md:pt-6">
                     <h3 className="text-2xl font-bold text-[#222222] mb-6">
-                      {property.total_reviews} reviews
+                      {property.total_reviews} verified {property.total_reviews === 1 ? 'review' : 'reviews'}
                     </h3>
                     <div className="relative">
                       <FiSearch className="absolute left-4 top-3.5 w-5 h-5 text-gray-500" />
@@ -2401,10 +2847,14 @@ const PropertyDetail = () => {
                               </div>
                             </div>
                           </div>
-                          <div className="mb-2 flex items-center gap-1">
+                          <div className="mb-2 flex items-center gap-2 flex-wrap">
                             {[...Array(5)].map((_, i) => (
                               <FiStar key={i} className={`w-3 h-3 ${i < review.rating ? 'text-[#222222] fill-current' : 'text-[#222222]'}`} />
                             ))}
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 border border-green-200 text-green-700 text-[10px] font-bold">
+                              <FiCheck className="w-2.5 h-2.5" />
+                              Verified Stay
+                            </span>
                           </div>
                           <p className="text-[#222222] leading-relaxed whitespace-pre-line">
                             {review.comment}
@@ -2420,6 +2870,11 @@ const PropertyDetail = () => {
         )
       }
 
+      <ShareModal
+        property={property}
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+      />
     </div >
   );
 };

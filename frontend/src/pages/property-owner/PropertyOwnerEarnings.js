@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useQueryClient } from 'react-query';
-import { FiDollarSign, FiTrendingUp, FiTrendingDown, FiCalendar, FiCreditCard, FiBarChart2, FiDownload, FiEye, FiSend, FiClock } from 'react-icons/fi';
+import { FiDollarSign, FiTrendingUp, FiTrendingDown, FiCalendar, FiCreditCard, FiBarChart2, FiDownload, FiEye, FiSend, FiClock, FiShield } from 'react-icons/fi';
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import useToast from '../../hooks/useToast';
@@ -203,6 +203,8 @@ const PropertyOwnerEarnings = () => {
       total_booking_amount: 0,
       total_commission: 0,
       net_earnings: 0,
+      total_requested_claims: 0,
+      total_received_claims: 0,
       pending_amount: 0,
       paid_amount: 0,
       available_for_payout: 0
@@ -212,6 +214,8 @@ const PropertyOwnerEarnings = () => {
       total_booking_amount: 0,
       total_commission: 0,
       net_earnings: 0,
+      total_requested_claims: 0,
+      total_received_claims: 0,
       pending_amount: 0,
       paid_amount: 0,
       available_for_payout: 0
@@ -254,6 +258,8 @@ const PropertyOwnerEarnings = () => {
     }
   };
 
+  const hasNoData = lifetime.total_bookings === 0 && lifetime.net_earnings === 0 && recentEarnings.length === 0;
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -263,8 +269,20 @@ const PropertyOwnerEarnings = () => {
           <p className="mt-2 text-gray-600">Track your bookings, commissions, and earnings</p>
         </div>
 
-        {/* Period Selector */}
-        <div className="mb-6">
+        {hasNoData ? (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
+            <div className="mx-auto w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+              <FiDollarSign className="w-12 h-12 text-gray-400" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">No earnings yet</h2>
+            <p className="text-gray-600 max-w-md mx-auto mb-6">
+              You haven't received any earnings yet. Earnings will appear here after guests complete their stays and payments are processed.
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Period Selector */}
+            <div className="mb-6">
           <select
             value={selectedPeriod}
             onChange={(e) => setSelectedPeriod(e.target.value)}
@@ -278,9 +296,9 @@ const PropertyOwnerEarnings = () => {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6 mb-8">
           {/* Total Earnings */}
-          <div className="bg-white rounded-lg shadow p-6">
+          <div className="bg-white rounded-lg shadow p-6 border-b-4 border-green-500">
             <div className="flex items-center">
               <div className="p-2 bg-green-100 rounded-lg">
                 <FiDollarSign className="w-6 h-6 text-green-600" />
@@ -293,7 +311,7 @@ const PropertyOwnerEarnings = () => {
           </div>
 
           {/* Commission Paid */}
-          <div className="bg-white rounded-lg shadow p-6">
+          <div className="bg-white rounded-lg shadow p-6 border-b-4 border-blue-500">
             <div className="flex items-center">
               <div className="p-2 bg-blue-100 rounded-lg">
                 <FiTrendingUp className="w-6 h-6 text-blue-600" />
@@ -306,7 +324,7 @@ const PropertyOwnerEarnings = () => {
           </div>
 
           {/* Available for Payout */}
-          <div className="bg-white rounded-lg shadow p-6">
+          <div className="bg-white rounded-lg shadow p-6 border-b-4 border-yellow-500">
             <div className="flex items-center">
               <div className="p-2 bg-yellow-100 rounded-lg">
                 <FiClock className="w-6 h-6 text-yellow-600" />
@@ -319,7 +337,7 @@ const PropertyOwnerEarnings = () => {
           </div>
 
           {/* Commission Rate */}
-          <div className="bg-white rounded-lg shadow p-6">
+          <div className="bg-white rounded-lg shadow p-6 border-b-4 border-purple-500">
             <div className="flex items-center">
               <div className="p-2 bg-purple-100 rounded-lg">
                 <FiBarChart2 className="w-6 h-6 text-purple-600" />
@@ -327,6 +345,32 @@ const PropertyOwnerEarnings = () => {
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Commission Rate</p>
                 <p className="text-2xl font-bold text-gray-900">{settings.commission_rate}%</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Claims Requested */}
+          <div className="bg-white rounded-lg shadow p-6 border-b-4 border-amber-300">
+            <div className="flex items-center">
+              <div className="p-2 bg-amber-50 rounded-lg">
+                <FiShield className="w-6 h-6 text-amber-500" />
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-600">Claims Requested</p>
+                <p className="text-2xl font-bold text-gray-900">{formatCurrency(lifetime.total_requested_claims)}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Claims Received */}
+          <div className="bg-white rounded-lg shadow p-6 border-b-4 border-amber-600">
+            <div className="flex items-center">
+              <div className="p-2 bg-amber-100 rounded-lg">
+                <FiShield className="w-6 h-6 text-amber-600" />
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-600">Claims Received</p>
+                <p className="text-2xl font-bold text-gray-900">{formatCurrency(lifetime.total_received_claims)}</p>
               </div>
             </div>
           </div>
@@ -364,6 +408,14 @@ const PropertyOwnerEarnings = () => {
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Lifetime Earnings</span>
                 <span className="font-semibold">{formatCurrency(lifetime.net_earnings)}</span>
+              </div>
+              <div className="flex justify-between items-center text-amber-700 bg-amber-50 p-2 rounded">
+                <span className="text-sm font-medium">Claims Requested</span>
+                <span className="font-bold">{formatCurrency(lifetime.total_requested_claims)}</span>
+              </div>
+              <div className="flex justify-between items-center text-green-700 bg-green-50 p-2 rounded">
+                <span className="text-sm font-medium">Claims Received (Included in Earnings)</span>
+                <span className="font-bold">{formatCurrency(lifetime.total_received_claims)}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Total Commission Paid</span>
@@ -422,6 +474,12 @@ const PropertyOwnerEarnings = () => {
                     Commission
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Claim Requested
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Claim Received
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Net Earnings
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -447,7 +505,13 @@ const PropertyOwnerEarnings = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600">
                       -{formatCurrency(earning.commission_amount)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-amber-500 italic">
+                      {earning.security_deposit_claim_amount > 0 ? formatCurrency(earning.security_deposit_claim_amount) : '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-amber-600 font-bold">
+                      {earning.security_deposit_deduction_amount > 0 ? formatCurrency(earning.security_deposit_deduction_amount) : '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-bold">
                       {formatCurrency(earning.net_earnings)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -570,6 +634,8 @@ const PropertyOwnerEarnings = () => {
             </div>
           )}
         </div>
+          </>
+        )}
       </div>
     </div>
   );

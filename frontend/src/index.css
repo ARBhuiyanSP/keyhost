@@ -17,6 +17,11 @@
   to   { transform: translateY(0);    opacity: 1; }
 }
 
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 @keyframes pageFadeIn {
   from { opacity: 0; transform: translateY(20px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -667,4 +672,24 @@ body { top: 0px !important; position: static !important; }
   .card, .bg-white { box-shadow: none !important; border: 1px solid #e5e7eb !important; break-inside: avoid; }
   .text-white { color: #000 !important; }
   .print-text-black { color: #000 !important; }
+}
+
+/* ============================================================
+   UI TOGGLES
+   ============================================================ */
+.toggle-checkbox {
+  left: 0;
+  z-index: 1;
+  border-color: #e5e7eb;
+  transition: all 0.3s ease;
+}
+.toggle-checkbox:checked {
+  transform: translateX(100%);
+  border-color: #000;
+}
+.toggle-checkbox:checked + .toggle-label {
+  background-color: #000;
+}
+.toggle-label {
+  transition: all 0.3s ease;
 }

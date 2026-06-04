@@ -42,7 +42,7 @@ router.get('/dashboard', async (req, res) => {
       WHERE YEAR(ae.created_at) = ? 
         AND MONTH(ae.created_at) = ? 
         AND ae.status = 'active'
-        AND b.status != 'cancelled'
+        AND b.status != 'cancelled' AND b.payment_status = 'paid'
     `, [currentYear, currentMonth]);
 
     // Get total lifetime earnings with payable amount calculation
@@ -71,7 +71,7 @@ router.get('/dashboard', async (req, res) => {
         WHERE op.payment_status IN ('pending', 'processing', 'completed')
       ) payout_bookings ON ae.booking_id = payout_bookings.booking_id
       WHERE ae.status = 'active'
-        AND b.status != 'cancelled'
+        AND b.status != 'cancelled' AND b.payment_status = 'paid'
     `);
 
     // Get monthly earnings for the last 12 months (calculated directly from admin_earnings to exclude cancelled bookings)
@@ -86,7 +86,7 @@ router.get('/dashboard', async (req, res) => {
       FROM admin_earnings ae
       JOIN bookings b ON ae.booking_id = b.id
       WHERE ae.status = 'active'
-        AND b.status != 'cancelled'
+        AND b.status != 'cancelled' AND b.payment_status = 'paid'
         AND (
           (YEAR(ae.created_at) = ? AND MONTH(ae.created_at) >= ?) 
           OR (YEAR(ae.created_at) = ? AND MONTH(ae.created_at) <= ?)
@@ -114,7 +114,7 @@ router.get('/dashboard', async (req, res) => {
       JOIN property_owners po ON ae.property_owner_id = po.id
       JOIN users u ON po.user_id = u.id
       WHERE ae.status = 'active'
-        AND b.status != 'cancelled'
+        AND b.status != 'cancelled' AND b.payment_status = 'paid'
       ORDER BY ae.created_at DESC
       LIMIT 10
     `);
@@ -344,7 +344,7 @@ router.get('/earnings', validatePagination, async (req, res) => {
       JOIN property_owners po ON ae.property_owner_id = po.id
       JOIN users u ON po.user_id = u.id
       ${whereClause}
-        AND b.status != 'cancelled'
+        AND b.status != 'cancelled' AND b.payment_status = 'paid'
       ORDER BY ae.created_at DESC
       LIMIT ? OFFSET ?
     `, [...queryParams, parseInt(limit), parseInt(offset)]);
@@ -355,7 +355,7 @@ router.get('/earnings', validatePagination, async (req, res) => {
       FROM admin_earnings ae
       JOIN bookings b ON ae.booking_id = b.id
       ${whereClause}
-        AND b.status != 'cancelled'
+        AND b.status != 'cancelled' AND b.payment_status = 'paid'
     `, queryParams);
 
     const total = countResult[0].total;
@@ -421,7 +421,7 @@ router.get('/monthly-summary', async (req, res) => {
       FROM admin_earnings ae
       JOIN bookings b ON ae.booking_id = b.id
       ${summaryWhereClause}
-        AND b.status != 'cancelled'
+        AND b.status != 'cancelled' AND b.payment_status = 'paid'
       GROUP BY YEAR(ae.created_at), MONTH(ae.created_at)
       ORDER BY year DESC, month DESC
     `, summaryQueryParams);
@@ -470,7 +470,7 @@ router.post('/payouts', async (req, res) => {
       WHERE DATE(b.created_at) BETWEEN ? AND ?
       AND ae.status = 'active'
       AND ae.payment_status = 'paid'
-      AND b.status != 'cancelled'
+      AND b.status != 'cancelled' AND b.payment_status = 'paid'
     `, [start_date, end_date]);
 
     const { total_earnings, total_tax } = earningsData[0];
@@ -625,7 +625,7 @@ router.get('/analytics', async (req, res) => {
       JOIN bookings b ON ae.booking_id = b.id
       WHERE ae.created_at >= DATE_SUB(NOW(), INTERVAL ? MONTH)
       AND ae.status = 'active'
-      AND b.status != 'cancelled'
+      AND b.status != 'cancelled' AND b.payment_status = 'paid'
       GROUP BY DATE_FORMAT(ae.created_at, '%Y-%m')
       ORDER BY month DESC
     `, [parseInt(period)]);
@@ -643,7 +643,7 @@ router.get('/analytics', async (req, res) => {
       JOIN properties p ON ae.property_id = p.id
       WHERE ae.created_at >= DATE_SUB(NOW(), INTERVAL ? MONTH)
       AND ae.status = 'active'
-      AND b.status != 'cancelled'
+      AND b.status != 'cancelled' AND b.payment_status = 'paid'
       GROUP BY p.id, p.title, p.city
       ORDER BY total_commission DESC
       LIMIT 10
@@ -659,7 +659,7 @@ router.get('/analytics', async (req, res) => {
       JOIN bookings b ON ae.booking_id = b.id
       WHERE ae.created_at >= DATE_SUB(NOW(), INTERVAL ? MONTH)
       AND ae.status = 'active'
-      AND b.status != 'cancelled'
+      AND b.status != 'cancelled' AND b.payment_status = 'paid'
       GROUP BY ae.payment_status
     `, [parseInt(period)]);
 
@@ -701,7 +701,7 @@ router.post('/:bookingId/collect-commission', async (req, res) => {
       SELECT ae.id, ae.net_commission, ae.payment_status
       FROM admin_earnings ae
       JOIN bookings b ON ae.booking_id = b.id
-      WHERE ae.booking_id = ? AND ae.status = 'active' AND b.status != 'cancelled'
+      WHERE ae.booking_id = ? AND ae.status = 'active' AND b.status != 'cancelled' AND b.payment_status = 'paid'
       LIMIT 1
     `, [bookingId]);
 

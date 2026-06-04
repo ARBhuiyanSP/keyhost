@@ -4,6 +4,7 @@ const {
   formatResponse, 
   generatePaymentReference 
 } = require('../utils/helpers');
+const { syncPaymentToHMSAccounts } = require('../utils/hms-sync');
 const { 
   validateId 
 } = require('../middleware/validation');
@@ -244,6 +245,13 @@ router.patch('/:id/status', validateId, async (req, res) => {
       } catch (pointsError) {
         console.error('Points awarding error:', pointsError);
         // Continue even if points awarding fails
+      }
+
+      // Sync to HMS Accounts
+      try {
+        await syncPaymentToHMSAccounts(id);
+      } catch (hmsError) {
+        console.error('HMS Sync error:', hmsError);
       }
     }
 

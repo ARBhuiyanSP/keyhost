@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { FiHome, FiCalendar, FiHeart, FiStar, FiMapPin, FiUsers, FiTrendingUp, FiSearch, FiLogOut, FiUser, FiGrid, FiCheckCircle } from 'react-icons/fi';
 import api from '../../utils/api';
 import useToast from '../../hooks/useToast';
@@ -97,6 +97,26 @@ const GuestDashboard = () => {
 
   return (
     <div className="space-y-6">
+
+      {/* Become a host banner - mobile only */}
+      {user?.user_type !== 'staff' && (
+        <Link
+          to="/become-host"
+          className="md:hidden flex items-center justify-between bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm hover:shadow-md transition-shadow"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-emerald-50 rounded-full flex items-center justify-center flex-shrink-0">
+              <FiHome className="w-4 h-4 text-emerald-600" />
+            </div>
+            <div>
+              <p className="font-bold text-sm text-gray-900">Become a host</p>
+              <p className="text-xs text-gray-500 mt-0.5">List your property &amp; earn</p>
+            </div>
+          </div>
+          <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-full whitespace-nowrap">Get started →</span>
+        </Link>
+      )}
+
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-2xl font-bold text-gray-800">Welcome, {user?.first_name || 'Guest'}</h2>
         <div className="flex gap-2">
@@ -186,7 +206,7 @@ const GuestDashboard = () => {
           <h3 className="text-lg font-bold text-gray-800 mb-4">Recommended</h3>
           <div className="space-y-4">
             {recommendedData.slice(0, 3).map((property, index) => (
-              <div key={index} className="flex gap-3 cursor-pointer hover:bg-gray-50 p-2 rounded" onClick={() => navigate(`/property/${property.id}`)}>
+              <div key={index} className="flex gap-3 cursor-pointer hover:bg-gray-50 p-2 rounded" onClick={() => navigate(`/property/${property.slug || property.id}`)}>
                 <img src={property.main_image?.image_url || '/images/placeholder.svg'} alt={property.title} className="w-16 h-16 object-cover rounded" />
                 <div>
                   <p className="font-medium text-sm text-gray-900 line-clamp-1">{property.title}</p>

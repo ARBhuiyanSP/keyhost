@@ -5,6 +5,7 @@ const {
   generatePagination,
   generateBookingReference,
   calculateBookingTotal,
+  calculateRefundAmount,
   isPastDate,
   isValidDateRange,
   formatDate
@@ -155,7 +156,8 @@ router.post('/bookings', verifyToken, requireGuestOrOwner, validateBooking, asyn
       number_of_children = 0,
       number_of_infants = 0,
       special_requests,
-      coupon_code
+      coupon_code,
+      custom_price
     } = req.body;
 
     // Validate dates
@@ -171,12 +173,12 @@ router.post('/bookings', verifyToken, requireGuestOrOwner, validateBooking, asyn
       );
     }
 
-    // Get property details
+    // Get property details (include auto_accept_bookings setting)
     const [properties] = await pool.execute(`
       SELECT 
         p.*, 
-        po.id as owner_id,         -- property_owners.id (FK target)
-        po.user_id as owner_user_id -- users.id of the owner (for self-booking check)
+        po.id as owner_id,
+        po.user_id as owner_user_id
       FROM properties p
       JOIN property_owners po ON p.owner_id = po.id
       WHERE p.id = ? AND p.status = 'active'
@@ -212,53 +214,100 @@ router.post('/bookings', verifyToken, requireGuestOrOwner, validateBooking, asyn
       );
     }
 
+    // HMS Room Handling
+    const { hms_room_id } = req.body;
+    let selectedRoom = null;
+
+    if (hms_room_id) {
+        const [rooms] = await pool.execute(
+            'SELECT * FROM hms_rooms WHERE id = ? AND property_id = ?',
+            [hms_room_id, property_id]
+        );
+        if (rooms.length === 0) {
+            return res.status(404).json(formatResponse(false, 'Selected room not found in this property'));
+        }
+        selectedRoom = rooms[0];
+    } else if (property.is_hms_enabled) {
+        return res.status(400).json(formatResponse(false, 'Please select a room for this hotel property'));
+    }
+
     // Check availability
     // Include bookings that are request_accepted, confirmed, or checked_in
-    const [conflicts] = await pool.execute(`
+    let conflictsQuery = `
       SELECT id FROM bookings
       WHERE property_id = ? 
       AND status IN ('request_accepted', 'confirmed', 'checked_in')
-      AND (
-        (check_in_date <= ? AND check_out_date > ?) OR
-        (check_in_date < ? AND check_out_date >= ?) OR
-        (check_in_date >= ? AND check_out_date <= ?)
-      )
-    `, [property_id, check_out_date, check_in_date, check_out_date, check_in_date, check_in_date, check_out_date]);
+      AND DATE(check_in_date) < DATE(?) AND DATE(check_out_date) > DATE(?)
+    `;
+    let conflictsParams = [property_id, check_out_date, check_in_date];
+
+    if (hms_room_id) {
+        conflictsQuery += ' AND hms_room_id = ?';
+        conflictsParams.push(hms_room_id);
+    }
+
+    const [conflicts] = await pool.execute(conflictsQuery, conflictsParams);
 
     if (conflicts.length > 0) {
       return res.status(409).json(
-        formatResponse(false, 'Property is not available for the selected dates')
+        formatResponse(false, hms_room_id ? 'The selected room is not available for these dates' : 'Property is not available for the selected dates')
       );
     }
 
-    // Calculate pricing
-    const basePrice = parseFloat(property.base_price) || 0;
+    // Use room price if HMS enabled
+    const basePrice = selectedRoom ? parseFloat(selectedRoom.price) : (parseFloat(property.base_price) || 0);
     const cleaningFee = parseFloat(property.cleaning_fee) || 0;
     const securityDeposit = parseFloat(property.security_deposit) || 0;
     const extraGuestFee = number_of_guests > 1 ? (number_of_guests - 1) * (parseFloat(property.extra_guest_fee) || 0) : 0;
-    const serviceFee = (basePrice * nights) * 0.1; // 10% service fee
-    const taxAmount = (basePrice * nights) * 0.15; // 15% tax
+    
+    // Fetch live service fee and tax percentages from settings instead of hardcoding
+    const [settingsRows] = await pool.execute(`
+      SELECT setting_key, setting_value FROM system_settings 
+      WHERE setting_key IN ('service_fee_percentage', 'tax_percentage')
+    `);
+    
+    let serviceFeePercent = 0;
+    let taxPercent = 0;
+    
+    settingsRows.forEach(row => {
+      if (row.setting_key === 'service_fee_percentage') serviceFeePercent = parseFloat(row.setting_value) || 0;
+      if (row.setting_key === 'tax_percentage') taxPercent = parseFloat(row.setting_value) || 0;
+    });
+
+    const serviceFee = (basePrice * nights) * (serviceFeePercent / 100);
+    const taxAmount = (basePrice * nights) * (taxPercent / 100);
 
     const pricing = calculateBookingTotal(
       basePrice, nights, cleaningFee, securityDeposit,
       extraGuestFee, serviceFee, taxAmount
     );
 
+    // Calculate custom price discount (Host Discount) if provided
+    let hostDiscount = 0;
+    const parsedCustomPrice = parseFloat(custom_price);
+    if (!isNaN(parsedCustomPrice) && parsedCustomPrice > 0 && parsedCustomPrice <= pricing.total) {
+      hostDiscount = pricing.total - parsedCustomPrice;
+    }
+
     // Apply coupon if provided
     let discountAmount = 0;
+    let coupons = [];
     if (coupon_code) {
-      const [coupons] = await pool.execute(`
+      const [result] = await pool.execute(`
         SELECT * FROM coupons 
         WHERE code = ? AND is_active = 1 
-        AND valid_from <= CURDATE() AND valid_until >= CURDATE()
+        AND (valid_from IS NULL OR valid_from <= CURDATE()) 
+        AND (valid_until IS NULL OR valid_until >= CURDATE())
         AND (usage_limit IS NULL OR used_count < usage_limit)
       `, [coupon_code]);
+      coupons = result;
 
       if (coupons.length > 0) {
         const coupon = coupons[0];
-        if (pricing.total >= coupon.minimum_amount) {
+        const totalForCoupon = pricing.total - hostDiscount;
+        if (totalForCoupon >= coupon.minimum_amount) {
           if (coupon.discount_type === 'percentage') {
-            discountAmount = (pricing.total * coupon.discount_value) / 100;
+            discountAmount = (totalForCoupon * coupon.discount_value) / 100;
             if (coupon.maximum_discount) {
               discountAmount = Math.min(discountAmount, coupon.maximum_discount);
             }
@@ -269,7 +318,8 @@ router.post('/bookings', verifyToken, requireGuestOrOwner, validateBooking, asyn
       }
     }
 
-    const finalTotal = Math.max(0, pricing.total - discountAmount);
+    const finalTotal = Math.max(0, pricing.total - hostDiscount - discountAmount);
+    const totalDiscount = discountAmount + hostDiscount;
 
     // Generate booking reference
     const bookingReference = generateBookingReference();
@@ -286,10 +336,23 @@ router.post('/bookings', verifyToken, requireGuestOrOwner, validateBooking, asyn
     const commissionAmount = (finalTotal * commissionRate) / 100;
     const propertyOwnerEarnings = finalTotal - commissionAmount;
 
+    // Determine initial booking status based on auto_accept setting
+    const autoAccept = !!property.auto_accept_bookings;
+    const initialStatus = autoAccept ? 'request_accepted' : 'pending';
+
+    // Get payment time limit from system settings
+    let paymentTimeLimitMinutes = 15;
+    if (autoAccept) {
+      const [paymentSettings] = await pool.execute(
+        `SELECT setting_value FROM system_settings WHERE setting_key = 'payment_time_limit_minutes' LIMIT 1`
+      );
+      if (paymentSettings.length > 0) paymentTimeLimitMinutes = parseInt(paymentSettings[0].setting_value) || 15;
+    }
+
     // Create booking
     const [result] = await pool.execute(`
       INSERT INTO bookings (
-        booking_reference, guest_id, property_id,
+        booking_reference, guest_id, property_id, hms_room_id,
         check_in_date, check_out_date, check_in_time, check_out_time,
         number_of_guests, number_of_children, number_of_infants,
         base_price, cleaning_fee, security_deposit, extra_guest_fee,
@@ -297,20 +360,42 @@ router.post('/bookings', verifyToken, requireGuestOrOwner, validateBooking, asyn
         total_amount, currency, status, payment_status,
         special_requests, coupon_code, discount_amount,
         booking_source, guest_name, guest_email, guest_phone,
+        confirmed_at, payment_deadline,
         booking_date, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     `, [
-      bookingReference, req.user.id, property_id,
+      bookingReference, req.user.id, property_id, hms_room_id || null,
       check_in_date, check_out_date, check_in_time || '15:00', check_out_time || '11:00',
       number_of_guests, number_of_children, number_of_infants,
       basePrice * nights, cleaningFee, securityDeposit, extraGuestFee,
       serviceFee, taxAmount, commissionRate, commissionAmount, propertyOwnerEarnings,
-      finalTotal, property.currency || 'BDT', 'pending', 'pending',
-      special_requests || null, coupon_code || null, discountAmount,
-      'website', `${req.user.first_name} ${req.user.last_name}`, req.user.email, req.user.phone || null
+      finalTotal, property.currency || 'BDT', initialStatus, 'pending',
+      special_requests || null, coupon_code || null, totalDiscount,
+      'website', `${req.user.first_name} ${req.user.last_name}`, req.user.email, req.user.phone || null,
+      autoAccept ? new Date() : null,
+      autoAccept ? new Date(Date.now() + paymentTimeLimitMinutes * 60 * 1000) : null
     ]);
 
     const bookingId = result.insertId;
+
+    // Create DR entry if booking is auto-accepted (request_accepted)
+    if (autoAccept) {
+      const drReference = `DR-${Date.now()}-${bookingId}`;
+      await pool.execute(`
+        INSERT INTO payments (
+          booking_id, payment_reference, payment_method, payment_type,
+          amount, currency, dr_amount, cr_amount, transaction_type, notes,
+          status, payment_date, created_at
+        ) VALUES (?, ?, NULL, 'booking', ?, ?, ?, 0, 'owner_accepted', ?, 'completed', NOW(), NOW())
+      `, [
+        bookingId,
+        drReference,
+        finalTotal,
+        property.currency || 'BDT',
+        finalTotal,
+        `Auto-accepted booking - Receivable amount: ৳${finalTotal}`
+      ]);
+    }
 
     // Create admin earnings record
     await pool.execute(`
@@ -412,12 +497,18 @@ router.post('/bookings', verifyToken, requireGuestOrOwner, validateBooking, asyn
       console.error('SMS Error Stack:', smsError.stack);
     }
 
+    const responseMessage = autoAccept
+      ? 'Booking accepted! Please proceed to payment to confirm your stay.'
+      : 'Booking request submitted successfully! Waiting for owner confirmation.';
+
     res.status(201).json(
-      formatResponse(true, 'Booking created successfully', {
+      formatResponse(true, responseMessage, {
         booking: bookings[0],
+        auto_accepted: autoAccept,
         pricing: {
           ...pricing,
           discountAmount,
+          hostDiscount,
           finalTotal
         }
       })
@@ -428,6 +519,59 @@ router.post('/bookings', verifyToken, requireGuestOrOwner, validateBooking, asyn
     res.status(500).json(
       formatResponse(false, 'Failed to create booking', null, error.message)
     );
+  }
+});
+
+// Validate coupon
+router.post('/validate-coupon', verifyToken, requireGuestOrOwner, async (req, res) => {
+  try {
+    const { coupon_code, total_amount } = req.body;
+
+    if (!coupon_code) {
+      return res.status(400).json(formatResponse(false, 'Coupon code is required'));
+    }
+
+    const [coupons] = await pool.execute(`
+      SELECT * FROM coupons 
+      WHERE code = ? AND is_active = 1 
+      AND (valid_from IS NULL OR valid_from <= CURDATE()) 
+      AND (valid_until IS NULL OR valid_until >= CURDATE())
+      AND (usage_limit IS NULL OR used_count < usage_limit)
+    `, [coupon_code]);
+
+    if (coupons.length === 0) {
+      return res.status(404).json(formatResponse(false, 'Invalid or expired coupon code'));
+    }
+
+    const coupon = coupons[0];
+    let discountAmount = 0;
+
+    if (total_amount < coupon.minimum_amount) {
+      return res.status(400).json(formatResponse(false, `Minimum amount for this coupon is ${coupon.minimum_amount}`));
+    }
+
+    if (coupon.discount_type === 'percentage') {
+      discountAmount = (total_amount * coupon.discount_value) / 100;
+      if (coupon.maximum_discount) {
+        discountAmount = Math.min(discountAmount, coupon.maximum_discount);
+      }
+    } else {
+      discountAmount = coupon.discount_value;
+    }
+
+    res.json(formatResponse(true, 'Coupon applied successfully', {
+      discount_amount: discountAmount,
+      coupon_id: coupon.id,
+      code: coupon.code,
+      discount_type: coupon.discount_type,
+      discount_value: coupon.discount_value,
+      minimum_amount: coupon.minimum_amount,
+      maximum_discount: coupon.maximum_discount
+    }));
+
+  } catch (error) {
+    console.error('Validate coupon error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to validate coupon', null, error.message));
   }
 });
 
@@ -515,6 +659,14 @@ router.get('/bookings/:id', verifyToken, requireGuestOrOwner, validateId, async 
     `, [id]);
     booking.reward_points = rewardPoints;
 
+    // Get refund information for this booking
+    const [refunds] = await pool.execute(`
+      SELECT * FROM refunds
+      WHERE booking_id = ?
+      ORDER BY requested_at DESC
+    `, [id]);
+    booking.refunds = refunds;
+
     res.json(
       formatResponse(true, 'Booking retrieved successfully', { booking })
     );
@@ -533,13 +685,21 @@ router.patch('/bookings/:id/cancel', verifyToken, requireGuestOrOwner, validateI
     const { id } = req.params;
     const { reason } = req.body;
 
-    // Get booking details
+    // Get booking details and calculate paid amount
     const [bookings] = await pool.execute(`
-      SELECT b.*, p.title as property_title
+      SELECT 
+        b.*, 
+        p.title as property_title,
+        COALESCE((
+          SELECT SUM(cr_amount) 
+          FROM payments 
+          WHERE booking_id = b.id 
+          AND status = 'completed'
+        ), 0) as paid_amount
       FROM bookings b
       JOIN properties p ON b.property_id = p.id
       WHERE b.id = ? AND b.guest_id = ?
-    `, [id, req.user.id]);
+    `, [parseInt(id), parseInt(req.user.id)]);
 
     if (bookings.length === 0) {
       return res.status(404).json(
@@ -550,48 +710,90 @@ router.patch('/bookings/:id/cancel', verifyToken, requireGuestOrOwner, validateI
     const booking = bookings[0];
 
     // Check if booking can be cancelled
-    if (booking.status === 'cancelled') {
+    if (['cancelled', 'checked_out', 'checked_in'].includes(booking.status)) {
+      let statusMsg = booking.status === 'cancelled' ? 'already cancelled' : 
+                     booking.status === 'checked_out' ? 'completed' : 'already checked in';
       return res.status(400).json(
-        formatResponse(false, 'Booking is already cancelled')
+        formatResponse(false, `Cannot cancel booking: it is ${statusMsg}`)
       );
     }
 
-    if (booking.status === 'checked_out') {
-      return res.status(400).json(
-        formatResponse(false, 'Cannot cancel completed booking')
-      );
-    }
-
-    // Check if check-in date has passed
-    const today = new Date();
-    const checkInDate = new Date(booking.check_in_date);
-
-    if (checkInDate <= today) {
-      return res.status(400).json(
-        formatResponse(false, 'Cannot cancel booking after check-in date')
-      );
-    }
+    // Calculate refund based on what was actually PAID
+    const amountToRefund = parseFloat(booking.paid_amount || 0);
+    const refundInfo = calculateRefundAmount(
+      amountToRefund,
+      booking.check_in_date,
+      booking.is_non_refundable
+    );
 
     // Update booking status
+    const cancellationReason = reason || 'Guest requested cancellation';
     await pool.execute(
       'UPDATE bookings SET status = "cancelled", cancellation_reason = ?, cancelled_at = NOW() WHERE id = ?',
-      [reason, id]
+      [cancellationReason, parseInt(id)]
     );
+
+    // Create refund record if they have PAID anything (even if 0 refund according to policy)
+    let refundRecordCreated = false;
+    try {
+      const amountActuallyPaid = parseFloat(booking.paid_amount || 0);
+      if (refundInfo && amountActuallyPaid > 0) {
+        
+        // Find the associated payment_id - specifically the guest_payment (CR) entry
+        // This ensures payment_method (e.g. 'sslcommerz') is correctly linked for refunds
+        const [payments] = await pool.execute(`
+          SELECT id FROM payments 
+          WHERE booking_id = ? AND transaction_type = 'guest_payment'
+          AND status IN ('completed', 'processing', 'authorized') 
+          ORDER BY created_at DESC LIMIT 1
+        `, [parseInt(id)]);
+        
+        // Fallback: any completed payment if no guest_payment found
+        let paymentId = payments.length > 0 ? payments[0].id : 0;
+        if (paymentId === 0) {
+          const [fallbackPayments] = await pool.execute(`
+            SELECT id FROM payments WHERE booking_id = ? AND status = 'completed'
+            AND cr_amount > 0 ORDER BY created_at DESC LIMIT 1
+          `, [parseInt(id)]);
+          paymentId = fallbackPayments.length > 0 ? fallbackPayments[0].id : 0;
+        }
+        const refundReference = `REF-${Date.now()}-${id}`;
+        const refundType = parseFloat(refundInfo.refundAmount) >= amountActuallyPaid ? 'full' : (parseFloat(refundInfo.refundAmount) > 0 ? 'partial' : 'penalty');
+
+        await pool.execute(`
+          INSERT INTO refunds (
+            booking_id, payment_id, refund_reference, original_amount, refund_amount, net_refund, 
+            refund_reason, refund_type, cancellation_policy_applied, status, requested_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())
+        `, [
+          parseInt(id), 
+          paymentId,
+          refundReference,
+          amountActuallyPaid,
+          parseFloat(refundInfo.refundAmount), // Could be 0 depending on policy
+          parseFloat(refundInfo.refundAmount), // net_refund
+          (refundInfo.reason || 'Booking Cancellation').substring(0, 255), 
+          refundType,
+          `Original Paid: ৳${amountActuallyPaid}. Policy Status: ${refundInfo.isEligible ? 'Eligible' : 'Not Eligible (Late Cancellation)'}`
+        ]);
+        refundRecordCreated = true;
+      }
+    } catch (refundError) {
+      console.error('❌ Refund record creation error:', refundError);
+      // We don't want to fail the whole cancellation if only the refund record creation fails
+      // but the user said they want it fixed, so we'll try to find why it fails.
+    }
 
     // Refund rewards points if any were redeemed for this booking
     try {
-      const { refundPointsForBooking } = require('../../utils/rewardsPoints');
-      const refundResult = await refundPointsForBooking(req.user.id, id);
-      if (refundResult.pointsRefunded > 0) {
-        console.log(`✅ Refunded ${refundResult.pointsRefunded} points to guest ${req.user.id} for cancelled booking ${id}`);
+      const rewardsPath = '../../utils/rewardsPoints';
+      const rewardsPoints = require(rewardsPath);
+      if (rewardsPoints && rewardsPoints.refundPointsForBooking) {
+        await rewardsPoints.refundPointsForBooking(req.user.id, id);
       }
     } catch (pointsError) {
       console.error('❌ Points refund error:', pointsError);
-      // Continue even if points refund fails
     }
-
-    // TODO: Process refund based on cancellation policy
-    // This would involve calculating refund amount and creating refund record
 
     // Get updated booking details
     const [updatedBookings] = await pool.execute(`
@@ -610,7 +812,8 @@ router.patch('/bookings/:id/cancel', verifyToken, requireGuestOrOwner, validateI
 
     res.json(
       formatResponse(true, 'Booking cancelled successfully', {
-        booking: updatedBookings[0]
+        booking: updatedBookings[0],
+        refund: refundInfo
       })
     );
 
@@ -618,6 +821,66 @@ router.patch('/bookings/:id/cancel', verifyToken, requireGuestOrOwner, validateI
     console.error('Cancel booking error:', error);
     res.status(500).json(
       formatResponse(false, 'Failed to cancel booking', null, error.message)
+    );
+  }
+});
+
+// Preview cancellation refund
+router.get('/bookings/:id/cancel-preview', verifyToken, requireGuestOrOwner, validateId, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get booking details and calculate paid amount
+    const [bookings] = await pool.execute(`
+      SELECT 
+        b.*, 
+        p.title as property_title,
+        COALESCE((
+          SELECT SUM(cr_amount) 
+          FROM payments 
+          WHERE booking_id = b.id 
+          AND status = 'completed'
+        ), 0) as paid_amount
+      FROM bookings b
+      JOIN properties p ON b.property_id = p.id
+      WHERE b.id = ? AND b.guest_id = ?
+    `, [id, req.user.id]);
+
+    if (bookings.length === 0) {
+      return res.status(404).json(
+        formatResponse(false, 'Booking not found or access denied')
+      );
+    }
+
+    const booking = bookings[0];
+    const totalPaid = parseFloat(booking.paid_amount || 0);
+
+    // Calculate refund using KeyHost24 Policy
+    const refundInfo = calculateRefundAmount(
+      totalPaid,
+      booking.check_in_date,
+      booking.is_non_refundable
+    );
+
+    // Add breakdown
+    const breakdown = {
+      totalPaid: totalPaid,
+      refundableAmount: refundInfo.refundAmount,
+      serviceCharge: 0, // Admin can change this later if needed
+      isEligible: refundInfo.isEligible && totalPaid > 0,
+      reason: totalPaid <= 0 ? 'No non-zero payment found for this booking' : refundInfo.reason,
+      checkInDate: booking.check_in_date,
+      policyWarning: totalPaid <= 0 ? "এই বুকিংয়ের জন্য কোনো পেমেন্ট পাওয়া যায়নি।" : (!refundInfo.isEligible ? "আপনি কোনো রিফান্ড পাবেন না কারণ চেক-ইনের ৪৮ ঘণ্টার কম সময় বাকি রয়েছে বা এটি নন-রিফান্ডেবল বুকিং।" : null)
+    };
+
+    res.json(
+      formatResponse(true, 'Cancellation preview retrieved', breakdown)
+    );
+
+  } catch (error) {
+    console.error('Cancel preview error:', error);
+    res.status(500).json(
+      formatResponse(false, 'Failed to retrieve cancellation preview', null, error.message)
     );
   }
 });
@@ -749,6 +1012,15 @@ router.get('/properties', optionalAuth, validatePagination, cacheMiddleware(30),
     let whereConditions = ['p.status = "active"'];
     let queryParams = [];
 
+    // If user is logged in, exclude their own properties from guest list
+    if (req.user) {
+      const [ownerRows] = await pool.execute('SELECT id FROM property_owners WHERE user_id = ?', [req.user.id]);
+      if (ownerRows.length > 0) {
+        whereConditions.push('p.owner_id != ?');
+        queryParams.push(ownerRows[0].id);
+      }
+    }
+
     // Handle featured properties
     if (is_featured === 'true') {
       whereConditions.push('p.is_featured = 1');
@@ -799,14 +1071,10 @@ router.get('/properties', optionalAuth, validatePagination, cacheMiddleware(30),
           SELECT DISTINCT b.property_id 
           FROM bookings b 
           WHERE b.status IN ('request_accepted', 'confirmed', 'checked_in')
-          AND (
-            (b.check_in_date <= ? AND b.check_out_date > ?) OR
-            (b.check_in_date < ? AND b.check_out_date >= ?) OR
-            (b.check_in_date >= ? AND b.check_out_date <= ?)
-          )
+          AND DATE(b.check_in_date) < DATE(?) AND DATE(b.check_out_date) > DATE(?)
         )
       `);
-      queryParams.push(check_out_date, check_in_date, check_out_date, check_in_date, check_in_date, check_out_date);
+      queryParams.push(check_out_date, check_in_date);
     }
 
     // Build amenity filter
@@ -910,7 +1178,7 @@ router.get('/properties', optionalAuth, validatePagination, cacheMiddleware(30),
 router.get('/display-categories', cacheMiddleware(1800), async (req, res) => {
   try {
     const [categories] = await pool.execute(`
-      SELECT dc.*, COUNT(DISTINCT dcp.property_id) as property_count
+      SELECT dc.*, COUNT(DISTINCT p.id) as property_count
       FROM display_categories dc
       LEFT JOIN display_category_properties dcp ON dc.id = dcp.display_category_id
       LEFT JOIN properties p ON dcp.property_id = p.id AND p.status = 'active'
@@ -932,11 +1200,49 @@ router.get('/display-categories', cacheMiddleware(1800), async (req, res) => {
   }
 });
 
+// Validate multiple property IDs (for cleaning client-side caches like Recently Viewed)
+router.get('/properties/validate-multiple', async (req, res) => {
+  try {
+    const { ids } = req.query;
+    if (!ids) {
+      return res.json(formatResponse(true, 'No IDs to validate', { validIds: [] }));
+    }
+
+    const idList = ids.split(',').map(id => parseInt(id)).filter(id => !isNaN(id));
+    if (idList.length === 0) {
+      return res.json(formatResponse(true, 'No valid IDs to validate', { validIds: [] }));
+    }
+
+    const [rows] = await pool.query(
+      `SELECT id FROM properties WHERE id IN (${idList.map(() => '?').join(',')}) AND status = 'active'`,
+      idList
+    );
+
+    const validIds = rows.map(row => row.id);
+    res.json(formatResponse(true, 'Properties validated successfully', { validIds }));
+  } catch (error) {
+    console.error('Validate multiple properties error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to validate properties', null, error.message));
+  }
+});
+
 // Get properties by display category
-router.get('/display-categories/:id/properties', cacheMiddleware(300), async (req, res) => {
+router.get('/display-categories/:id/properties', optionalAuth, cacheMiddleware(300), async (req, res) => {
   try {
     const { id } = req.params;
     const limit = parseInt(req.query.limit) || 10;
+
+    let whereClause = 'WHERE dcp.display_category_id = ? AND p.status = "active"';
+    let queryParams = [parseInt(id)];
+
+    // If user is logged in, exclude their own properties from category list (unless they are admin)
+    if (req.user && req.user.role !== 'admin') {
+      const [ownerRows] = await pool.execute('SELECT id FROM property_owners WHERE user_id = ?', [req.user.id]);
+      if (ownerRows.length > 0) {
+        whereClause += ' AND p.owner_id != ?';
+        queryParams.push(ownerRows[0].id);
+      }
+    }
 
     // Check if category exists and is active
     const [category] = await pool.execute(
@@ -957,11 +1263,10 @@ router.get('/display-categories/:id/properties', cacheMiddleware(300), async (re
         (SELECT AVG(rating) FROM reviews WHERE property_id = p.id AND status = 'approved') as average_rating
       FROM properties p
       INNER JOIN display_category_properties dcp ON p.id = dcp.property_id
-      WHERE dcp.display_category_id = ? 
-        AND p.status = 'active'
+      ${whereClause}
       ORDER BY dcp.created_at DESC
       LIMIT ?
-    `, [parseInt(id), parseInt(limit)]);
+    `, [...queryParams, parseInt(limit)]);
 
     // Get amenities and images for each property
     for (let property of properties) {
@@ -1147,6 +1452,14 @@ router.get('/properties/:id', optionalAuth, validateId, async (req, res) => {
     `, [id]);
     property.recent_reviews = reviews;
 
+    // Get custom availability constraints
+    const [availability] = await pool.execute(`
+      SELECT DATE_FORMAT(date, '%Y-%m-%d') as date, is_available, price, minimum_stay
+      FROM property_availability
+      WHERE property_id = ? AND date >= CURDATE()
+    `, [id]);
+    property.availability_data = availability;
+
     res.json(
       formatResponse(true, 'Property retrieved successfully', { property })
     );
@@ -1163,7 +1476,7 @@ router.get('/properties/:id', optionalAuth, validateId, async (req, res) => {
 router.get('/properties/:id/availability', async (req, res) => {
   try {
     const { id } = req.params;
-    const { check_in_date, check_out_date } = req.query;
+    const { check_in_date, check_out_date, hms_room_id } = req.query;
 
     if (!check_in_date || !check_out_date) {
       return res.status(400).json(
@@ -1173,25 +1486,39 @@ router.get('/properties/:id/availability', async (req, res) => {
 
     // Check for conflicting bookings
     // Include bookings that are request_accepted, confirmed, or checked_in
-    const [conflicts] = await pool.execute(`
+    let conflictQuery = `
       SELECT COUNT(*) as conflict_count
       FROM bookings
       WHERE property_id = ?
         AND status IN ('request_accepted', 'confirmed', 'checked_in')
-        AND (
-          (check_in_date <= ? AND check_out_date > ?) OR
-          (check_in_date < ? AND check_out_date >= ?) OR
-          (check_in_date >= ? AND check_out_date <= ?)
-        )
-    `, [id, check_out_date, check_in_date, check_out_date, check_in_date, check_in_date, check_out_date]);
+        AND DATE(check_in_date) < DATE(?) AND DATE(check_out_date) > DATE(?)
+    `;
+    let conflictParams = [id, check_out_date, check_in_date];
 
-    const isAvailable = conflicts[0].conflict_count === 0;
+    if (hms_room_id) {
+       conflictQuery += ` AND hms_room_id = ? `;
+       conflictParams.push(hms_room_id);
+    }
+
+    const [conflicts] = await pool.execute(conflictQuery, conflictParams);
+
+    // Check for explicit blocked dates in property_availability
+    const [blockedDates] = await pool.execute(`
+      SELECT COUNT(*) as block_count
+      FROM property_availability
+      WHERE property_id = ?
+        AND is_available = 0
+        AND date >= DATE(?) AND date < DATE(?)
+    `, [id, check_in_date, check_out_date]);
+
+    const isAvailable = conflicts[0].conflict_count === 0 && blockedDates[0].block_count === 0;
 
     res.json(
       formatResponse(true, 'Availability checked successfully', {
         isAvailable,
         check_in_date,
-        check_out_date
+        check_out_date,
+        hms_room_id: hms_room_id || null
       })
     );
 
@@ -1670,7 +1997,7 @@ router.post('/bookings/:id/extend/calculate', verifyToken, requireGuestOrOwner, 
       AND status IN ('confirmed', 'checked_in', 'request_accepted', 'pending')
       AND id != ?
       AND (
-        (check_in_date < ? AND check_out_date > ?)
+        (DATE(check_in_date) < DATE(?) AND DATE(check_out_date) > DATE(?))
       )
     `, [propertyId, id, new_check_out_date, booking.check_out_date]);
 
@@ -1762,7 +2089,7 @@ router.post('/bookings/:id/extend', verifyToken, requireGuestOrOwner, validateId
       AND status IN ('confirmed', 'checked_in', 'request_accepted', 'pending')
       AND id != ?
       AND (
-        (check_in_date < ? AND check_out_date > ?)
+        (DATE(check_in_date) < DATE(?) AND DATE(check_out_date) > DATE(?))
       )
     `, [propertyId, id, new_check_out_date, booking.check_out_date]);
 

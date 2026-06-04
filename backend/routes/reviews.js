@@ -58,19 +58,32 @@ router.post('/', verifyToken, validateReview, async (req, res) => {
       );
     }
 
-    // Create review
+    // Create review — auto-approved since only checked_out guests can submit
     const [result] = await pool.execute(`
       INSERT INTO reviews (
         booking_id, guest_id, property_id, rating, title, comment,
         cleanliness_rating, communication_rating, check_in_rating,
         accuracy_rating, location_rating, value_rating,
-        status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())
+        status, is_public, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', 1, NOW())
     `, [
       booking_id, req.user.id, booking.property_id, rating, title, comment,
       cleanliness_rating, communication_rating, check_in_rating,
       accuracy_rating, location_rating, value_rating
     ]);
+
+    // Immediately update property's average_rating and total_reviews
+    const [ratingResult] = await pool.execute(`
+      SELECT AVG(rating) as avg_rating, COUNT(*) as total_reviews
+      FROM reviews
+      WHERE property_id = ? AND status = 'approved' AND is_public = 1
+    `, [booking.property_id]);
+    if (ratingResult.length > 0) {
+      await pool.execute(
+        'UPDATE properties SET average_rating = ?, total_reviews = ? WHERE id = ?',
+        [ratingResult[0].avg_rating, ratingResult[0].total_reviews, booking.property_id]
+      );
+    }
 
     const reviewId = result.insertId;
 
@@ -122,9 +135,11 @@ router.get('/property/:propertyId', optionalAuth, validatePropertyId, validatePa
         r.cleanliness_rating, r.communication_rating, r.check_in_rating,
         r.accuracy_rating, r.location_rating, r.value_rating,
         r.host_response, r.host_response_date,
-        u.first_name, u.last_name, u.profile_image
+        u.first_name, u.last_name, u.profile_image,
+        b.booking_reference, b.check_in_date, b.check_out_date
       FROM reviews r
       JOIN users u ON r.guest_id = u.id
+      JOIN bookings b ON r.booking_id = b.id
       WHERE r.property_id = ? AND r.status = 'approved' AND r.is_public = 1
       ORDER BY r.created_at DESC
       LIMIT ? OFFSET ?

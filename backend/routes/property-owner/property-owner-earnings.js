@@ -8,8 +8,10 @@ const {
   validateId,
   validatePagination
 } = require('../../middleware/validation');
+const { requireHMSPermission } = require('../../middleware/auth');
 
 const router = express.Router();
+router.use(requireHMSPermission('view_analytics'));
 
 // =============================================
 // GET PROPERTY OWNER EARNINGS DASHBOARD
@@ -54,17 +56,22 @@ router.get('/dashboard', async (req, res) => {
         COALESCE(SUM(b.total_amount), 0) as total_booking_amount,
         COALESCE(SUM(b.admin_commission_amount), 0) as total_commission,
         COALESCE(SUM(b.property_owner_earnings), 0) as net_earnings,
+        COALESCE(SUM(b.security_deposit_claim_amount), 0) as total_requested_claims,
+        COALESCE(SUM(b.security_deposit_deduction_amount), 0) as total_received_claims,
         COALESCE(SUM(CASE WHEN b.payment_status = 'pending' THEN b.property_owner_earnings ELSE 0 END), 0) as pending_amount,
         COALESCE(SUM(CASE WHEN b.payment_status = 'paid' THEN b.property_owner_earnings ELSE 0 END), 0) as paid_amount,
         -- Withdrawable amount = Total - Commission (same as property_owner_earnings)
         -- EXCLUDE bookings already paid out through completed payouts
+        -- ONLY INCLUDE bookings where Keyhost collected the payment
         COALESCE(SUM(
           CASE WHEN completed_payouts.booking_id IS NULL
+            AND (b.booking_source = 'website' OR b.source = 'Internal' OR b.payment_method = 'sslcommerz')
           THEN b.property_owner_earnings ELSE 0 END
         ), 0) as withdrawable_amount,
         -- Available for payout (paid bookings not yet in payout requests)
         COALESCE(SUM(
           CASE WHEN b.payment_status = 'paid' AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+            AND (b.booking_source = 'website' OR b.source = 'Internal' OR b.payment_method = 'sslcommerz')
             AND b.id NOT IN (
               SELECT opi.booking_id 
               FROM owner_payout_items opi
@@ -108,17 +115,22 @@ router.get('/dashboard', async (req, res) => {
         COALESCE(SUM(b.total_amount), 0) as total_booking_amount,
         COALESCE(SUM(b.admin_commission_amount), 0) as total_commission,
         COALESCE(SUM(b.property_owner_earnings), 0) as net_earnings,
+        COALESCE(SUM(b.security_deposit_claim_amount), 0) as total_requested_claims,
+        COALESCE(SUM(b.security_deposit_deduction_amount), 0) as total_received_claims,
         COALESCE(SUM(CASE WHEN b.payment_status = 'pending' THEN b.property_owner_earnings ELSE 0 END), 0) as pending_amount,
         COALESCE(SUM(CASE WHEN b.payment_status = 'paid' THEN b.property_owner_earnings ELSE 0 END), 0) as paid_amount,
         -- Withdrawable amount = Total - Commission (same as property_owner_earnings)
         -- EXCLUDE bookings already paid out through completed payouts
+        -- ONLY INCLUDE bookings where Keyhost collected the payment
         COALESCE(SUM(
           CASE WHEN completed_payouts.booking_id IS NULL
+            AND (b.booking_source = 'website' OR b.source = 'Internal' OR b.payment_method = 'sslcommerz')
           THEN b.property_owner_earnings ELSE 0 END
         ), 0) as withdrawable_amount,
         -- Available for payout (paid bookings not yet in payout requests)
         COALESCE(SUM(
           CASE WHEN b.payment_status = 'paid' AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+            AND (b.booking_source = 'website' OR b.source = 'Internal' OR b.payment_method = 'sslcommerz')
             AND b.id NOT IN (
               SELECT opi.booking_id 
               FROM owner_payout_items opi
@@ -193,6 +205,8 @@ router.get('/dashboard', async (req, res) => {
         b.total_amount as booking_total,
         b.admin_commission_amount as commission_amount,
         b.property_owner_earnings as net_earnings,
+        b.security_deposit_claim_amount,
+        b.security_deposit_deduction_amount,
         b.payment_status as status,
         b.created_at,
         p.title as property_title
@@ -370,6 +384,8 @@ router.get('/earnings', validatePagination, async (req, res) => {
         b.total_amount as booking_total,
         b.admin_commission_amount as commission_amount,
         b.property_owner_earnings as net_earnings,
+        b.security_deposit_claim_amount,
+        b.security_deposit_deduction_amount,
         b.payment_status as status,
         b.created_at,
         p.title as property_title,
@@ -467,19 +483,23 @@ router.get('/analytics', async (req, res) => {
     const [paymentBreakdown] = await pool.execute(`
       SELECT
         CASE 
-          WHEN pay.payment_method = 'cash_on_arrival' THEN 'cash_on_arrival'
-          WHEN pay.payment_method = 'online_payment' THEN 'online_payment'
+          WHEN b.payment_method = 'cash' THEN 'cash_on_arrival'
+          WHEN b.payment_method = 'sslcommerz' THEN 'online_payment'
           ELSE 'bank_transfer'
         END as payment_method,
         SUM(b.property_owner_earnings) as total_amount
       FROM bookings b
       JOIN properties p ON b.property_id = p.id
-      LEFT JOIN payments pay ON b.id = pay.booking_id AND pay.transaction_type = 'payment_received'
       WHERE p.owner_id = ? 
       AND b.created_at >= DATE_SUB(NOW(), INTERVAL ? MONTH)
       AND b.status IN ('confirmed', 'checked_in', 'checked_out')
       AND b.status != 'cancelled'
-      GROUP BY payment_method
+      GROUP BY 
+        CASE 
+          WHEN b.payment_method = 'cash' THEN 'cash_on_arrival'
+          WHEN b.payment_method = 'sslcommerz' THEN 'online_payment'
+          ELSE 'bank_transfer'
+        END
     `, [propertyOwnerId, parseInt(period)]);
 
     // Format payment breakdown
@@ -550,6 +570,7 @@ router.post('/payout-request', async (req, res) => {
       WHERE p.owner_id = ? 
       AND b.payment_status = 'paid' 
       AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+      AND (b.booking_source = 'website' OR b.source = 'Internal' OR b.payment_method = 'sslcommerz')
       AND b.status != 'cancelled'
       AND b.id NOT IN (
         SELECT opi.booking_id 

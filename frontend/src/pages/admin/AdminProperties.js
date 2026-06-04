@@ -66,7 +66,7 @@ const AdminProperties = () => {
   // Fetch property's assigned categories
   const { data: propertyCategories } = useQuery(
     ['property-categories', selectedProperty?.id],
-    () => api.get(`/ admin / properties / ${selectedProperty?.id}/display-categories`),
+    () => api.get(`/admin/properties/${selectedProperty?.id}/display-categories`),
     {
       select: (response) => response.data?.data?.categories || [],
       enabled: showCategoryModal && !!selectedProperty?.id,
@@ -463,7 +463,7 @@ const AdminProperties = () => {
                           {/* Standard Actions */}
                           <div className="flex space-x-1 bg-gray-50 p-1 rounded-lg border border-gray-100 flex-nowrap">
                             <button
-                              onClick={() => navigate(`/property/${property.id}`)}
+                              onClick={() => navigate(`/property/${property.slug || property.id}`)}
                               className="p-1 px-1.5 text-gray-500 hover:text-blue-600 hover:bg-white rounded shadow-sm transition-all"
                               title="View Details"
                             >

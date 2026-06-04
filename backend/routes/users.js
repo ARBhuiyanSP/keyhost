@@ -11,6 +11,7 @@ const {
 } = require('../middleware/validation');
 
 const router = express.Router();
+const { syncHmsAccessForHost } = require('../utils/hms-helper');
 
 // Get user profile
 router.get('/profile', async (req, res) => {
@@ -22,6 +23,7 @@ router.get('/profile', async (req, res) => {
         profile_image, date_of_birth, gender, address,
         city, state, country, postal_code, language,
         timezone, email_notifications, sms_notifications,
+        auto_accept_bookings, bio,
         last_login_at, created_at, updated_at
       FROM users 
       WHERE id = ?
@@ -48,6 +50,39 @@ router.get('/profile', async (req, res) => {
       if (owners.length > 0) {
         user.property_owner_info = owners[0];
       }
+      
+      const [hmsSub] = await pool.execute(`
+        SELECT status, plan_type, trial_started_at, trial_ends_at, subscription_ends_at, package_id, is_trial_used
+        FROM hms_subscriptions
+        WHERE host_id = ?
+      `, [req.user.id]);
+      
+      let finalStatus = hmsSub.length > 0 ? hmsSub[0].status : 'inactive';
+      let subscription = hmsSub.length > 0 ? hmsSub[0] : null;
+
+      // Check for expiration
+      if (subscription && (finalStatus === 'active' || finalStatus === 'trialing')) {
+          const now = new Date();
+          const endDate = finalStatus === 'trialing' ? new Date(subscription.trial_ends_at) : new Date(subscription.subscription_ends_at);
+          
+          if (endDate < now) {
+              finalStatus = 'expired';
+              await pool.execute('UPDATE hms_subscriptions SET status = "expired" WHERE host_id = ?', [req.user.id]);
+              await syncHmsAccessForHost(req.user.id, false);
+          }
+      }
+      
+      // Check if user has any property (qualifies for HMS if they have an active subscription)
+      const [hotelProps] = await pool.execute(`
+        SELECT COUNT(*) as count 
+        FROM properties p
+        JOIN property_owners po ON p.owner_id = po.id
+        WHERE po.user_id = ?
+      `, [req.user.id]);
+      
+      user.has_hotel_property = hotelProps[0].count > 0;
+      user.hms_status = finalStatus;
+      user.hms_subscription = subscription;
     }
 
     res.json(
@@ -79,23 +114,42 @@ router.put('/profile', async (req, res) => {
       language,
       timezone,
       email_notifications,
-      sms_notifications
+      sms_notifications,
+      auto_accept_bookings,
+      email,
+      bio
     } = req.body;
+
+    if (email) {
+      const [existing] = await pool.execute(
+        'SELECT id FROM users WHERE email = ? AND id != ?',
+        [email, req.user.id]
+      );
+      if (existing.length > 0) {
+        return res.status(400).json(formatResponse(false, 'Email is already in use by another account'));
+      }
+    }
 
     const updateFields = [];
     const updateValues = [];
 
     // Build update query
     const allowedFields = {
-      first_name, last_name, phone, date_of_birth, gender,
+      first_name, last_name, email, phone, date_of_birth, gender,
       address, city, state, country, postal_code, language,
-      timezone, email_notifications, sms_notifications
+      timezone, email_notifications, sms_notifications, auto_accept_bookings,
+      bio
     };
 
     Object.keys(allowedFields).forEach(key => {
       if (allowedFields[key] !== undefined) {
+        // Convert empty strings to null for nullable database columns
+        let value = allowedFields[key];
+        if (value === '' && ['date_of_birth', 'gender'].includes(key)) {
+          value = null;
+        }
         updateFields.push(`${key} = ?`);
-        updateValues.push(allowedFields[key]);
+        updateValues.push(value);
       }
     });
 
@@ -120,6 +174,7 @@ router.put('/profile', async (req, res) => {
         profile_image, date_of_birth, gender, address,
         city, state, country, postal_code, language,
         timezone, email_notifications, sms_notifications,
+        auto_accept_bookings, bio,
         last_login_at, created_at, updated_at
       FROM users 
       WHERE id = ?
@@ -299,6 +354,188 @@ router.delete('/favorites/:propertyId', validatePropertyId, async (req, res) => 
   }
 });
 
+// Get sidebar/menu notification counts dynamically for logged-in user
+router.get('/menu-notifications', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userType = req.user.user_type; // 'admin', 'property_owner', 'guest', 'staff'
+    
+    let counts = {
+      unreadMessages: 0,
+      pendingBookings: 0,
+      supportTickets: 0,
+      guestPendingBookings: 0
+    };
+
+    // 1. Unread messages (applicable to all users)
+    try {
+      const [msgResult] = await pool.execute(`
+        SELECT COUNT(*) as count 
+        FROM messages m
+        JOIN conversations c ON m.conversation_id = c.id
+        WHERE m.sender_id != ? AND m.is_read = 0 AND (c.guest_id = ? OR c.host_id = ?)
+      `, [userId, userId, userId]);
+      counts.unreadMessages = msgResult[0]?.count || 0;
+    } catch (err) {
+      console.error('Error fetching unreadMessages count:', err.message);
+    }
+
+    // 1b. Guest pending bookings (applicable to all users when acting as a guest)
+    try {
+      const [guestBookingResult] = await pool.execute(`
+        SELECT COUNT(*) as count 
+        FROM bookings 
+        WHERE guest_id = ? AND status IN ('pending', 'request_accepted')
+      `, [userId]);
+      counts.guestPendingBookings = guestBookingResult[0]?.count || 0;
+    } catch (err) {
+      console.error('Error fetching guestPendingBookings count:', err.message);
+    }
+
+    // 2. Role-specific counts
+    if (userType === 'admin') {
+      // Admin pending bookings
+      try {
+        const [bookingResult] = await pool.execute(`
+          SELECT COUNT(*) as count FROM bookings WHERE status = 'pending'
+        `);
+        counts.pendingBookings = bookingResult[0]?.count || 0;
+      } catch (err) {
+        console.error('Error fetching admin pendingBookings count:', err.message);
+      }
+
+      // Admin pending verifications
+      try {
+        const [verifResult] = await pool.execute(`
+          SELECT COUNT(*) as count FROM property_owners WHERE is_verified = 0
+        `);
+        counts.pendingVerifications = verifResult[0]?.count || 0;
+      } catch (err) {
+        console.error('Error fetching admin pendingVerifications count:', err.message);
+      }
+
+      // Admin unread contact messages
+      try {
+        const [contactResult] = await pool.execute(`
+          SELECT COUNT(*) as count FROM contact_messages WHERE status = 'unread'
+        `);
+        counts.unreadContacts = contactResult[0]?.count || 0;
+      } catch (err) {
+        console.error('Error fetching admin unreadContacts count:', err.message);
+      }
+
+      // Admin pending refunds
+      try {
+        const [refundResult] = await pool.execute(`
+          SELECT COUNT(*) as count FROM refunds WHERE status = 'pending'
+        `);
+        counts.pendingRefunds = refundResult[0]?.count || 0;
+      } catch (err) {
+        console.error('Error fetching admin pendingRefunds count:', err.message);
+      }
+
+      // Admin active support tickets
+      try {
+        const [ticketResult] = await pool.execute(`
+          SELECT COUNT(*) as count FROM tickets WHERE status IN ('Open', 'In Progress')
+        `);
+        counts.supportTickets = ticketResult[0]?.count || 0;
+      } catch (err) {
+        console.error('Error fetching admin supportTickets count:', err.message);
+      }
+
+    } else if (userType === 'property_owner') {
+      // Host pending bookings
+      try {
+        const [bookingResult] = await pool.execute(`
+          SELECT COUNT(*) as count 
+          FROM bookings b
+          JOIN properties p ON b.property_id = p.id
+          JOIN property_owners po ON p.owner_id = po.id
+          WHERE po.user_id = ? AND b.status = 'pending'
+        `, [userId]);
+        counts.pendingBookings = bookingResult[0]?.count || 0;
+      } catch (err) {
+        console.error('Error fetching host pendingBookings count:', err.message);
+      }
+
+      // Host active support tickets
+      try {
+        const [ticketResult] = await pool.execute(`
+          SELECT COUNT(*) as count 
+          FROM tickets 
+          WHERE (host_id = ? OR guest_id = ?) AND status IN ('Open', 'In Progress')
+        `, [userId, userId]);
+        counts.supportTickets = ticketResult[0]?.count || 0;
+      } catch (err) {
+        console.error('Error fetching host supportTickets count:', err.message);
+      }
+
+    } else if (userType === 'staff') {
+      const hostUserId = req.user.host_id || userId;
+      
+      // Staff pending bookings
+      try {
+        const [bookingResult] = await pool.execute(`
+          SELECT COUNT(*) as count 
+          FROM bookings b
+          JOIN properties p ON b.property_id = p.id
+          JOIN property_owners po ON p.owner_id = po.id
+          WHERE po.user_id = ? AND b.status = 'pending'
+        `, [hostUserId]);
+        counts.pendingBookings = bookingResult[0]?.count || 0;
+      } catch (err) {
+        console.error('Error fetching staff pendingBookings count:', err.message);
+      }
+
+      // Staff support tickets
+      try {
+        const [ticketResult] = await pool.execute(`
+          SELECT COUNT(*) as count 
+          FROM tickets 
+          WHERE (host_id = ? OR guest_id = ?) AND status IN ('Open', 'In Progress')
+        `, [hostUserId, hostUserId]);
+        counts.supportTickets = ticketResult[0]?.count || 0;
+      } catch (err) {
+        console.error('Error fetching staff supportTickets count:', err.message);
+      }
+
+    } else { // Guest
+      // Guest pending payments or pending booking requests
+      try {
+        const [bookingResult] = await pool.execute(`
+          SELECT COUNT(*) as count 
+          FROM bookings 
+          WHERE guest_id = ? AND status IN ('pending', 'request_accepted')
+        `, [userId]);
+        counts.pendingBookings = bookingResult[0]?.count || 0;
+      } catch (err) {
+        console.error('Error fetching guest pendingBookings count:', err.message);
+      }
+
+      // Guest active support tickets
+      try {
+        const [ticketResult] = await pool.execute(`
+          SELECT COUNT(*) as count FROM tickets WHERE guest_id = ? AND status IN ('Open', 'In Progress')
+        `, [userId]);
+        counts.supportTickets = ticketResult[0]?.count || 0;
+      } catch (err) {
+        console.error('Error fetching guest supportTickets count:', err.message);
+      }
+    }
+
+    res.json(
+      formatResponse(true, 'Menu notifications retrieved successfully', counts)
+    );
+
+  } catch (error) {
+    console.error('Get menu notifications error:', error);
+    res.status(500).json(
+      formatResponse(false, 'Failed to retrieve menu notifications', null, error.message)
+    );
+  }
+});
+
 // Get user's notifications
 router.get('/notifications', async (req, res) => {
   try {
@@ -404,6 +641,7 @@ router.put('/become-host', async (req, res) => {
         profile_image, date_of_birth, gender, address,
         city, state, country, postal_code, language,
         timezone, email_notifications, sms_notifications,
+        auto_accept_bookings,
         last_login_at, created_at, updated_at
       FROM users 
       WHERE id = ?

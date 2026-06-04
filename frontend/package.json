@@ -17,6 +17,7 @@
     "country-state-city": "^3.2.1",
     "date-fns": "^2.30.0",
     "jwt-decode": "^4.0.0",
+    "qrcode.react": "4.2.0",
     "react": "^18.2.0",
     "react-datepicker": "^4.25.0",
     "react-dom": "^18.2.0",

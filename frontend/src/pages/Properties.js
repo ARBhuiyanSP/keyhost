@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery } from 'react-query';
-import { FiSearch, FiMapPin, FiFilter, FiGrid, FiList, FiStar, FiWifi, FiCar, FiUtensils, FiHeart } from 'react-icons/fi';
+import { FiSearch, FiMapPin, FiFilter, FiGrid, FiList, FiStar, FiWifi, FiCar, FiUtensils, FiHeart, FiArrowLeft } from 'react-icons/fi';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import api from '../utils/api';
@@ -11,6 +11,9 @@ import useToast from '../hooks/useToast';
 import StickySearchHeader from '../components/layout/StickySearchHeader';
 import PropertyImageSlider from '../components/property/PropertyImageSlider';
 
+import MobileSearchModal from '../components/search/MobileSearchModal';
+import { sanitizeText, formatPrice } from '../utils/textUtils';
+
 const Properties = () => {
   const navigate = useNavigate();
   const { isAuthenticated, user } = useAuthStore();
@@ -19,6 +22,7 @@ const Properties = () => {
   const [viewMode, setViewMode] = useState('grid');
   const [showFilters, setShowFilters] = useState(false);
   const [favorites, setFavorites] = useState(new Set());
+  const [showSearchModal, setShowSearchModal] = useState(false);
 
   const [filters, setFilters] = useState({
     city: searchParams.get('city') || '',
@@ -28,6 +32,9 @@ const Properties = () => {
     property_type: searchParams.get('property_type') || '',
     min_price: searchParams.get('min_price') || '',
     max_price: searchParams.get('max_price') || '',
+    bedrooms: searchParams.get('bedrooms') || '',
+    min_rating: searchParams.get('min_rating') || '',
+    free_cancellation: searchParams.get('free_cancellation') === 'true',
     amenities: searchParams.get('amenities') || '',
     sort_by: searchParams.get('sort_by') || 'created_at',
     sort_order: searchParams.get('sort_order') || 'DESC',
@@ -134,6 +141,9 @@ const Properties = () => {
       property_type: '',
       min_price: '',
       max_price: '',
+      bedrooms: '',
+      min_rating: '',
+      free_cancellation: false,
       amenities: '',
       sort_by: 'created_at',
       sort_order: 'DESC',
@@ -144,9 +154,92 @@ const Properties = () => {
     setSearchParams(clearedFilters);
   };
 
+  const formatDisplayDates = () => {
+    if (filters.check_in_date && filters.check_out_date) {
+      return `${new Date(filters.check_in_date).toLocaleDateString()} • ${new Date(filters.check_out_date).toLocaleDateString()}`;
+    }
+    return 'Dates';
+  };
+
+  const applyModalSearch = (newParams) => {
+    const updated = {
+      ...filters,
+      city: newParams.city || '',
+      check_in_date: newParams.check_in_date || '',
+      check_out_date: newParams.check_out_date || '',
+      min_guests: newParams.min_guests ? String(newParams.min_guests) : '',
+      property_type: newParams.property_type || '',
+      page: '1'
+    };
+    setFilters(updated);
+    setSearchParams(updated);
+    refetch();
+  };
+
+  const isTabActive = (tabType) => {
+    return (filters.property_type || '').toLowerCase() === tabType.toLowerCase();
+  };
+
   return (
-    <div className="min-h-screen bg-white pt-20 md:pt-16">
-      <StickySearchHeader alwaysSticky={true} />
+    <div className="min-h-screen bg-white mobile-footer-spacing">
+      {/* Mobile Header with Tabs - Visible only on mobile */}
+      <div className="bg-white pt-4 pb-2 px-4 md:hidden sticky top-0 z-50 shadow-sm border-b border-gray-100">
+        {/* Top Row: Back Button + Search Pill */}
+        <div className="flex items-center gap-3 mb-3">
+          <button
+            onClick={() => navigate('/')}
+            className="p-2 rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-50 transition-colors flex-shrink-0"
+            aria-label="Back to home"
+          >
+            <FiArrowLeft className="w-5 h-5 text-gray-700" />
+          </button>
+
+          {/* Search Pill */}
+          <button
+            onClick={() => setShowSearchModal(true)}
+            className="flex-1 flex items-center justify-center bg-white rounded-full px-4 py-2 border border-gray-200 shadow-sm text-center hover:bg-gray-50 transition-all active:scale-[0.98]"
+          >
+            <div className="flex flex-col items-center leading-tight overflow-hidden w-full">
+              <span className="text-sm font-semibold text-gray-900 truncate w-full">
+                {sanitizeText(filters.city) || 'Anywhere'}
+              </span>
+              <span className="text-xs text-gray-500 truncate w-full">
+                {filters.check_in_date ? formatDisplayDates() : 'Any week'} • {filters.min_guests ? `${filters.min_guests} guest${parseInt(filters.min_guests) > 1 ? 's' : ''}` : 'Add guests'}
+              </span>
+            </div>
+          </button>
+        </div>
+
+        {/* Bottom Row: Property Type Tabs */}
+        <div className="flex items-center justify-center gap-2 overflow-x-auto scrollbar-hide pb-2">
+          {propertyTypesData && propertyTypesData.map((type) => {
+            const normalizedName = (type.name || '').toLowerCase();
+            let imgSrc = type.icon_url || '/images/nav-icon-room.png';
+            if (!type.icon_url) {
+              if (normalizedName.includes('apartment') || normalizedName.includes('villa') || normalizedName.includes('house')) imgSrc = '/images/nav-icon-apartment.png';
+              else if (normalizedName.includes('hotel')) imgSrc = '/images/nav-icon-hotel.png';
+              else if (normalizedName.includes('flight')) imgSrc = '/images/flight.png';
+            }
+            return (
+              <button
+                key={type.id}
+                onClick={() => navigate(`/search?property_type=${normalizedName}`)}
+                className={`flex flex-col items-center justify-center py-1.5 transition-colors ${isTabActive(normalizedName) ? 'text-gray-900' : 'text-gray-500 hover:text-gray-800'}`}
+              >
+                <div className="flex flex-col items-center px-2">
+                  <img src={imgSrc} alt={type.name} className={`w-5 h-5 object-contain transition-all duration-300 ${isTabActive(normalizedName) ? 'opacity-100 grayscale-0' : 'opacity-70 grayscale'}`} onError={(e) => { e.target.src = '/images/nav-icon-room.png'; }} />
+                  <span className="text-base font-medium whitespace-nowrap mt-1.5">{type.name}</span>
+                  <span className={`mt-1.5 h-[2px] w-full ${isTabActive(normalizedName) ? 'bg-black' : 'bg-transparent'}`} />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="hidden md:block">
+        <StickySearchHeader alwaysSticky={true} />
+      </div>
       {/* Header */}
       <div className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-2 pb-6">
@@ -315,6 +408,57 @@ const Properties = () => {
                     </div>
                   </div>
 
+                  {/* Bedrooms */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Bedrooms
+                    </label>
+                    <select
+                      value={filters.bedrooms}
+                      onChange={(e) => handleFilterChange('bedrooms', e.target.value)}
+                      className="input-field"
+                    >
+                      <option value="">Any number</option>
+                      {[1, 2, 3, 4, 5].map(num => (
+                        <option key={num} value={num}>
+                          {num}+ bedrooms
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Rating */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Minimum Rating
+                    </label>
+                    <select
+                      value={filters.min_rating}
+                      onChange={(e) => handleFilterChange('min_rating', e.target.value)}
+                      className="input-field"
+                    >
+                      <option value="">Any rating</option>
+                      {[4.5, 4.0, 3.5, 3.0].map(rating => (
+                        <option key={rating} value={rating}>
+                          {rating}+ Stars
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Cancellation Policy */}
+                  <div>
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={filters.free_cancellation}
+                        onChange={(e) => handleFilterChange('free_cancellation', e.target.checked)}
+                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                      />
+                      <span className="ml-2 text-sm text-gray-700 font-medium">Free Cancellation</span>
+                    </label>
+                  </div>
+
                   {/* Amenities */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -379,21 +523,21 @@ const Properties = () => {
             {/* Properties */}
             {/* Properties */}
             {isLoading ? (
-              <div className={`grid gap-6 ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-6' : 'grid-cols-1'}`}>
+              <div className={`grid ${viewMode === 'grid' ? 'grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-6' : 'grid-cols-1 gap-4'}`}>
                 {[...Array(6)].map((_, i) => (
-                  <div key={i} className="card">
-                    <div className="loading-skeleton h-48 mb-4"></div>
+                  <div key={i} className="card h-full">
+                    <div className="loading-skeleton aspect-[4/3] sm:h-48 rounded-xl mb-3"></div>
                     <div className="loading-skeleton h-4 mb-2"></div>
                     <div className="loading-skeleton h-4 w-2/3"></div>
                   </div>
                 ))}
               </div>
             ) : propertiesData?.properties?.length > 0 ? (
-              <div className={`grid gap-6 ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-6' : 'grid-cols-1'}`}>
+              <div className={`grid ${viewMode === 'grid' ? 'grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-6' : 'grid-cols-1 gap-4'}`}>
                 {propertiesData.properties.map((property) => (
                   <div
                     key={property.id}
-                    className={`card-hover ${viewMode === 'list' ? 'flex' : ''}`}
+                    className={`card-hover ${viewMode === 'list' ? 'flex' : 'flex flex-col h-full'}`}
                     onClick={() => {
                       // Pass search params to property detail page
                       const params = new URLSearchParams();
@@ -401,13 +545,13 @@ const Properties = () => {
                       if (filters.check_out_date) params.set('check_out_date', filters.check_out_date);
                       if (filters.min_guests) params.set('guests', filters.min_guests);
                       const queryString = params.toString();
-                      navigate(`/property/${property.id}${queryString ? `?${queryString}` : ''}`);
+                      navigate(`/property/${property.slug || property.id}${queryString ? `?${queryString}` : ''}`);
                     }}
                   >
-                    <div className={`relative ${viewMode === 'list' ? 'w-1/3' : ''} ${viewMode === 'list' ? 'h-32' : 'h-48'}`}>
+                    <div className={`relative rounded-xl overflow-hidden ${viewMode === 'list' ? 'w-1/3 h-32' : 'aspect-[4/3] sm:h-48 mb-3'}`}>
                       <PropertyImageSlider
                         property={property}
-                        className="w-full h-full"
+                        className="w-full h-full object-cover"
                       />
                       <button
                         onClick={(e) => {
@@ -418,8 +562,13 @@ const Properties = () => {
                       >
                         <FiHeart className={`w-4 h-4 ${favorites.has(property.id) ? 'text-red-500 fill-current' : 'text-gray-400'}`} />
                       </button>
+                      {property.is_non_refundable && (
+                        <div className="absolute bottom-3 left-3 bg-rose-600 text-white px-2 py-0.5 rounded-md text-[8px] font-bold z-20 shadow-sm uppercase tracking-wider">
+                          Non-Refundable
+                        </div>
+                      )}
                       <div className="absolute top-3 left-3 bg-white px-2 py-1 rounded-full text-sm font-medium z-20">
-                        <span className="text-red-600 font-bold">BDT {property.base_price}</span><span className="text-gray-600">/night</span>
+                        <span className="text-red-600 font-bold">BDT {formatPrice(property.base_price)}</span><span className="text-gray-600">/night</span>
                       </div>
                     </div>
 
@@ -432,11 +581,15 @@ const Properties = () => {
                         <span className="truncate">{property.city}, {property.state}</span>
                       </p>
                       <div className="flex items-center">
-                        <FiStar className="text-yellow-400 mr-1 fill-yellow-400 flex-shrink-0" />
-                        <span className="font-medium text-gray-900">{property.average_rating || 'New'}</span>
-                        <span className="text-gray-500 ml-1 text-sm">
-                          ({property.total_reviews} reviews)
-                        </span>
+                        {property.total_reviews > 0 ? (
+                          <>
+                            <FiStar className="text-yellow-400 mr-1 fill-yellow-400 flex-shrink-0 w-3.5 h-3.5" />
+                            <span className="font-semibold text-gray-900 text-sm">{parseFloat(property.average_rating).toFixed(1)}</span>
+                            <span className="text-gray-500 text-xs ml-1">({property.total_reviews} verified)</span>
+                          </>
+                        ) : (
+                          <span className="text-gray-400 text-xs font-medium">No reviews yet</span>
+                        )}
                       </div>
                       <div className="text-sm text-gray-500">
                         Max {property.max_guests} guests
@@ -485,6 +638,13 @@ const Properties = () => {
           </div>
         </div>
       </div>
+
+      <MobileSearchModal
+        isOpen={showSearchModal}
+        onClose={() => setShowSearchModal(false)}
+        onSearch={applyModalSearch}
+        filters={filters}
+      />
     </div>
   );
 };

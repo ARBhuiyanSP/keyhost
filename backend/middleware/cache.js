@@ -8,8 +8,11 @@ const cacheMiddleware = (duration) => {
             return next();
         }
 
-        // Create a unique key based on URL and query params
-        const key = req.originalUrl || req.url;
+        // Create a unique key based on URL, query params and user context
+        let key = req.originalUrl || req.url;
+        if (req.user) {
+            key += `_u${req.user.id}`;
+        }
 
         // Check if we have a cached response
         const cachedResponse = cache.get(key);

@@ -10,9 +10,6 @@ const PropertyImageSlider = ({ property, className = '' }) => {
   // Helper to ensure images load correctly on cPanel/shared hosting via the API URL
   const fixImageUrl = (url) => {
     if (!url || typeof url !== 'string') return null;
-    if (url.startsWith('/uploads/')) {
-      return `/api${url}`; // API router will catch this and serve the graphic
-    }
     return url;
   };
 
@@ -98,14 +95,23 @@ const PropertyImageSlider = ({ property, className = '' }) => {
         }
       }}
     >
-      <img
-        src={images[currentImageIndex]}
-        alt={property?.title || 'Property'}
-        className="w-full h-full object-cover rounded-t-lg transition-opacity duration-500"
-        onError={(e) => {
-          e.target.src = '/images/placeholder.svg';
-        }}
-      />
+      <div className="relative w-full h-full">
+        {images.map((imgSrc, index) => (
+          <img
+            key={index}
+            src={imgSrc}
+            alt={property?.title ? `${property.title} - Image ${index + 1}` : 'Property'}
+            className={`absolute top-0 left-0 w-full h-full object-cover rounded-t-lg transition-opacity duration-700 ease-in-out ${
+              index === currentImageIndex ? 'opacity-100 z-10' : 'opacity-0 z-0'
+            }`}
+            loading={index === 0 ? "eager" : "lazy"}
+            decoding="async"
+            onError={(e) => {
+              e.target.src = '/images/placeholder.svg';
+            }}
+          />
+        ))}
+      </div>
 
       {/* Navigation buttons - only show if more than 1 image */}
       {images.length > 1 && (

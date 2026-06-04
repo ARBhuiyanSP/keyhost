@@ -6,6 +6,8 @@ import LoadingSpinner from '../../components/common/LoadingSpinner';
 import useToast from '../../hooks/useToast';
 
 import LeaveReviewModal from '../../components/reviews/LeaveReviewModal';
+import CancellationModal from '../../components/bookings/CancellationModal';
+import { formatPrice } from '../../utils/textUtils';
 
 const GuestBookings = () => {
   const navigate = useNavigate();
@@ -21,6 +23,7 @@ const GuestBookings = () => {
   });
 
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState(null);
 
   useEffect(() => {
@@ -138,12 +141,24 @@ const GuestBookings = () => {
         {/* Bookings List */}
         <div className="space-y-6">
           {bookings.length === 0 ? (
-            <div className="text-center py-12">
-              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-              <h3 className="mt-2 text-sm font-medium text-gray-900">No bookings found</h3>
-              <p className="mt-1 text-sm text-gray-500">Get started by booking your first property.</p>
+            <div className="text-center py-20 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center">
+              <div className="bg-blue-50 w-24 h-24 rounded-full flex items-center justify-center mb-6">
+                <svg className="h-12 w-12 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900 mb-2">No bookings found</h3>
+              <p className="text-gray-500 mb-8 max-w-sm text-center">
+                {filter === 'all' 
+                  ? "You haven't made any bookings yet. Ready for your next adventure?" 
+                  : `You don't have any ${filter.replace('_', ' ')} bookings at the moment.`}
+              </p>
+              <button
+                onClick={() => navigate('/properties')}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-8 rounded-xl shadow-md transition-all duration-200 transform hover:-translate-y-1"
+              >
+                Explore Properties
+              </button>
             </div>
           ) : (
             bookings.map((booking) => (
@@ -173,7 +188,7 @@ const GuestBookings = () => {
                         {booking.status.replace('_', ' ').toUpperCase()}
                       </span>
                       <p className="text-base md:text-lg font-semibold text-gray-900">
-                        ${booking.total_amount?.toLocaleString()}
+                        ৳{formatPrice(booking.total_amount)}
                       </p>
                     </div>
                   </div>
@@ -239,10 +254,8 @@ const GuestBookings = () => {
                     })() && (
                         <button
                           onClick={() => {
-                            const reason = prompt('Please provide a reason for cancellation:');
-                            if (reason) {
-                              handleCancelBooking(booking.id, reason);
-                            }
+                            setSelectedBooking(booking);
+                            setShowCancelModal(true);
                           }}
                           className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
                         >
@@ -298,6 +311,13 @@ const GuestBookings = () => {
         onClose={() => setShowReviewModal(false)}
         booking={selectedBooking}
         onSuccess={startReviewSuccess}
+      />
+
+      <CancellationModal
+        isOpen={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        bookingId={selectedBooking?.id}
+        onConfirm={handleCancelBooking}
       />
     </div>
   );

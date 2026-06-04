@@ -17,8 +17,26 @@ async function syncExternalCalendar(calendarId, propertyId, icalUrl, providerNam
                 const start = new Date(event.start);
                 const end = new Date(event.end);
 
-                const formattedStart = start.toISOString().split('T')[0];
-                const formattedEnd = end.toISOString().split('T')[0];
+                // Safe parsing to avoid timezone shift on toISOString() 
+                const sYear = start.getFullYear();
+                const sMonth = String(start.getMonth() + 1).padStart(2, '0');
+                const sDay = String(start.getDate()).padStart(2, '0');
+                const formattedStart = `${sYear}-${sMonth}-${sDay}`;
+
+                const eYear = end.getFullYear();
+                const eMonth = String(end.getMonth() + 1).padStart(2, '0');
+                const eDay = String(end.getDate()).padStart(2, '0');
+                const formattedEnd = `${eYear}-${eMonth}-${eDay}`;
+
+                // Calculate duration in days
+                const nights = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+                
+                // OTAs like Airbnb often send massive 1-year to 3-year "Not available" blocks 
+                // for dates beyond their booking window. We skip those to avoid locking the entire calendar.
+                if (nights > 100) {
+                    console.log(`Skipping massive external event (${nights} nights) for property ${propertyId}`);
+                    continue;
+                }
 
                 const [existing] = await connection.query(
                     `SELECT id FROM bookings WHERE external_booking_id = ? AND property_id = ?`,

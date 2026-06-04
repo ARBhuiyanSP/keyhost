@@ -1,5 +1,12 @@
 <IfModule mod_rewrite.c>
   RewriteEngine On
+
+  # Automatically redirect local /uploads/ requests to the API subdomain
+  # e.g., requests to tradfly.com/uploads/... go to api.tradfly.com/uploads/...
+  RewriteCond %{REQUEST_URI} ^/uploads/ [NC]
+  RewriteCond %{HTTP_HOST} ^(?:www\.)?(.*)$ [NC]
+  RewriteRule ^uploads/(.*)$ https://api.%1/uploads/$1 [L,R=301]
+
   RewriteBase /
   RewriteRule ^index\.html$ - [L]
   RewriteCond %{REQUEST_FILENAME} !-f

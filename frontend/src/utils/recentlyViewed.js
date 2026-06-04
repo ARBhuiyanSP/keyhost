@@ -21,6 +21,7 @@ export const addToRecentlyViewed = (property) => {
     const updated = [
       {
         id: property.id,
+        slug: property.slug,
         title: property.title,
         base_price: property.base_price,
         city: property.city,
