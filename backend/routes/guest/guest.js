@@ -10,7 +10,7 @@ const {
   isValidDateRange,
   formatDate
 } = require('../../utils/helpers');
-const { sendSMS } = require('../../utils/sms');
+const { sendSMS, sendBookingRequestSms, sendBookingPaidSms, sendBookingAcceptedSms } = require('../../utils/sms');
 const {
   validateBooking,
   validateId,
@@ -157,7 +157,8 @@ router.post('/bookings', verifyToken, requireGuestOrOwner, validateBooking, asyn
       number_of_infants = 0,
       special_requests,
       coupon_code,
-      custom_price
+      custom_price,
+      booking_type = 'short_stay'
     } = req.body;
 
     // Validate dates
@@ -208,15 +209,47 @@ router.post('/bookings', verifyToken, requireGuestOrOwner, validateBooking, asyn
 
     // Check minimum stay
     const nights = Math.ceil((new Date(check_out_date) - new Date(check_in_date)) / (1000 * 60 * 60 * 24));
-    if (nights < property.minimum_stay) {
-      return res.status(400).json(
-        formatResponse(false, `Minimum ${property.minimum_stay} nights required`)
-      );
+    const isMonthly = booking_type === 'monthly';
+
+    if (isMonthly) {
+      // Monthly booking validation
+      if (!property.monthly_rent_enabled || !property.monthly_approved) {
+        return res.status(400).json(
+          formatResponse(false, 'This property does not accept monthly bookings')
+        );
+      }
+      if (!property.monthly_rent_amount) {
+        return res.status(400).json(
+          formatResponse(false, 'Monthly rent amount not set for this property')
+        );
+      }
+      const minNights = property.monthly_min_stay_nights || 30;
+      if (nights < minNights) {
+        return res.status(400).json(
+          formatResponse(false, `Minimum ${minNights} nights required for monthly booking`)
+        );
+      }
+    } else {
+      if (nights < property.minimum_stay) {
+        return res.status(400).json(
+          formatResponse(false, `Minimum ${property.minimum_stay} nights required`)
+        );
+      }
     }
 
     // HMS Room Handling
-    const { hms_room_id } = req.body;
+    let { hms_room_id } = req.body;
     let selectedRoom = null;
+
+    if (property.is_hms_enabled && !hms_room_id && property.is_single_unit) {
+        const [rooms] = await pool.execute(
+            'SELECT id FROM hms_rooms WHERE property_id = ? LIMIT 1',
+            [property_id]
+        );
+        if (rooms.length > 0) {
+            hms_room_id = rooms[0].id;
+        }
+    }
 
     if (hms_room_id) {
         const [rooms] = await pool.execute(
@@ -256,70 +289,106 @@ router.post('/bookings', verifyToken, requireGuestOrOwner, validateBooking, asyn
 
     // Use room price if HMS enabled
     const basePrice = selectedRoom ? parseFloat(selectedRoom.price) : (parseFloat(property.base_price) || 0);
-    const cleaningFee = parseFloat(property.cleaning_fee) || 0;
-    const securityDeposit = parseFloat(property.security_deposit) || 0;
-    const extraGuestFee = number_of_guests > 1 ? (number_of_guests - 1) * (parseFloat(property.extra_guest_fee) || 0) : 0;
     
-    // Fetch live service fee and tax percentages from settings instead of hardcoding
-    const [settingsRows] = await pool.execute(`
-      SELECT setting_key, setting_value FROM system_settings 
-      WHERE setting_key IN ('service_fee_percentage', 'tax_percentage')
-    `);
-    
-    let serviceFeePercent = 0;
-    let taxPercent = 0;
-    
-    settingsRows.forEach(row => {
-      if (row.setting_key === 'service_fee_percentage') serviceFeePercent = parseFloat(row.setting_value) || 0;
-      if (row.setting_key === 'tax_percentage') taxPercent = parseFloat(row.setting_value) || 0;
-    });
+    // Calculate pricing
+    let pricing, finalTotal, totalDiscount = 0, discountAmount = 0, hostDiscount = 0;
+    let monthsCount = null, extraDays = null, monthlyRateUsed = null, advanceAmount = null;
+    let cleaningFee = 0;
+    let securityDeposit = 0;
+    let extraGuestFee = 0;
+    let serviceFee = 0;
+    let taxAmount = 0;
 
-    const serviceFee = (basePrice * nights) * (serviceFeePercent / 100);
-    const taxAmount = (basePrice * nights) * (taxPercent / 100);
+    if (isMonthly) {
+      // ── Monthly pro-rated pricing ─────────────────────────────────────────
+      const monthlyRate = parseFloat(property.monthly_rent_amount);
+      monthsCount = Math.floor(nights / 30);
+      extraDays = nights % 30;
+      monthlyRateUsed = monthlyRate;
 
-    const pricing = calculateBookingTotal(
-      basePrice, nights, cleaningFee, securityDeposit,
-      extraGuestFee, serviceFee, taxAmount
-    );
+      const monthlySubtotal = monthsCount * monthlyRate;
+      const proratedAmount = extraDays * (monthlyRate / 30);
+      securityDeposit = parseFloat(property.monthly_security_deposit) || 0;
+      advanceAmount = parseFloat(property.monthly_advance_amount) || 0;
 
-    // Calculate custom price discount (Host Discount) if provided
-    let hostDiscount = 0;
-    const parsedCustomPrice = parseFloat(custom_price);
-    if (!isNaN(parsedCustomPrice) && parsedCustomPrice > 0 && parsedCustomPrice <= pricing.total) {
-      hostDiscount = pricing.total - parsedCustomPrice;
-    }
+      finalTotal = monthlySubtotal + proratedAmount + securityDeposit;
+      totalDiscount = 0;
 
-    // Apply coupon if provided
-    let discountAmount = 0;
-    let coupons = [];
-    if (coupon_code) {
-      const [result] = await pool.execute(`
-        SELECT * FROM coupons 
-        WHERE code = ? AND is_active = 1 
-        AND (valid_from IS NULL OR valid_from <= CURDATE()) 
-        AND (valid_until IS NULL OR valid_until >= CURDATE())
-        AND (usage_limit IS NULL OR used_count < usage_limit)
-      `, [coupon_code]);
-      coupons = result;
+      // Build a pricing-compatible object for response
+      pricing = {
+        basePrice: monthlyRate,
+        nights,
+        monthsCount,
+        extraDays,
+        monthlySubtotal,
+        proratedAmount,
+        monthlySecurityDeposit: securityDeposit,
+        total: finalTotal
+      };
+    } else {
+      // ── Standard nightly pricing ──────────────────────────────────────────
+      cleaningFee = parseFloat(property.cleaning_fee) || 0;
+      securityDeposit = parseFloat(property.security_deposit) || 0;
+      extraGuestFee = number_of_guests > 1 ? (number_of_guests - 1) * (parseFloat(property.extra_guest_fee) || 0) : 0;
+      
+      // Fetch live service fee and tax percentages from settings instead of hardcoding
+      const [settingsRows] = await pool.execute(`
+        SELECT setting_key, setting_value FROM system_settings 
+        WHERE setting_key IN ('service_fee_percentage', 'tax_percentage')
+      `);
+      
+      let serviceFeePercent = 0;
+      let taxPercent = 0;
+      
+      settingsRows.forEach(row => {
+        if (row.setting_key === 'service_fee_percentage') serviceFeePercent = parseFloat(row.setting_value) || 0;
+        if (row.setting_key === 'tax_percentage') taxPercent = parseFloat(row.setting_value) || 0;
+      });
 
-      if (coupons.length > 0) {
-        const coupon = coupons[0];
-        const totalForCoupon = pricing.total - hostDiscount;
-        if (totalForCoupon >= coupon.minimum_amount) {
-          if (coupon.discount_type === 'percentage') {
-            discountAmount = (totalForCoupon * coupon.discount_value) / 100;
-            if (coupon.maximum_discount) {
-              discountAmount = Math.min(discountAmount, coupon.maximum_discount);
+      serviceFee = (basePrice * nights) * (serviceFeePercent / 100);
+      taxAmount = (basePrice * nights) * (taxPercent / 100);
+
+      pricing = calculateBookingTotal(
+        basePrice, nights, cleaningFee, securityDeposit,
+        extraGuestFee, serviceFee, taxAmount
+      );
+
+      // Calculate custom price discount (Host Discount) if provided
+      const parsedCustomPrice = parseFloat(custom_price);
+      if (!isNaN(parsedCustomPrice) && parsedCustomPrice > 0 && parsedCustomPrice <= pricing.total) {
+        hostDiscount = pricing.total - parsedCustomPrice;
+      }
+
+      // Apply coupon if provided
+      if (coupon_code) {
+        const [result] = await pool.execute(`
+          SELECT * FROM coupons 
+          WHERE code = ? AND is_active = 1 
+          AND (valid_from IS NULL OR valid_from <= CURDATE()) 
+          AND (valid_until IS NULL OR valid_until >= CURDATE())
+          AND (usage_limit IS NULL OR used_count < usage_limit)
+        `, [coupon_code]);
+        const coupons = result;
+
+        if (coupons.length > 0) {
+          const coupon = coupons[0];
+          const totalForCoupon = pricing.total - hostDiscount;
+          if (totalForCoupon >= coupon.minimum_amount) {
+            if (coupon.discount_type === 'percentage') {
+              discountAmount = (totalForCoupon * coupon.discount_value) / 100;
+              if (coupon.maximum_discount) {
+                discountAmount = Math.min(discountAmount, coupon.maximum_discount);
+              }
+            } else {
+              discountAmount = coupon.discount_value;
             }
-          } else {
-            discountAmount = coupon.discount_value;
           }
         }
       }
-    }
 
-    const finalTotal = Math.max(0, pricing.total - hostDiscount - discountAmount);
-    const totalDiscount = discountAmount + hostDiscount;
+      finalTotal = Math.max(0, pricing.total - hostDiscount - discountAmount);
+      totalDiscount = discountAmount + hostDiscount;
+    }
 
     // Generate booking reference
     const bookingReference = generateBookingReference();
@@ -333,8 +402,8 @@ router.post('/bookings', verifyToken, requireGuestOrOwner, validateBooking, asyn
     const commissionRate = commissionSettings.length > 0 ?
       parseFloat(commissionSettings[0].setting_value) : 10.00;
 
-    const commissionAmount = (finalTotal * commissionRate) / 100;
-    const propertyOwnerEarnings = finalTotal - commissionAmount;
+    const commissionAmount = (Math.max(0, finalTotal - securityDeposit) * commissionRate) / 100;
+    const propertyOwnerEarnings = Math.max(0, finalTotal - securityDeposit - commissionAmount);
 
     // Determine initial booking status based on auto_accept setting
     const autoAccept = !!property.auto_accept_bookings;
@@ -361,19 +430,24 @@ router.post('/bookings', verifyToken, requireGuestOrOwner, validateBooking, asyn
         special_requests, coupon_code, discount_amount,
         booking_source, guest_name, guest_email, guest_phone,
         confirmed_at, payment_deadline,
-        booking_date, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+        booking_type, months_count, extra_days, monthly_rate_used, advance_amount,
+        is_non_refundable, booking_date, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     `, [
       bookingReference, req.user.id, property_id, hms_room_id || null,
       check_in_date, check_out_date, check_in_time || '15:00', check_out_time || '11:00',
       number_of_guests, number_of_children, number_of_infants,
-      basePrice * nights, cleaningFee, securityDeposit, extraGuestFee,
+      isMonthly ? (property.monthly_rent_amount || 0) : (basePrice * nights),
+      cleaningFee, securityDeposit, extraGuestFee,
       serviceFee, taxAmount, commissionRate, commissionAmount, propertyOwnerEarnings,
       finalTotal, property.currency || 'BDT', initialStatus, 'pending',
       special_requests || null, coupon_code || null, totalDiscount,
       'website', `${req.user.first_name} ${req.user.last_name}`, req.user.email, req.user.phone || null,
       autoAccept ? new Date() : null,
-      autoAccept ? new Date(Date.now() + paymentTimeLimitMinutes * 60 * 1000) : null
+      autoAccept ? new Date(Date.now() + paymentTimeLimitMinutes * 60 * 1000) : null,
+      booking_type,
+      monthsCount, extraDays, monthlyRateUsed, advanceAmount,
+      property.is_non_refundable || false
     ]);
 
     const bookingId = result.insertId;
@@ -406,7 +480,7 @@ router.post('/bookings', verifyToken, requireGuestOrOwner, validateBooking, asyn
       ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
     `, [
       bookingId, property_id, property.owner_id,
-      finalTotal, commissionRate, commissionAmount,
+      finalTotal - securityDeposit, commissionRate, commissionAmount,
       commissionAmount, // net_commission (can be adjusted for tax later)
     ]);
 
@@ -440,61 +514,14 @@ router.post('/bookings', verifyToken, requireGuestOrOwner, validateBooking, asyn
     `, [bookingId]);
 
     // Notify property owner via SMS about the new booking request
-    console.log(`📱 Attempting to send SMS to owner for booking ${bookingReference}`);
-    console.log(`Owner user ID: ${property.owner_user_id}`);
-
     try {
-      const [ownerUsers] = await pool.execute(
-        `SELECT first_name, last_name, phone 
-         FROM users 
-         WHERE id = ? 
-         LIMIT 1`,
-        [property.owner_user_id]
-      );
-
-      console.log(`Owner users found: ${ownerUsers.length}`);
-
-      if (ownerUsers.length === 0) {
-        console.warn(`❌ Owner user ${property.owner_user_id} not found in users table. SMS not sent for booking ${bookingReference}.`);
-      } else {
-        const ownerUser = ownerUsers[0];
-        console.log(`Owner user found:`, {
-          first_name: ownerUser.first_name,
-          last_name: ownerUser.last_name,
-          phone: ownerUser.phone ? '***' + ownerUser.phone.slice(-4) : 'NOT SET'
-        });
-
-        if (ownerUser?.phone) {
-          const guestFirstName = req.user?.first_name || bookings[0]?.guest_name?.split(' ')[0] || 'Guest';
-          const guestLastName = req.user?.last_name || '';
-          const guestFullName = `${guestFirstName}${guestLastName ? ' ' + guestLastName : ''}`.trim();
-
-          const message = `New booking request ${bookingReference} for ${property.title}. Guest: ${guestFullName}. Check-in ${formatDate(check_in_date)}. Please review and confirm.`;
-
-          console.log(`📤 Sending SMS to owner phone: ${ownerUser.phone.slice(0, 3)}***${ownerUser.phone.slice(-4)}`);
-          console.log(`Message: ${message}`);
-
-          const smsResult = await sendSMS({
-            to: ownerUser.phone,
-            message
-          });
-
-          if (smsResult.success) {
-            console.log(`✅ SMS sent successfully to owner for booking ${bookingReference}`);
-          } else {
-            if (smsResult.skipped) {
-              console.warn(`⚠️ SMS skipped for booking ${bookingReference}: ${smsResult.reason || 'Unknown reason'}`);
-            } else {
-              console.error(`❌ SMS send failed for booking ${bookingReference}: ${smsResult.error || 'Unknown error'}`);
-            }
-          }
-        } else {
-          console.warn(`❌ Owner user ${property.owner_user_id} has no phone number. SMS not sent for booking ${bookingReference}.`);
-        }
+      await sendBookingRequestSms(bookingId, autoAccept);
+      // If auto-accepted, also notify guest that their booking has been accepted and payment is pending
+      if (autoAccept) {
+        await sendBookingAcceptedSms(bookingId);
       }
     } catch (smsError) {
-      console.error(`❌ Exception while sending owner SMS notification for booking ${bookingReference}:`, smsError.message || smsError);
-      console.error('SMS Error Stack:', smsError.stack);
+      console.error(`❌ Exception while sending booking SMS notifications for booking ${bookingReference}:`, smsError.message || smsError);
     }
 
     const responseMessage = autoAccept
@@ -742,7 +769,7 @@ router.patch('/bookings/:id/cancel', verifyToken, requireGuestOrOwner, validateI
         // Find the associated payment_id - specifically the guest_payment (CR) entry
         // This ensures payment_method (e.g. 'sslcommerz') is correctly linked for refunds
         const [payments] = await pool.execute(`
-          SELECT id FROM payments 
+          SELECT id, payment_method FROM payments 
           WHERE booking_id = ? AND transaction_type = 'guest_payment'
           AND status IN ('completed', 'processing', 'authorized') 
           ORDER BY created_at DESC LIMIT 1
@@ -750,21 +777,31 @@ router.patch('/bookings/:id/cancel', verifyToken, requireGuestOrOwner, validateI
         
         // Fallback: any completed payment if no guest_payment found
         let paymentId = payments.length > 0 ? payments[0].id : 0;
+        let paymentMethod = payments.length > 0 ? payments[0].payment_method : null;
+
         if (paymentId === 0) {
           const [fallbackPayments] = await pool.execute(`
-            SELECT id FROM payments WHERE booking_id = ? AND status = 'completed'
+            SELECT id, payment_method FROM payments WHERE booking_id = ? AND status = 'completed'
             AND cr_amount > 0 ORDER BY created_at DESC LIMIT 1
           `, [parseInt(id)]);
           paymentId = fallbackPayments.length > 0 ? fallbackPayments[0].id : 0;
+          paymentMethod = fallbackPayments.length > 0 ? fallbackPayments[0].payment_method : null;
         }
+
         const refundReference = `REF-${Date.now()}-${id}`;
         const refundType = parseFloat(refundInfo.refundAmount) >= amountActuallyPaid ? 'full' : (parseFloat(refundInfo.refundAmount) > 0 ? 'partial' : 'penalty');
+
+        const isOnline = ['bkash', 'sslcommerz', 'nagad'].includes(paymentMethod);
+        const refundStatus = isOnline ? 'pending' : 'completed';
+        const now = new Date();
+        const approvedAt = isOnline ? null : now;
+        const completedAt = isOnline ? null : now;
 
         await pool.execute(`
           INSERT INTO refunds (
             booking_id, payment_id, refund_reference, original_amount, refund_amount, net_refund, 
-            refund_reason, refund_type, cancellation_policy_applied, status, requested_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())
+            refund_reason, refund_type, cancellation_policy_applied, status, requested_at, approved_at, completed_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)
         `, [
           parseInt(id), 
           paymentId,
@@ -774,9 +811,13 @@ router.patch('/bookings/:id/cancel', verifyToken, requireGuestOrOwner, validateI
           parseFloat(refundInfo.refundAmount), // net_refund
           (refundInfo.reason || 'Booking Cancellation').substring(0, 255), 
           refundType,
-          `Original Paid: ৳${amountActuallyPaid}. Policy Status: ${refundInfo.isEligible ? 'Eligible' : 'Not Eligible (Late Cancellation)'}`
+          `Original Paid: ৳${amountActuallyPaid}. Policy Status: ${refundInfo.isEligible ? 'Eligible' : 'Not Eligible (Late Cancellation)'}`,
+          refundStatus,
+          approvedAt,
+          completedAt
         ]);
         refundRecordCreated = true;
+
       }
     } catch (refundError) {
       console.error('❌ Refund record creation error:', refundError);
@@ -1005,12 +1046,23 @@ router.get('/properties', optionalAuth, validatePagination, cacheMiddleware(30),
       sort_by = 'created_at',
       sort_order = 'DESC',
       recommended = false,
-      is_featured = false
+      is_featured = false,
+      booking_type = 'short_stay',
+      latitude,
+      longitude
     } = req.query;
 
     const offset = (page - 1) * limit;
     let whereConditions = ['p.status = "active"'];
     let queryParams = [];
+
+    // Filter by booking_type (monthly vs short_stay)
+    if (booking_type === 'monthly') {
+      whereConditions.push('p.monthly_rent_enabled = 1');
+      whereConditions.push('p.monthly_approved = 1');
+    } else {
+      whereConditions.push('(p.monthly_rent_enabled = 0 OR p.monthly_stay_type != "monthly_only")');
+    }
 
     // If user is logged in, exclude their own properties from guest list
     if (req.user) {
@@ -1033,9 +1085,82 @@ router.get('/properties', optionalAuth, validatePagination, cacheMiddleware(30),
     }
 
     // Build WHERE conditions
-    if (city) {
-      whereConditions.push('p.city LIKE ?');
-      queryParams.push(`%${city}%`);
+    let hasCoords = false;
+    const latVal = parseFloat(latitude);
+    const lngVal = parseFloat(longitude);
+    if (!isNaN(latVal) && !isNaN(lngVal)) {
+      hasCoords = true;
+      whereConditions.push(`p.latitude IS NOT NULL AND p.longitude IS NOT NULL`);
+      whereConditions.push(`(6371 * acos(cos(radians(?)) * cos(radians(p.latitude)) * cos(radians(p.longitude) - radians(?)) + sin(radians(?)) * sin(radians(p.latitude)))) <= 50`);
+      queryParams.push(latVal, lngVal, latVal);
+    }
+
+    let selectFields = `
+      p.*,
+      p.auto_accept_bookings as owner_auto_accept,
+      u.first_name as owner_first_name,
+      u.last_name as owner_last_name,
+      u.email as owner_email,
+      u.phone as owner_phone,
+      po.business_name,
+      po.is_verified as owner_verified
+    `;
+    let selectParams = [];
+    let orderByClause = '';
+
+    if (hasCoords) {
+      selectFields += `, (6371 * acos(cos(radians(?)) * cos(radians(p.latitude)) * cos(radians(p.longitude) - radians(?)) + sin(radians(?)) * sin(radians(p.latitude)))) AS distance`;
+      selectParams.push(latVal, lngVal, latVal);
+      orderByClause = 'ORDER BY distance ASC';
+    } else if (city && city !== 'Nearby') {
+      const keywords = city.split(/[\s,]+/).map(t => t.trim()).filter(t => t.length > 0);
+      if (keywords.length > 0) {
+        let cityConditions = [];
+        let cityParams = [];
+        
+        // Match exact phrase on title, address, city, state
+        cityConditions.push('p.title LIKE ? OR p.address LIKE ? OR p.city LIKE ? OR p.state LIKE ?');
+        cityParams.push(`%${city}%`, `%${city}%`, `%${city}%`, `%${city}%`);
+        
+        // Match individual keywords on title, address, city, state
+        keywords.forEach(keyword => {
+          cityConditions.push('p.title LIKE ? OR p.address LIKE ? OR p.city LIKE ? OR p.state LIKE ?');
+          cityParams.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
+        });
+        
+        whereConditions.push(`(${cityConditions.join(' OR ')})`);
+        queryParams.push(...cityParams);
+
+        // Calculate relevance score: exact phrase match in title/address = 1, in city/state = 2,
+        // then keyword matches in order of index
+        let relevanceCases = [];
+        let relevanceParams = [];
+        
+        relevanceCases.push('WHEN p.title LIKE ? OR p.address LIKE ? THEN 1');
+        relevanceParams.push(`%${city}%`, `%${city}%`);
+        
+        relevanceCases.push('WHEN p.city LIKE ? OR p.state LIKE ? THEN 2');
+        relevanceParams.push(`%${city}%`, `%${city}%`);
+        
+        keywords.forEach((keyword, index) => {
+          const score = 3 + index;
+          relevanceCases.push(`WHEN p.title LIKE ? OR p.address LIKE ? THEN ${score}`);
+          relevanceParams.push(`%${keyword}%`, `%${keyword}%`);
+          
+          relevanceCases.push(`WHEN p.city LIKE ? OR p.state LIKE ? THEN ${score + 10}`);
+          relevanceParams.push(`%${keyword}%`, `%${keyword}%`);
+        });
+        
+        const relevanceExpression = `(CASE ${relevanceCases.join(' ')} ELSE 99 END)`;
+        selectFields += `, ${relevanceExpression} AS relevance_score`;
+        selectParams.push(...relevanceParams);
+        
+        orderByClause = `ORDER BY relevance_score ASC, p.${sort_by} ${sort_order}`;
+      } else {
+        orderByClause = `ORDER BY p.${sort_by} ${sort_order}`;
+      }
+    } else {
+      orderByClause = `ORDER BY p.${sort_by} ${sort_order}`;
     }
 
     if (property_type) {
@@ -1044,12 +1169,20 @@ router.get('/properties', optionalAuth, validatePagination, cacheMiddleware(30),
     }
 
     if (min_price) {
-      whereConditions.push('p.base_price >= ?');
+      if (booking_type === 'monthly') {
+        whereConditions.push('p.monthly_rent_amount >= ?');
+      } else {
+        whereConditions.push('p.base_price >= ?');
+      }
       queryParams.push(min_price);
     }
 
     if (max_price) {
-      whereConditions.push('p.base_price <= ?');
+      if (booking_type === 'monthly') {
+        whereConditions.push('p.monthly_rent_amount <= ?');
+      } else {
+        whereConditions.push('p.base_price <= ?');
+      }
       queryParams.push(max_price);
     }
 
@@ -1105,23 +1238,17 @@ router.get('/properties', optionalAuth, validatePagination, cacheMiddleware(30),
 
     const total = countResult[0].total;
 
-    // Get properties with owner info
+
     const [properties] = await pool.query(`
       SELECT 
-        p.*,
-        u.first_name as owner_first_name,
-        u.last_name as owner_last_name,
-        u.email as owner_email,
-        u.phone as owner_phone,
-        po.business_name,
-        po.is_verified as owner_verified
+        ${selectFields}
       FROM properties p
       JOIN property_owners po ON p.owner_id = po.id
       JOIN users u ON po.user_id = u.id
       ${whereClause}
-      ORDER BY p.${sort_by} ${sort_order}
+      ${orderByClause}
       LIMIT ? OFFSET ?
-    `, [...queryParams, parseInt(limit), parseInt(offset)]);
+    `, [...selectParams, ...queryParams, parseInt(limit), parseInt(offset)]);
 
     // Get amenities for each property
     for (let property of properties) {
@@ -1259,6 +1386,7 @@ router.get('/display-categories/:id/properties', optionalAuth, cacheMiddleware(3
     // Get properties for this category using junction table
     const [properties] = await pool.query(`
       SELECT p.*, 
+        p.auto_accept_bookings as owner_auto_accept,
         (SELECT image_url FROM property_images WHERE property_id = p.id AND image_type = 'main' LIMIT 1) as main_image_url,
         (SELECT AVG(rating) FROM reviews WHERE property_id = p.id AND status = 'approved') as average_rating
       FROM properties p
@@ -1345,6 +1473,7 @@ router.get('/properties/recommended', optionalAuth, cacheMiddleware(600), async 
     const [properties] = await pool.query(`
       SELECT 
         p.*,
+        p.auto_accept_bookings as owner_auto_accept,
         pi.image_url as main_image
       FROM properties p
       LEFT JOIN property_images pi ON p.id = pi.property_id AND pi.image_type = 'main' AND pi.is_active = 1
@@ -1382,6 +1511,7 @@ router.get('/properties/:id', optionalAuth, validateId, async (req, res) => {
     const [properties] = await pool.execute(`
       SELECT 
         p.*,
+        p.auto_accept_bookings as owner_auto_accept,
         u.first_name as owner_first_name,
         u.last_name as owner_last_name,
         u.email as owner_email,
@@ -1606,9 +1736,12 @@ router.patch('/bookings/:id/payment', verifyToken, requireGuestOrOwner, validate
       // Check if CR entry already exists (result fetched above in existingCrPayments)
 
       if (existingCrPayments.length === 0) {
-        // Handle rewards points redemption if applicable
-        // For extensions: use amount_paid (extra amount only), for original: use total
-        let baseAmount = (isExtensionPayment && amount_paid) ? parseFloat(amount_paid) : parseFloat(booking.total_amount);
+        // For extensions: use amount_paid (extra amount only), for monthly: use advance_amount, for original: use total
+        let baseAmount = (isExtensionPayment && amount_paid)
+          ? parseFloat(amount_paid)
+          : (booking.booking_type === 'monthly' && parseFloat(booking.advance_amount) > 0
+              ? parseFloat(booking.advance_amount)
+              : parseFloat(booking.total_amount));
         let finalAmount = baseAmount;
         let pointsRedeemed = 0;
         let pointsDiscount = 0;
@@ -1630,7 +1763,9 @@ router.patch('/bookings/:id/payment', verifyToken, requireGuestOrOwner, validate
         const crReference = `CR-${Date.now()}-${id}`;
         const crNotes = isExtensionPayment
           ? `Extension extra payment received: ৳${finalAmount}${pointsDiscount > 0 ? `, Points discount: ৳${pointsDiscount.toFixed(2)}` : ''}`
-          : `Guest payment received - Total: ৳${booking.total_amount}${pointsDiscount > 0 ? `, Points discount: ৳${pointsDiscount.toFixed(2)}` : ''}`;
+          : (booking.booking_type === 'monthly'
+              ? `Guest payment received (Advance) - Paid: ৳${finalAmount} (Total Stay: ৳${booking.total_amount})${pointsDiscount > 0 ? `, Points discount: ৳${pointsDiscount.toFixed(2)}` : ''}`
+              : `Guest payment received - Total: ৳${booking.total_amount}${pointsDiscount > 0 ? `, Points discount: ৳${pointsDiscount.toFixed(2)}` : ''}`);
 
         await pool.execute(`
           INSERT INTO payments (
@@ -1696,6 +1831,11 @@ router.patch('/bookings/:id/payment', verifyToken, requireGuestOrOwner, validate
             WHERE id = ?
           `, [id]);
           console.log(`Booking ${id} confirmed after payment by guest`);
+          try {
+            await sendBookingPaidSms(id);
+          } catch (smsErr) {
+            console.error(`Failed to send booking paid SMS for booking ${id}:`, smsErr.message);
+          }
         }
       }
 
@@ -2194,6 +2334,41 @@ router.post('/bookings/:id/extend', verifyToken, requireGuestOrOwner, validateId
     res.status(500).json(formatResponse(false, 'Failed to apply extension', null, error.message));
   } finally {
     if (connection) connection.release();
+  }
+});
+
+// Get guest refunds list
+router.get('/refunds', verifyToken, requireGuestOrOwner, async (req, res) => {
+  try {
+    const [refunds] = await pool.execute(`
+      SELECT 
+        r.id,
+        r.booking_id,
+        r.payment_id,
+        r.refund_reference,
+        r.original_amount,
+        r.refund_amount,
+        r.net_refund,
+        r.refund_reason,
+        r.refund_type,
+        r.cancellation_policy_applied,
+        r.status,
+        r.requested_at,
+        r.completed_at,
+        b.booking_reference,
+        p.title as property_title,
+        (SELECT image_url FROM property_images WHERE property_id = p.id AND image_type = 'main' AND is_active = 1 LIMIT 1) as property_image
+      FROM refunds r
+      JOIN bookings b ON r.booking_id = b.id
+      JOIN properties p ON b.property_id = p.id
+      WHERE b.guest_id = ?
+      ORDER BY r.requested_at DESC
+    `, [req.user.id]);
+
+    res.json(formatResponse(true, 'Refunds retrieved successfully', { refunds }));
+  } catch (error) {
+    console.error('Get guest refunds error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to retrieve refunds', null, error.message));
   }
 });
 

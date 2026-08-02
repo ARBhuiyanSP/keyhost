@@ -3,6 +3,7 @@ const { pool } = require('../../config/database');
 const { formatResponse, calculateRefundAmount } = require('../../utils/helpers');
 const { verifyToken, requirePropertyOwner, requireHMSAccess, requireHMSPermission } = require('../../middleware/auth');
 const { syncFoodOrderToHMSAccounts, syncRefundToHMSAccounts } = require('../../utils/hms-sync');
+const { sendCheckoutSms, sendRefundSms } = require('../../utils/sms');
 
 const router = express.Router();
 
@@ -641,10 +642,15 @@ const { processBase64Image } = require('../../utils/imageProcessor');
 
 router.get('/food-items/:propertyId', requireHMSAccess, requireHMSPermission('manage_food_beverage'), verifyPropertyOwnership, async (req, res) => {
     try {
-        const { propertyId } = req.params;
+        const hostId = getHostId(req);
         const [items] = await pool.query(
-            'SELECT * FROM hms_food_items WHERE property_id = ? ORDER BY category ASC, name ASC',
-            [propertyId]
+            `SELECT fi.* 
+             FROM hms_food_items fi
+             JOIN properties p ON fi.property_id = p.id
+             JOIN property_owners po ON p.owner_id = po.id
+             WHERE po.user_id = ?
+             ORDER BY fi.category ASC, fi.name ASC`,
+            [hostId]
         );
         res.json(formatResponse(true, 'Food items retrieved', { items }));
     } catch (error) {
@@ -912,6 +918,12 @@ router.put('/settle-bill/:bookingId', requireHMSAccess, requireHMSPermission('ma
         
         await connection.commit();
 
+        try {
+            await sendCheckoutSms(bookingId);
+        } catch (smsErr) {
+            console.error(`Failed to send checkout SMS for booking ${bookingId}:`, smsErr.message);
+        }
+
         // 5. Sync each settled food order to accounts (After commit)
         for (const order of roomBilledOrders) {
             try {
@@ -1015,15 +1027,25 @@ router.post('/bookings/:id/refund', requireHMSAccess, requireHMSPermission('mana
 
         // 3. Find the payment to link this refund to
         const [payments] = await connection.query(
-            'SELECT id FROM payments WHERE booking_id = ? AND status = "completed" ORDER BY created_at DESC LIMIT 1',
+            'SELECT id, payment_method FROM payments WHERE booking_id = ? AND status = "completed" ORDER BY created_at DESC LIMIT 1',
             [id]
         );
 
         const paymentId = payments.length > 0 ? payments[0].id : null;
+        const paymentMethod = payments.length > 0 ? payments[0].payment_method : null;
 
         // If it's a manual booking that was paid, it MUST have a payment record
         if (!paymentId) {
             return res.status(400).json(formatResponse(false, 'No completed payment found for this booking to refund.'));
+        }
+
+        // If the payment method is online, block direct manual refund by the host
+        const isOnline = ['bkash', 'sslcommerz', 'nagad'].includes(paymentMethod);
+        if (isOnline) {
+            return res.status(400).json(formatResponse(
+                false, 
+                'Online payments (e.g. bKash, SSLCommerz) must be refunded by Admin to process the transaction through the gateway.'
+            ));
         }
 
         // 3. Create refund record (marked as completed since it's manual)
@@ -1046,6 +1068,7 @@ router.post('/bookings/:id/refund', requireHMSAccess, requireHMSPermission('mana
             refundType,
         ]);
 
+
         const refundId = rResult.insertId;
 
         await connection.commit();
@@ -1057,13 +1080,127 @@ router.post('/bookings/:id/refund', requireHMSAccess, requireHMSPermission('mana
             console.error('[HMS-MGMT] Manual refund sync failed:', syncErr);
         }
 
-        res.json(formatResponse(true, 'Manual refund processed and synced successfully'));
+        try {
+            await sendRefundSms(id, refund_amount, reason || 'Manual Refund by Host');
+        } catch (smsErr) {
+            console.error('[HMS-MGMT] Failed to send manual refund SMS:', smsErr.message);
+        }
+
+        res.json(formatResponse(true, 'Refund processed successfully', { refundId }));
     } catch (error) {
         await connection.rollback();
-        console.error('[HMS-MGMT] Manual refund error:', error);
-        res.status(500).json(formatResponse(false, 'Failed to process manual refund'));
+        console.error('[HMS-MGMT] Manual refund CRASH:', error);
+        res.status(500).json(formatResponse(false, 'Failed to process refund', null, error.message));
     } finally {
         connection.release();
+    }
+});
+
+// --- HMS Reports ---
+
+// 1. Room Revenue Report
+router.get('/reports/room-revenue', requireHMSAccess, requireHMSPermission('manage_reservations'), async (req, res) => {
+    try {
+        const { property_id, room_id, start_date, end_date } = req.query;
+
+        if (!property_id || !start_date || !end_date) {
+            return res.status(400).json(formatResponse(false, 'property_id, start_date and end_date are required'));
+        }
+
+        // Verify property ownership
+        const [propertyCheck] = await pool.query(
+            'SELECT p.id FROM properties p JOIN property_owners po ON p.owner_id = po.id WHERE p.id = ? AND po.user_id = ?',
+            [property_id, req.user.id]
+        );
+        if (propertyCheck.length === 0) {
+            return res.status(403).json(formatResponse(false, 'Access denied. You do not own this property.'));
+        }
+
+        let query = `
+            SELECT 
+                b.id,
+                b.check_in_date as date,
+                b.check_in_date,
+                b.check_out_date,
+                DATEDIFF(b.check_out_date, b.check_in_date) as stay_nights,
+                b.booking_reference,
+                b.guest_name,
+                r.room_number,
+                'ROOM CHARGE' as service_name,
+                b.total_amount as charge,
+                0.00 as vat_amount,
+                0.00 as service_charge,
+                b.total_amount as total_amount
+            FROM bookings b
+            JOIN properties p ON b.property_id = p.id
+            LEFT JOIN hms_rooms r ON b.hms_room_id = r.id
+            WHERE b.property_id = ?
+              AND b.check_in_date >= ?
+              AND b.check_in_date <= ?
+              AND b.status != 'cancelled'
+        `;
+        const params = [property_id, start_date, end_date];
+
+        if (room_id && room_id !== 'all' && room_id !== '') {
+            query += ' AND b.hms_room_id = ?';
+            params.push(room_id);
+        }
+
+        query += ' ORDER BY b.check_in_date ASC';
+
+        const [rows] = await pool.query(query, params);
+
+        res.json(formatResponse(true, 'Room revenue report retrieved', { transactions: rows }));
+    } catch (error) {
+        console.error('[HMS-MGMT] Room revenue report error:', error);
+        res.status(500).json(formatResponse(false, 'Failed to fetch room revenue report', null, error.message));
+    }
+});
+
+// 2. Room-wise Revenue Report
+router.get('/reports/room-wise-revenue', requireHMSAccess, requireHMSPermission('manage_reservations'), async (req, res) => {
+    try {
+        const { property_id, start_date, end_date } = req.query;
+
+        if (!property_id || !start_date || !end_date) {
+            return res.status(400).json(formatResponse(false, 'property_id, start_date and end_date are required'));
+        }
+
+        // Verify property ownership
+        const [propertyCheck] = await pool.query(
+            'SELECT p.id FROM properties p JOIN property_owners po ON p.owner_id = po.id WHERE p.id = ? AND po.user_id = ?',
+            [property_id, req.user.id]
+        );
+        if (propertyCheck.length === 0) {
+            return res.status(403).json(formatResponse(false, 'Access denied. You do not own this property.'));
+        }
+
+        const query = `
+            SELECT 
+                r.id as room_id,
+                r.room_number,
+                r.room_type,
+                COUNT(b.id) as total_bookings,
+                COALESCE(SUM(b.total_amount), 0) as total_charge,
+                0.00 as total_vat,
+                0.00 as total_service_charge,
+                COALESCE(SUM(b.total_amount), 0) as total_revenue
+            FROM hms_rooms r
+            LEFT JOIN bookings b ON b.hms_room_id = r.id
+              AND b.check_in_date >= ?
+              AND b.check_in_date <= ?
+              AND b.status != 'cancelled'
+            WHERE r.property_id = ?
+            GROUP BY r.id, r.room_number, r.room_type
+            ORDER BY r.room_number ASC
+        `;
+
+        const [rows] = await pool.query(query, [start_date, end_date, property_id]);
+
+        res.json(formatResponse(true, 'Room-wise revenue report retrieved', { rooms: rows }));
+    } catch (error) {
+        console.error('[HMS-MGMT] Room-wise revenue report error:', error);
+        res.status(500).json(formatResponse(false, 'Failed to fetch room-wise revenue report', null, error.message));
     }
 });
 

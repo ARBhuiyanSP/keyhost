@@ -4,6 +4,7 @@ import api from '../../utils/api';
 import useAuthStore from '../../store/authStore';
 import useToast from '../../hooks/useToast';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
+import { getImageUrl } from '../../utils/imageUrl';
 
 const StatusBadge = ({ status }) => {
   const getColors = (status) => {
@@ -212,7 +213,7 @@ const TicketChat = () => {
                       {msg.attachment_url && (
                         <div className="mt-3 pt-3 border-t border-white/20">
                           <a 
-                            href={`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${msg.attachment_url}`}
+                            href={getImageUrl(msg.attachment_url)}
                             target="_blank" 
                             rel="noopener noreferrer"
                             className={`flex items-center gap-2 text-xs p-2 rounded-lg transition-all ${isMine ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-gray-50 hover:bg-gray-100 text-[#E41D57]'}`}

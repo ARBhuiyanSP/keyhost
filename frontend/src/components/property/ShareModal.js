@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { FiX, FiCopy, FiMail, FiMessageCircle, FiHeart, FiCode, FiMoreHorizontal, FiDownload, FiArrowLeft } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import { QRCodeCanvas } from 'qrcode.react';
+import { getImageUrl } from '../../utils/imageUrl';
 
 const ShareModal = ({ property, isOpen, onClose }) => {
   const [view, setView] = useState('main'); // 'main' or 'qr'
@@ -114,7 +115,7 @@ const ShareModal = ({ property, isOpen, onClose }) => {
               {/* Property Info Block */}
               <div className="flex items-center gap-4 mb-8">
                 <img 
-                  src={property.images?.[0]?.image_url || '/placeholder.jpg'} 
+                  src={getImageUrl(property.images?.[0]?.image_url) || '/placeholder.jpg'} 
                   alt={title} 
                   className="w-16 h-16 object-cover rounded-lg shadow-sm"
                   onError={(e) => e.target.src = '/placeholder.jpg'}

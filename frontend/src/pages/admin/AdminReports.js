@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from 'react-query';
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import { FiDownload, FiCalendar, FiDollarSign, FiUsers, FiHome, FiTrendingUp, FiFilter, FiPrinter, FiPieChart, FiActivity, FiGrid, FiBarChart2 } from 'react-icons/fi';
 
 const AdminReports = () => {
+    const navigate = useNavigate();
     const [dateRange, setDateRange] = useState('month');
     const [activeTab, setActiveTab] = useState('overview');
 
@@ -73,6 +75,9 @@ const AdminReports = () => {
                     </button>
                     <button onClick={() => setActiveTab('users')} className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'users' ? 'bg-white text-gray-900 shadow-sm ring-1 ring-gray-200' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>
                         <FiUsers /> Active Cohorts
+                    </button>
+                    <button onClick={() => setActiveTab('properties')} className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'properties' ? 'bg-white text-gray-900 shadow-sm ring-1 ring-gray-200' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>
+                        <FiHome /> Property Insights
                     </button>
                 </div>
 
@@ -213,9 +218,25 @@ const AdminReports = () => {
 
                 {activeTab === 'users' && (
                     <div className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm animate-fadeIn">
-                        <div className="max-w-md">
-                            <h3 className="text-2xl font-bold text-gray-900 mb-2">User Cohorts</h3>
-                            <p className="text-gray-500 mb-8">Breakdown of the current unified userbase over {stats.totalUsers || 0} active accounts.</p>
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-4 border-b border-gray-100 pb-5">
+                            <div>
+                                <h3 className="text-2xl font-bold text-gray-900 mb-1">User Cohorts</h3>
+                                <p className="text-gray-500 text-xs">Breakdown of the current unified userbase over {stats.totalUsers || 0} active accounts.</p>
+                            </div>
+                            <div className="flex flex-wrap gap-3">
+                                <button
+                                    onClick={() => navigate('/admin/reports/users')}
+                                    className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 shadow-sm transition-all duration-150 active:scale-95"
+                                >
+                                    <FiUsers /> View Registrations List
+                                </button>
+                                <button
+                                    onClick={() => navigate('/admin/reports/user-analytics')}
+                                    className="bg-indigo-650 hover:bg-indigo-750 text-white font-bold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 shadow transition-all duration-150 active:scale-95"
+                                >
+                                    <FiActivity /> View Demographics Analytics & Printing
+                                </button>
+                            </div>
                         </div>
                         <div className="space-y-6">
                             <div>
@@ -243,6 +264,33 @@ const AdminReports = () => {
                                 </div>
                                 <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
                                     <div className="bg-amber-500 h-3 rounded-full" style={{ width: '3%' }}></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'properties' && (
+                    <div className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm animate-fadeIn">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-4 border-b border-gray-100 pb-5">
+                            <div>
+                                <h3 className="text-2xl font-bold text-gray-900 mb-1">Property Insights</h3>
+                                <p className="text-gray-500 text-xs">Overview of {stats.totalProperties || 0} active listed properties on the platform.</p>
+                            </div>
+                            <div className="flex flex-wrap gap-3">
+                                <button
+                                    onClick={() => navigate('/admin/reports/property-analytics')}
+                                    className="bg-indigo-650 hover:bg-indigo-750 text-white font-bold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 shadow transition-all duration-150 active:scale-95"
+                                >
+                                    <FiActivity /> View Detailed Property Analysis Report & Printing
+                                </button>
+                            </div>
+                        </div>
+                        <div className="space-y-6">
+                            <div className="flex justify-between items-center bg-gray-50 p-5 rounded-xl border border-gray-100">
+                                <div>
+                                    <h4 className="font-bold text-gray-800 text-sm">Interactive Performance Reporting</h4>
+                                    <p className="text-xs text-gray-550 mt-1">Review rankings of properties by total bookings logged, gross revenue paid, and guest review feedback metrics.</p>
                                 </div>
                             </div>
                         </div>

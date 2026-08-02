@@ -13,6 +13,8 @@ const {
 const router = express.Router();
 const { syncHmsAccessForHost } = require('../utils/hms-helper');
 
+const { processBase64Image } = require('../utils/imageProcessor');
+
 // Get user profile
 router.get('/profile', async (req, res) => {
   try {
@@ -24,6 +26,8 @@ router.get('/profile', async (req, res) => {
         city, state, country, postal_code, language,
         timezone, email_notifications, sms_notifications,
         auto_accept_bookings, bio,
+        nationality, nid_number, passport_number,
+        nid_document_url, passport_document_url,
         last_login_at, created_at, updated_at
       FROM users 
       WHERE id = ?
@@ -117,7 +121,12 @@ router.put('/profile', async (req, res) => {
       sms_notifications,
       auto_accept_bookings,
       email,
-      bio
+      bio,
+      nationality,
+      nid_number,
+      passport_number,
+      nid_document_url,
+      passport_document_url
     } = req.body;
 
     if (email) {
@@ -130,6 +139,17 @@ router.put('/profile', async (req, res) => {
       }
     }
 
+    // Process base64 document images if provided
+    let processedNidDoc = nid_document_url;
+    if (nid_document_url && nid_document_url.startsWith('data:')) {
+      processedNidDoc = await processBase64Image(nid_document_url, `nid-${req.user.id}`, 'documents');
+    }
+
+    let processedPassportDoc = passport_document_url;
+    if (passport_document_url && passport_document_url.startsWith('data:')) {
+      processedPassportDoc = await processBase64Image(passport_document_url, `passport-${req.user.id}`, 'documents');
+    }
+
     const updateFields = [];
     const updateValues = [];
 
@@ -138,14 +158,16 @@ router.put('/profile', async (req, res) => {
       first_name, last_name, email, phone, date_of_birth, gender,
       address, city, state, country, postal_code, language,
       timezone, email_notifications, sms_notifications, auto_accept_bookings,
-      bio
+      bio, nationality, nid_number, passport_number,
+      nid_document_url: processedNidDoc,
+      passport_document_url: processedPassportDoc
     };
 
     Object.keys(allowedFields).forEach(key => {
       if (allowedFields[key] !== undefined) {
         // Convert empty strings to null for nullable database columns
         let value = allowedFields[key];
-        if (value === '' && ['date_of_birth', 'gender'].includes(key)) {
+        if (value === '' && ['date_of_birth', 'gender', 'nationality', 'nid_number', 'passport_number', 'nid_document_url', 'passport_document_url'].includes(key)) {
           value = null;
         }
         updateFields.push(`${key} = ?`);
@@ -175,6 +197,8 @@ router.put('/profile', async (req, res) => {
         city, state, country, postal_code, language,
         timezone, email_notifications, sms_notifications,
         auto_accept_bookings, bio,
+        nationality, nid_number, passport_number,
+        nid_document_url, passport_document_url,
         last_login_at, created_at, updated_at
       FROM users 
       WHERE id = ?
@@ -412,6 +436,20 @@ router.get('/menu-notifications', async (req, res) => {
         counts.pendingVerifications = verifResult[0]?.count || 0;
       } catch (err) {
         console.error('Error fetching admin pendingVerifications count:', err.message);
+      }
+
+      // Admin pending security deposits
+      try {
+        const [securityDepositResult] = await pool.execute(`
+          SELECT COUNT(*) as count 
+          FROM bookings 
+          WHERE security_deposit > 0 
+            AND status = 'checked_out' 
+            AND security_deposit_status IN ('pending', 'claim_requested')
+        `);
+        counts.pendingSecurityDeposits = securityDepositResult[0]?.count || 0;
+      } catch (err) {
+        console.error('Error fetching admin pendingSecurityDeposits count:', err.message);
       }
 
       // Admin unread contact messages

@@ -16,6 +16,7 @@ const reviewRoutes = require('./routes/reviews');
 const analyticsRoutes = require('./routes/analytics');
 const propertiesRoutes = require('./routes/properties');
 const bkashPaymentRoutes = require('./routes/bkash-payment');
+const nagadPaymentRoutes = require('./routes/nagad-payment');
 const reportRoutes = require('./routes/reports');
 const messagesRoutes = require('./routes/messages');
 const sslCommerzRoutes = require('./routes/sslcommerz');
@@ -125,6 +126,7 @@ const apiRoutes = [
   { path: '/analytics', route: analyticsRoutes },
   { path: '/properties', route: propertiesRoutes },
   { path: '/bkash', route: bkashPaymentRoutes },
+  { path: '/nagad', route: nagadPaymentRoutes },
   { path: '/reports', route: reportRoutes },
   { path: '/messages', route: messagesRoutes },
   { path: '/admin', route: adminRoutes },
@@ -165,7 +167,7 @@ app.use('*', (req, res) => {
 const { cancelExpiredBookings, cancelUnacceptedBookings } = require('./utils/bookingCleanup');
 const cron = require('node-cron');
 const { syncAllExternalCalendars } = require('./utils/icalSync');
-const { expireHMSSubscriptions } = require('./utils/hmsCron');
+const { expireHMSSubscriptions, checkMaintenanceAlerts } = require('./utils/hmsCron');
 
 // Start scheduled tasks
 // Run booking cleanup every minute to check for expired bookings
@@ -196,6 +198,8 @@ cron.schedule('*/15 * * * *', () => {
 cron.schedule('0 0 * * *', () => {
   console.log('Running scheduled HMS expiration checks...');
   expireHMSSubscriptions();
+  console.log('Running scheduled HMS maintenance due alerts checks...');
+  checkMaintenanceAlerts();
 });
 
 console.log('Scheduled tasks started: Booking cleanup runs every minute. iCal sync every 15m. HMS checks daily.');

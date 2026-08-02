@@ -7,12 +7,19 @@ import { useQuery } from 'react-query';
 import useSettingsStore from '../../store/settingsStore';
 import useAuthStore from '../../store/authStore';
 import api from '../../utils/api';
-import { sanitizeText } from '../../utils/textUtils';
+import { sanitizeText, getLocationSubtitle } from '../../utils/textUtils';
 import AuthModal from '../auth/AuthModal';
+import useLocationAutocomplete from '../../hooks/useLocationAutocomplete';
 
 // Lazy load FlightSearchForm — only downloaded when Flight is enabled
 const FlightSearchForm = lazy(() => import('../search/FlightSearchForm'));
 
+
+const TakaIcon = ({ className = "w-4 h-4" }) => (
+  <span className={`${className} font-bold font-sans flex items-center justify-center select-none leading-none`} style={{ fontSize: '1.2em' }}>
+    ৳
+  </span>
+);
 
 const StickySearchHeader = ({
   alwaysSticky = false,
@@ -74,14 +81,18 @@ const StickySearchHeader = ({
   const loadSearchState = () => {
     try {
       const saved = localStorage.getItem('searchState');
+      const isHomePage = window.location.pathname === '/';
       if (saved) {
         const parsed = JSON.parse(saved);
         return {
-          location: parsed.location || '',
-          checkIn: parsed.checkIn ? new Date(parsed.checkIn) : null,
-          checkOut: parsed.checkOut ? new Date(parsed.checkOut) : null,
+          location: isHomePage ? '' : (parsed.location || ''),
+          checkIn: (!isHomePage && parsed.checkIn) ? new Date(parsed.checkIn) : null,
+          checkOut: (!isHomePage && parsed.checkOut) ? new Date(parsed.checkOut) : null,
           guests: parsed.guests || 1,
-          propertyType: parsed.propertyType || ''
+          propertyType: parsed.propertyType || '',
+          monthlySearchMode: parsed.monthlySearchMode || 'duration',
+          moveInDate: (!isHomePage && parsed.moveInDate) ? new Date(parsed.moveInDate) : null,
+          durationMonths: parsed.durationMonths || 1
         };
       }
     } catch (error) {
@@ -92,12 +103,47 @@ const StickySearchHeader = ({
       checkIn: null,
       checkOut: null,
       guests: 1,
-      propertyType: ''
+      propertyType: '',
+      monthlySearchMode: 'duration',
+      moveInDate: null,
+      durationMonths: 1
     };
   };
 
   const [searchData, setSearchData] = useState(loadSearchState);
   const [activePropertyType, setActivePropertyType] = useState(initialPropertyType || searchData.propertyType || '');
+
+  // Google Places Autocomplete search hook integration
+  const { placePredictions, handlePlaceSelect } = useLocationAutocomplete(
+    searchData.location,
+    activePropertyType,
+    ({ location, latitude, longitude }) => {
+      setSearchData(prev => {
+        const updated = {
+          ...prev,
+          location,
+          latitude,
+          longitude
+        };
+        
+        // Save to localStorage for persistence
+        const searchState = {
+          ...updated,
+          checkIn: prev.checkIn ? formatDateLocal(prev.checkIn) : null,
+          checkOut: prev.checkOut ? formatDateLocal(prev.checkOut) : null,
+          propertyType: activePropertyType
+        };
+        localStorage.setItem('searchState', JSON.stringify(searchState));
+        window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
+        
+        return updated;
+      });
+
+      if (location) {
+        setMobileSearchStep('dates');
+      }
+    }
+  );
   
   // Sync activePropertyType with prop updates
   useEffect(() => {
@@ -205,6 +251,8 @@ const StickySearchHeader = ({
         imgSrc = '/images/nav-icon-hotel.png';
       } else if (normalized.includes('flight')) {
         imgSrc = '/images/flight.png';
+      } else if (normalized.includes('monthly') || normalized.includes('rent')) {
+        imgSrc = '/images/nav-icon-monthly.png';
       }
     }
 
@@ -311,8 +359,8 @@ const StickySearchHeader = ({
         { name: 'Bookings', path: '/admin/bookings', icon: FiBookOpen },
         { name: 'Reviews', path: '/admin/reviews', icon: FiHeart },
         { name: 'Analytics', path: '/admin/analytics', icon: FiSettings },
-        { name: 'Accounting', path: '/admin/accounting', icon: FiDollarSign },
-        { name: 'Earnings', path: '/admin/earnings', icon: FiDollarSign },
+        { name: 'Accounting', path: '/admin/accounting', icon: TakaIcon },
+        { name: 'Earnings', path: '/admin/earnings', icon: TakaIcon },
         { name: 'Settings', path: '/admin/settings', icon: FiSettings },
       ];
     } else if (isPropertyOwner()) {
@@ -322,7 +370,7 @@ const StickySearchHeader = ({
         { name: 'Bookings', path: '/property-owner/bookings', icon: FiBookOpen },
         { name: 'Calendar Sync', path: '/property-owner/calendar', icon: FiCalendar },
         { name: 'Analytics', path: '/property-owner/analytics', icon: FiSettings },
-        { name: 'Earnings', path: '/property-owner/earnings', icon: FiDollarSign },
+        { name: 'Earnings', path: '/property-owner/earnings', icon: TakaIcon },
         { name: 'Profile', path: '/property-owner/profile', icon: FiUser },
       ];
     } else if (isAuthenticated) {
@@ -352,9 +400,60 @@ const StickySearchHeader = ({
     return `${year}-${month}-${day}`;
   };
 
+  const calculateCheckOutDate = (startDate, months) => {
+    if (!startDate) return null;
+    const d = new Date(startDate);
+    d.setMonth(d.getMonth() + parseInt(months));
+    return d;
+  };
+
+  const handleNearbyClick = (e) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    if (navigator.geolocation) {
+      setSearchData(prev => ({ ...prev, location: 'Locating...' }));
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          setSearchData(prev => ({
+            ...prev,
+            location: 'Nearby',
+            latitude: lat,
+            longitude: lng
+          }));
+          
+          // Save to localStorage for persistence
+          const searchState = {
+            ...searchData,
+            location: 'Nearby',
+            latitude: lat,
+            longitude: lng,
+            checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
+            checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
+            guests: searchData.guests,
+            propertyType: activePropertyType
+          };
+          localStorage.setItem('searchState', JSON.stringify(searchState));
+          setDesktopActiveSection('dates');
+        },
+        (error) => {
+          console.error("Geolocation error:", error);
+          setSearchData(prev => ({ ...prev, location: 'Nearby' }));
+          setDesktopActiveSection('dates');
+        }
+      );
+    } else {
+      setSearchData(prev => ({ ...prev, location: 'Nearby' }));
+      setDesktopActiveSection('dates');
+    }
+  };
+
   const handleSearch = (e) => {
     e.preventDefault();
     const params = new URLSearchParams();
+    const isMonthly = activePropertyType === 'monthly rent' || (activePropertyType && activePropertyType.includes('monthly'));
 
     const extractCode = (val) => {
       if (!val) return '';
@@ -374,9 +473,29 @@ const StickySearchHeader = ({
 
       if (flightSearchData.flightClass) params.append('class', flightSearchData.flightClass);
     } else {
-      if (searchData.location) params.append('city', searchData.location);
-      if (searchData.checkIn) params.append('check_in_date', formatDateLocal(searchData.checkIn));
-      if (searchData.checkOut) params.append('check_out_date', formatDateLocal(searchData.checkOut));
+      if (searchData.latitude && searchData.longitude) {
+        params.append('city', searchData.location || '');
+        params.append('latitude', searchData.latitude);
+        params.append('longitude', searchData.longitude);
+      } else if (searchData.location) {
+        params.append('city', searchData.location);
+      }
+      if (isMonthly) {
+        params.append('booking_type', 'monthly');
+        if (searchData.monthlySearchMode === 'duration') {
+          if (searchData.moveInDate) {
+            params.append('check_in_date', formatDateLocal(searchData.moveInDate));
+            const computedCheckOut = calculateCheckOutDate(searchData.moveInDate, searchData.durationMonths || 1);
+            params.append('check_out_date', formatDateLocal(computedCheckOut));
+          }
+        } else {
+          if (searchData.checkIn) params.append('check_in_date', formatDateLocal(searchData.checkIn));
+          if (searchData.checkOut) params.append('check_out_date', formatDateLocal(searchData.checkOut));
+        }
+      } else {
+        if (searchData.checkIn) params.append('check_in_date', formatDateLocal(searchData.checkIn));
+        if (searchData.checkOut) params.append('check_out_date', formatDateLocal(searchData.checkOut));
+      }
       if (searchData.guests) params.append('min_guests', searchData.guests);
     }
 
@@ -384,13 +503,19 @@ const StickySearchHeader = ({
 
     // Save search state to localStorage for persistence
     const searchState = {
+      ...searchData,
       location: searchData.location,
+      latitude: searchData.latitude || null,
+      longitude: searchData.longitude || null,
       checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
       checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
       guests: searchData.guests,
       propertyType: activePropertyType,
       flightSearchData: flightSearchData,
-      tripType: flightSearchData.tripType
+      tripType: flightSearchData.tripType,
+      monthlySearchMode: searchData.monthlySearchMode,
+      moveInDate: searchData.moveInDate ? formatDateLocal(searchData.moveInDate) : null,
+      durationMonths: searchData.durationMonths
     };
     localStorage.setItem('searchState', JSON.stringify(searchState));
 
@@ -429,20 +554,25 @@ const StickySearchHeader = ({
       }
     }
 
-    const parsedCheckIn = initialCheckInDate ? new Date(initialCheckInDate) : (parsedSaved?.checkIn ? new Date(parsedSaved.checkIn) : null);
-    const parsedCheckOut = initialCheckOutDate ? new Date(initialCheckOutDate) : (parsedSaved?.checkOut ? new Date(parsedSaved.checkOut) : null);
+    const isHomePage = location.pathname === '/';
+    const parsedCheckIn = initialCheckInDate ? new Date(initialCheckInDate) : ((!isHomePage && parsedSaved?.checkIn) ? new Date(parsedSaved.checkIn) : null);
+    const parsedCheckOut = initialCheckOutDate ? new Date(initialCheckOutDate) : ((!isHomePage && parsedSaved?.checkOut) ? new Date(parsedSaved.checkOut) : null);
+    const parsedMoveIn = (!isHomePage && parsedSaved?.moveInDate) ? new Date(parsedSaved.moveInDate) : null;
 
     setSearchData({
-      location: initialLocation || parsedSaved?.location || '',
+      location: isHomePage ? '' : (initialLocation || parsedSaved?.location || ''),
       checkIn: parsedCheckIn,
       checkOut: parsedCheckOut,
-      guests: initialGuests ? parseInt(initialGuests) : (parsedSaved?.guests || 1)
+      guests: isHomePage ? 1 : (initialGuests ? parseInt(initialGuests) : (parsedSaved?.guests || 1)),
+      monthlySearchMode: parsedSaved?.monthlySearchMode || 'duration',
+      moveInDate: parsedMoveIn,
+      durationMonths: parsedSaved?.durationMonths || 1
     });
 
     if (initialPropertyType !== undefined) {
       setActivePropertyType(initialPropertyType);
     }
-  }, [initialLocation, initialCheckInDate, initialCheckOutDate, initialGuests, initialPropertyType]);
+  }, [initialLocation, initialCheckInDate, initialCheckOutDate, initialGuests, initialPropertyType, location.pathname]);
 
   // Listen for search state changes from other components (Navbar, Home)
   useEffect(() => {
@@ -452,21 +582,29 @@ const StickySearchHeader = ({
         try {
           const parsed = JSON.parse(saved);
           setSearchData(prev => {
+            const isHomePage = window.location.pathname === '/';
             // Only update if different to avoid unnecessary re-renders
-            const newCheckIn = parsed.checkIn ? new Date(parsed.checkIn) : null;
-            const newCheckOut = parsed.checkOut ? new Date(parsed.checkOut) : null;
-            const newLocation = parsed.location || '';
-            const newGuests = parsed.guests || 1;
+            const newCheckIn = (!isHomePage && parsed.checkIn) ? new Date(parsed.checkIn) : null;
+            const newCheckOut = (!isHomePage && parsed.checkOut) ? new Date(parsed.checkOut) : null;
+            const newLocation = isHomePage ? '' : (parsed.location || '');
+            const newGuests = isHomePage ? 1 : (parsed.guests || 1);
+            const newMoveInDate = (!isHomePage && parsed.moveInDate) ? new Date(parsed.moveInDate) : null;
 
             if (prev.location !== newLocation ||
               prev.checkIn?.getTime() !== newCheckIn?.getTime() ||
               prev.checkOut?.getTime() !== newCheckOut?.getTime() ||
-              prev.guests !== newGuests) {
+              prev.guests !== newGuests ||
+              prev.monthlySearchMode !== parsed.monthlySearchMode ||
+              prev.moveInDate?.getTime() !== newMoveInDate?.getTime() ||
+              prev.durationMonths !== parsed.durationMonths) {
               return {
                 location: newLocation,
                 checkIn: newCheckIn,
                 checkOut: newCheckOut,
-                guests: newGuests
+                guests: newGuests,
+                monthlySearchMode: parsed.monthlySearchMode || 'duration',
+                moveInDate: newMoveInDate,
+                durationMonths: parsed.durationMonths || 1
               };
             }
             return prev;
@@ -653,7 +791,11 @@ const StickySearchHeader = ({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  navigate(-1);
+                  if (window.history.length > 2) {
+                    navigate(-1);
+                  } else {
+                    navigate('/');
+                  }
                 }}
                 className="p-1 sm:p-2 rounded-full bg-white border border-gray-200 shadow hover:bg-gray-50 transition"
                 aria-label="Go back"
@@ -715,7 +857,7 @@ const StickySearchHeader = ({
                 >
                   <FiX className="w-4 h-4 text-black" />
                 </button>
-                <div ref={mobilePropertyTypesRef} className="flex items-center justify-center gap-6 overflow-x-auto scrollbar-hide px-10 w-full">
+                <div ref={mobilePropertyTypesRef} className="flex items-center justify-center gap-3 overflow-x-auto scrollbar-hide px-10 w-full">
                   {/* All Property Tab */}
                   <button
                     onClick={() => handlePropertyTypeClick('')}
@@ -819,35 +961,76 @@ const StickySearchHeader = ({
                             ))}
                           </div>
                         ) : (
-                          locationSuggestionsData && locationSuggestionsData.length > 0 && (
+                          searchData.location && searchData.location.trim().length >= 2 && placePredictions.length > 0 ? (
                             <>
-                              <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Suggested destinations</div>
-                              <div className="space-y-4">
-                                <button className="flex items-center gap-4 w-full text-left" onClick={() => handleInputChange('location', 'Nearby')}>
-                                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center"><FiMapPin className="w-5 h-5" /></div>
-                                  <div className="font-semibold text-gray-700">Nearby</div>
-                                </button>
-                                {locationSuggestionsData.slice(0, 5).map((loc, idx) => (
+                              <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Search locations</div>
+                              <div className="space-y-3.5 mt-2">
+                                {placePredictions.map((pred, idx) => (
                                   <button
-                                    key={idx}
+                                    key={pred.place_id || idx}
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      handleInputChange('location', loc.city);
-                                      setMobileSearchStep('dates');
+                                      handlePlaceSelect(pred);
                                     }}
-                                    className="flex items-center gap-4 w-full text-left"
+                                    className="flex items-center gap-3.5 w-full text-left group"
                                   >
-                                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                                      <FiMapPin className="w-5 h-5 text-gray-500" />
+                                    <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 text-gray-500 group-hover:bg-pink-100 group-hover:text-[#E41D57] transition-all duration-300">
+                                      <FiMapPin className="w-5 h-5" />
                                     </div>
-                                    <div>
-                                      <div className="font-semibold text-gray-900">{loc.city}</div>
-                                      <div className="text-sm text-gray-500">{loc.country}</div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-bold text-gray-900 group-hover:text-black transition-colors truncate">
+                                        {pred.structured_formatting?.main_text || pred.description}
+                                      </div>
+                                      <div className="text-xs text-gray-400 group-hover:text-gray-500 transition-colors truncate mt-0.5">
+                                        {pred.structured_formatting?.secondary_text || ''}
+                                      </div>
                                     </div>
                                   </button>
                                 ))}
                               </div>
                             </>
+                          ) : (
+                            locationSuggestionsData && locationSuggestionsData.length > 0 && (
+                              <>
+                                <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Suggested destinations</div>
+                                <div className="space-y-3.5 mt-2">
+                                  <button className="flex items-center gap-3.5 w-full text-left group" onClick={handleNearbyClick}>
+                                    <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 text-gray-500 group-hover:bg-pink-100 group-hover:text-[#E41D57] transition-all duration-300">
+                                      <FiMapPin className="w-5 h-5" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-bold text-gray-900 group-hover:text-black transition-colors">Nearby</div>
+                                      <div className="text-[10px] text-gray-400 group-hover:text-gray-500 transition-colors italic font-normal mt-0.5">Find what's around you using GPS</div>
+                                    </div>
+                                  </button>
+                                  {locationSuggestionsData.slice(0, 5).map((loc, idx) => (
+                                    <button
+                                      key={idx}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSearchData(prev => ({
+                                          ...prev,
+                                          location: loc.city,
+                                          latitude: null,
+                                          longitude: null
+                                        }));
+                                        setMobileSearchStep('dates');
+                                      }}
+                                      className="flex items-center gap-3.5 w-full text-left group"
+                                    >
+                                      <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 text-gray-500 group-hover:bg-pink-100 group-hover:text-[#E41D57] transition-all duration-300">
+                                        <FiMapPin className="w-5 h-5" />
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-bold text-gray-900 group-hover:text-black transition-colors truncate">{loc.city}</div>
+                                        <div className="text-xs text-gray-400 group-hover:text-gray-500 transition-colors truncate mt-0.5">{loc.country}</div>
+                                        <div className="text-[10px] text-gray-400 group-hover:text-gray-500 transition-colors italic font-normal mt-0.5 truncate">{getLocationSubtitle(loc.city)}</div>
+                                      </div>
+                                    </button>
+                                  ))}
+                                </div>
+                              </>
+                            )
                           )
                         )}
                       </div>
@@ -925,7 +1108,13 @@ const StickySearchHeader = ({
                 >
                   {mobileSearchStep === 'dates' ? (
                     <div className="animate-fadeIn">
-                      <h3 className="text-2xl font-bold text-black mb-4">When's your trip?</h3>
+                      <h3 className="text-2xl font-bold text-black mb-4">
+                        {activePropertyType === 'flight'
+                          ? "When's your trip?"
+                          : (activePropertyType === 'monthly rent' || (activePropertyType && activePropertyType.includes('monthly')))
+                            ? 'Select move-in & duration'
+                            : "When's your trip?"}
+                      </h3>
 
                       {activePropertyType === 'flight' && (
                         <div className="flex bg-gray-100 p-1 rounded-lg mb-4">
@@ -942,35 +1131,108 @@ const StickySearchHeader = ({
                         </div>
                       )}
 
-                      <DatePicker
-                        selected={activePropertyType === 'flight' ? flightSearchData.departDate : searchData.checkIn}
-                        onChange={(dates) => {
-                          if (activePropertyType === 'flight') {
-                            if (flightSearchData.tripType === 'roundTrip') {
-                              const [start, end] = dates;
-                              setFlightSearchData(prev => ({ ...prev, departDate: start, returnDate: end }));
-                              if (end) setTimeout(() => setMobileSearchStep('guests'), 300);
+                      {(activePropertyType === 'monthly rent' || (activePropertyType && activePropertyType.includes('monthly'))) ? (
+                        <div className="space-y-4 animate-fadeIn" onClick={(e) => e.stopPropagation()}>
+                          {/* Mode Toggle */}
+                          <div className="flex bg-gray-100 p-1 rounded-xl">
+                            <button
+                              type="button"
+                              onClick={() => handleInputChange('monthlySearchMode', 'duration')}
+                              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${searchData.monthlySearchMode === 'duration' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                            >
+                              Duration (Months)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleInputChange('monthlySearchMode', 'range')}
+                              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${searchData.monthlySearchMode === 'range' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                            >
+                              Custom Range
+                            </button>
+                          </div>
+
+                          {searchData.monthlySearchMode === 'duration' ? (
+                            <div className="space-y-4">
+                              <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Move-in Date</label>
+                                <DatePicker
+                                  selected={searchData.moveInDate || new Date()}
+                                  onChange={(date) => handleInputChange('moveInDate', date)}
+                                  minDate={new Date()}
+                                  inline
+                                  calendarClassName="mobile-date-picker-calendar w-full"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Stay Duration</label>
+                                <div className="flex gap-2 overflow-x-auto pb-2">
+                                  {[1, 2, 3, 4, 5, 6, 9, 12].map((m) => (
+                                    <button
+                                      key={m}
+                                      type="button"
+                                      onClick={() => {
+                                        handleInputChange('durationMonths', m);
+                                        setTimeout(() => setMobileSearchStep('guests'), 300);
+                                      }}
+                                      className={`px-4 py-2 text-sm font-bold rounded-xl whitespace-nowrap border ${searchData.durationMonths === m ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'}`}
+                                    >
+                                      {m} {m === 1 ? 'Month' : 'Months'}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <DatePicker
+                              selected={searchData.checkIn}
+                              onChange={(dates) => {
+                                const [start, end] = dates;
+                                handleInputChange('checkIn', start);
+                                handleInputChange('checkOut', end);
+                                if (end) {
+                                  setTimeout(() => setMobileSearchStep('guests'), 300);
+                                }
+                              }}
+                              startDate={searchData.checkIn}
+                              endDate={searchData.checkOut}
+                              selectsRange
+                              minDate={new Date()}
+                              inline
+                              calendarClassName="mobile-date-picker-calendar w-full"
+                            />
+                          )}
+                        </div>
+                      ) : (
+                        <DatePicker
+                          selected={activePropertyType === 'flight' ? flightSearchData.departDate : searchData.checkIn}
+                          onChange={(dates) => {
+                            if (activePropertyType === 'flight') {
+                              if (flightSearchData.tripType === 'roundTrip') {
+                                const [start, end] = dates;
+                                setFlightSearchData(prev => ({ ...prev, departDate: start, returnDate: end }));
+                                if (end) setTimeout(() => setMobileSearchStep('guests'), 300);
+                              } else {
+                                setFlightSearchData(prev => ({ ...prev, departDate: dates, returnDate: null }));
+                                setTimeout(() => setMobileSearchStep('guests'), 300);
+                              }
                             } else {
-                              setFlightSearchData(prev => ({ ...prev, departDate: dates, returnDate: null }));
-                              setTimeout(() => setMobileSearchStep('guests'), 300);
+                              const [start, end] = dates;
+                              handleInputChange('checkIn', start);
+                              handleInputChange('checkOut', end);
+                              if (end) {
+                                setTimeout(() => setMobileSearchStep('guests'), 300);
+                              }
                             }
-                          } else {
-                            const [start, end] = dates;
-                            handleInputChange('checkIn', start);
-                            handleInputChange('checkOut', end);
-                            if (end) {
-                              setTimeout(() => setMobileSearchStep('guests'), 300);
-                            }
-                          }
-                        }}
-                        startDate={activePropertyType === 'flight' ? flightSearchData.departDate : searchData.checkIn}
-                        endDate={activePropertyType === 'flight' ? flightSearchData.returnDate : searchData.checkOut}
-                        selectsRange={activePropertyType === 'flight' ? flightSearchData.tripType === 'roundTrip' : true}
-                        minDate={new Date()}
-                        inline
-                        monthsShown={1}
-                        className="w-full"
-                      />
+                          }}
+                          startDate={activePropertyType === 'flight' ? flightSearchData.departDate : searchData.checkIn}
+                          endDate={activePropertyType === 'flight' ? flightSearchData.returnDate : searchData.checkOut}
+                          selectsRange={activePropertyType === 'flight' ? flightSearchData.tripType === 'roundTrip' : true}
+                          minDate={new Date()}
+                          inline
+                          monthsShown={1}
+                          className="w-full"
+                        />
+                      )}
                     </div>
                   ) : (
                     <div className="flex justify-between items-center">
@@ -978,7 +1240,13 @@ const StickySearchHeader = ({
                       <span className="text-black font-bold text-sm">
                         {activePropertyType === 'flight'
                           ? (flightSearchData.departDate ? `${formatDateDisplay(flightSearchData.departDate)}${flightSearchData.returnDate ? ' - ' + formatDateDisplay(flightSearchData.returnDate) : ''}` : 'Add dates')
-                          : (getDateRangeDisplay() || 'Add dates')}
+                          : (activePropertyType === 'monthly rent' || (activePropertyType && activePropertyType.includes('monthly')))
+                            ? (searchData.monthlySearchMode === 'duration'
+                                ? (searchData.moveInDate
+                                    ? `${searchData.moveInDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} (${searchData.durationMonths || 1} ${searchData.durationMonths === 1 ? 'month' : 'months'})`
+                                    : 'Add date & duration')
+                                : (getDateRangeDisplay() || 'Add dates'))
+                            : (getDateRangeDisplay() || 'Add dates')}
                       </span>
                     </div>
                   )}
@@ -1528,7 +1796,7 @@ const StickySearchHeader = ({
           {desktopActiveSection && (
             <div className="hidden md:block border-t border-gray-100 bg-white animate-fadeIn">
               <div className="max-w-7xl mx-auto px-4 lg:px-8">
-                <div ref={propertyTypesStickyRef} className="flex items-center gap-8 py-3 overflow-x-auto scrollbar-hide">
+                <div ref={propertyTypesStickyRef} className="flex items-center gap-4 py-3 overflow-x-auto scrollbar-hide">
                   {/* All Property Tab */}
                   <button
                     onClick={() => handlePropertyTypeClick('')}

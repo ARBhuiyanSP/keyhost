@@ -36,3 +36,23 @@ export const formatPrice = (price) => {
         minimumFractionDigits: 0
     });
 };
+
+/**
+ * Gets a contextual subtitle/description for a given city to display in suggestions.
+ * 
+ * @param {string} city - The city name
+ * @returns {string} - The descriptive subtitle
+ */
+export const getLocationSubtitle = (city) => {
+    if (!city || typeof city !== 'string') return 'Popular curated destination';
+    const c = city.toLowerCase().trim();
+    if (c.includes('dhaka')) return 'Explore the rich history, museums, and food';
+    if (c.includes("cox's bazar") || c.includes('coxs bazar') || c.includes('cox')) return 'World\'s longest natural sandy beach';
+    if (c.includes('sylhet')) return 'Enjoy rolling tea gardens and swamp forests';
+    if (c.includes('chittagong') || c.includes('chattogram')) return 'Green hills, scenic lakes, and historic ports';
+    if (c.includes('sajek')) return 'Relax above the clouds in the hills';
+    if (c.includes('kuala lumpur') || c.includes('kuala') || c.includes('lumpur')) return 'For sights like Petronas Twin Towers';
+    if (c.includes('bangkok')) return 'Bustling street life and shrines';
+    if (c.includes('dubai')) return 'Popular luxury shopping and architecture';
+    return 'Popular curated destination to stay';
+};

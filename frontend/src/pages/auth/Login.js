@@ -101,10 +101,13 @@ const Login = () => {
           try {
             const bookingData = JSON.parse(pendingBooking);
             const params = new URLSearchParams();
+            if (bookingData.booking_type) params.set('booking_type', bookingData.booking_type);
             if (bookingData.check_in_date) params.set('check_in_date', bookingData.check_in_date);
             if (bookingData.check_out_date) params.set('check_out_date', bookingData.check_out_date);
             if (bookingData.number_of_guests) params.set('guests', bookingData.number_of_guests.toString());
             if (bookingData.hms_room_id) params.set('hms_room_id', bookingData.hms_room_id.toString());
+            if (bookingData.months_count) params.set('duration_months', bookingData.months_count.toString());
+            if (bookingData.extra_days) params.set('extra_days', bookingData.extra_days.toString());
             const queryString = params.toString();
 
             const bookingUrl = `/guest/booking/new/${bookingData.property_id}${queryString ? `?${queryString}` : ''}`;
@@ -182,10 +185,13 @@ const Login = () => {
           // Keep localStorage data intact - GuestBooking page will read from there
           // Just redirect with URL params for backup
           const params = new URLSearchParams();
+          if (bookingData.booking_type) params.set('booking_type', bookingData.booking_type);
           if (bookingData.check_in_date) params.set('check_in_date', bookingData.check_in_date);
           if (bookingData.check_out_date) params.set('check_out_date', bookingData.check_out_date);
           if (bookingData.number_of_guests) params.set('guests', bookingData.number_of_guests.toString());
           if (bookingData.hms_room_id) params.set('hms_room_id', bookingData.hms_room_id.toString());
+          if (bookingData.months_count) params.set('duration_months', bookingData.months_count.toString());
+          if (bookingData.extra_days) params.set('extra_days', bookingData.extra_days.toString());
           const queryString = params.toString();
 
           const bookingUrl = `/guest/booking/new/${bookingData.property_id}${queryString ? `?${queryString}` : ''}`;

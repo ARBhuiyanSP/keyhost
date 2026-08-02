@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FiMail, FiPhone, FiMapPin, FiSend, FiMessageCircle, FiGlobe, FiClock } from 'react-icons/fi';
 import useSettingsStore from '../store/settingsStore';
+import api from '../utils/api';
 
 const Contact = () => {
     const { settings } = useSettingsStore();
@@ -18,24 +19,16 @@ const Contact = () => {
         setIsSubmitting(true);
         
         try {
-            const response = await fetch('/api/contact', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(formData)
-            });
+            const response = await api.post('/contact', formData);
             
-            const data = await response.json();
-            
-            if (response.ok && data.success) {
+            if (response.data?.success) {
                 setStatus('Message sent successfully! We will get back to you shortly.');
                 setFormData({ name: '', email: '', subject: '', message: '' });
             } else {
-                setStatus(data.message || 'Failed to send message. Please try again.');
+                setStatus(response.data?.message || 'Failed to send message. Please try again.');
             }
         } catch (error) {
-            setStatus('An error occurred. Please try again later.');
+            setStatus(error.response?.data?.message || 'An error occurred. Please try again later.');
         } finally {
             setIsSubmitting(false);
             setTimeout(() => setStatus(''), 5000);

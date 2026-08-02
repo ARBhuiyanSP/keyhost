@@ -16,7 +16,7 @@ import { sanitizeText } from '../../utils/textUtils';
 import { getStatesForCountry, getCitiesForState } from '../../utils/locationUtils';
 import useSettingsStore from '../../store/settingsStore';
 import usePlacesAutocomplete, { getGeocode, getLatLng } from 'use-places-autocomplete';
-import { useJsApiLoader } from '@react-google-maps/api';
+import useGoogleMapsLoader from '../../hooks/useGoogleMapsLoader';
 
 const libraries = ['places'];
 
@@ -32,6 +32,7 @@ const AddProperty = () => {
   const [selectedAmenities, setSelectedAmenities] = useState([]);
   const [formData, setFormData] = useState({
     title: '',
+    internal_name: '',
     slug: '',
     description: '',
     property_type: 'room',
@@ -56,7 +57,22 @@ const AddProperty = () => {
     is_non_refundable: false,
     is_hms_enabled: false,
     is_single_unit: true,
-    auto_accept_bookings: false
+    auto_accept_bookings: false,
+    monthly_rent_enabled: false,
+    monthly_stay_type: 'both',
+    monthly_min_stay_nights: 30,
+    monthly_rent_amount: '',
+    monthly_advance_amount: '',
+    monthly_furnished: true,
+    monthly_wifi_included: false,
+    monthly_electricity_included: false,
+    monthly_gas_included: false,
+    monthly_water_included: false,
+    monthly_cleaning_included: false,
+    monthly_service_charge_included: false,
+    monthly_inclusions_notes: '',
+    monthly_security_deposit: '',
+    monthly_cancellation_policy: 'moderate'
   });
 
   // Track whether user has manually edited the slug
@@ -93,11 +109,7 @@ const AddProperty = () => {
 
   const hmsStatus = profileData?.hms_status || 'inactive';
 
-  const { isLoaded } = useJsApiLoader({
-    id: 'google-map-script',
-    googleMapsApiKey: settings?.google_maps_api_key || '',
-    libraries: libraries,
-  });
+  const { isLoaded } = useGoogleMapsLoader();
 
   const {
     ready,
@@ -251,6 +263,7 @@ const AddProperty = () => {
       if (formData.title.length > 2) {
         const draftPayload = {
           title: formData.title,
+          internal_name: formData.internal_name || null,
           slug: formData.slug || undefined,
           description: formData.description,
           property_type: (formData.property_type || 'room').toLowerCase(),
@@ -281,6 +294,22 @@ const AddProperty = () => {
           is_single_unit: formData.is_single_unit,
           auto_accept_bookings: formData.auto_accept_bookings,
           amenities: selectedAmenities,
+          // Monthly Stay Settings
+          monthly_rent_enabled: formData.monthly_rent_enabled ? 1 : 0,
+          monthly_stay_type: formData.monthly_stay_type,
+          monthly_min_stay_nights: parseInt(formData.monthly_min_stay_nights) || 30,
+          monthly_rent_amount: formData.monthly_rent_enabled ? (parseFloat(formData.monthly_rent_amount) || null) : null,
+          monthly_advance_amount: formData.monthly_rent_enabled ? (parseFloat(formData.monthly_advance_amount) || null) : null,
+          monthly_furnished: formData.monthly_furnished ? 1 : 0,
+          monthly_wifi_included: formData.monthly_wifi_included ? 1 : 0,
+          monthly_electricity_included: formData.monthly_electricity_included ? 1 : 0,
+          monthly_gas_included: formData.monthly_gas_included ? 1 : 0,
+          monthly_water_included: formData.monthly_water_included ? 1 : 0,
+          monthly_cleaning_included: formData.monthly_cleaning_included ? 1 : 0,
+          monthly_service_charge_included: formData.monthly_service_charge_included ? 1 : 0,
+          monthly_inclusions_notes: formData.monthly_inclusions_notes || null,
+          monthly_security_deposit: formData.monthly_rent_enabled ? (parseFloat(formData.monthly_security_deposit) || null) : null,
+          monthly_cancellation_policy: formData.monthly_cancellation_policy || 'moderate',
           // NOTE: images are NOT included in auto-save - only sent on final submit
           // This prevents huge payloads being sent every 1.5s causing timeouts
           is_draft: true
@@ -344,7 +373,8 @@ const AddProperty = () => {
     setFormData(prev => {
       const updated = {
         ...prev,
-        [name]: type === 'number' ? parseFloat(value) || 0 : sanitizedValue
+        // For number inputs: store as raw string so user can freely type (parse happens at submit)
+        [name]: type === 'number' ? value : sanitizedValue
       };
       // Auto-generate slug from title if user hasn't manually edited it
       if (name === 'title' && !slugManuallyEdited.current) {
@@ -358,6 +388,14 @@ const AddProperty = () => {
       }
       return updated;
     });
+  };
+
+  // Clear "0" from numeric field when user focuses on it, so they can type directly
+  const handleNumericFocus = (e) => {
+    const { name, value } = e.target;
+    if (value === '0' || value === 0) {
+      setFormData(prev => ({ ...prev, [name]: '' }));
+    }
   };
 
   // Get icon for amenity based on its name
@@ -472,6 +510,7 @@ const AddProperty = () => {
     // Prepare data - convert undefined to null for optional fields
     const propertyData = {
       title: formData.title,
+      internal_name: formData.internal_name || null,
       slug: formData.slug || undefined,
       description: formData.description,
       property_type: (formData.property_type || 'room').toLowerCase(),
@@ -502,6 +541,22 @@ const AddProperty = () => {
       is_single_unit: formData.is_single_unit,
       auto_accept_bookings: formData.auto_accept_bookings,
       amenities: selectedAmenities,
+      // Monthly Stay Settings
+      monthly_rent_enabled: formData.monthly_rent_enabled ? 1 : 0,
+      monthly_stay_type: formData.monthly_stay_type,
+      monthly_min_stay_nights: parseInt(formData.monthly_min_stay_nights) || 30,
+      monthly_rent_amount: formData.monthly_rent_enabled ? (parseFloat(formData.monthly_rent_amount) || null) : null,
+      monthly_advance_amount: formData.monthly_rent_enabled ? (parseFloat(formData.monthly_advance_amount) || null) : null,
+      monthly_furnished: formData.monthly_furnished ? 1 : 0,
+      monthly_wifi_included: formData.monthly_wifi_included ? 1 : 0,
+      monthly_electricity_included: formData.monthly_electricity_included ? 1 : 0,
+      monthly_gas_included: formData.monthly_gas_included ? 1 : 0,
+      monthly_water_included: formData.monthly_water_included ? 1 : 0,
+      monthly_cleaning_included: formData.monthly_cleaning_included ? 1 : 0,
+      monthly_service_charge_included: formData.monthly_service_charge_included ? 1 : 0,
+      monthly_inclusions_notes: formData.monthly_inclusions_notes || null,
+      monthly_security_deposit: formData.monthly_rent_enabled ? (parseFloat(formData.monthly_security_deposit) || null) : null,
+      monthly_cancellation_policy: formData.monthly_cancellation_policy || 'moderate',
       images: images.map(img => img.preview), // Compressed base64 strings
       is_final_submit: true
     };
@@ -539,6 +594,17 @@ const AddProperty = () => {
     } else if (currentStep === 4) {
       if (!formData.base_price || !formData.check_in_time || !formData.check_out_time) {
         showError('Please fill in all required pricing details'); return;
+      }
+      if (formData.monthly_rent_enabled) {
+        if (!formData.monthly_rent_amount || parseFloat(formData.monthly_rent_amount) <= 0) {
+          showError('Please enter a valid monthly rent amount'); return;
+        }
+        if (!formData.monthly_advance_amount || parseFloat(formData.monthly_advance_amount) <= 0) {
+          showError('Please enter a valid monthly advance payment amount'); return;
+        }
+        if (!formData.monthly_min_stay_nights || parseInt(formData.monthly_min_stay_nights) < 30) {
+          showError('Minimum stay for monthly renting must be at least 30 nights'); return;
+        }
       }
     }
     if (currentStep < totalSteps) {
@@ -672,6 +738,24 @@ const AddProperty = () => {
                       placeholder="e.g. Cozy 2BR Apartment in Gulshan"
                       required
                     />
+                  </div>
+
+                  {/* Internal Name Field */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Internal Name <span className="text-gray-400 font-normal text-xs">(optional – used in host SMS notifications only)</span>
+                    </label>
+                    <input
+                      type="text"
+                      name="internal_name"
+                      value={formData.internal_name}
+                      onChange={handleInputChange}
+                      className="input-field"
+                      placeholder="e.g. Gulshan Flat 4B (short name for your own reference)"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">
+                      If set, this name will appear in SMS alerts sent to you (the host) instead of the full public title. Guests will always see the public title.
+                    </p>
                   </div>
 
                   {/* SEO Slug Field */}
@@ -997,6 +1081,7 @@ const AddProperty = () => {
                       name="bedrooms"
                       value={formData.bedrooms}
                       onChange={handleInputChange}
+                      onFocus={handleNumericFocus}
                       className="input-field"
                       min="0"
                       required
@@ -1012,6 +1097,7 @@ const AddProperty = () => {
                       name="bathrooms"
                       value={formData.bathrooms}
                       onChange={handleInputChange}
+                      onFocus={handleNumericFocus}
                       className="input-field"
                       min="0"
                       required
@@ -1027,6 +1113,7 @@ const AddProperty = () => {
                       name="max_guests"
                       value={formData.max_guests}
                       onChange={handleInputChange}
+                      onFocus={handleNumericFocus}
                       className="input-field"
                       min="1"
                       required
@@ -1056,6 +1143,7 @@ const AddProperty = () => {
                       name="minimum_stay"
                       value={formData.minimum_stay}
                       onChange={handleInputChange}
+                      onFocus={handleNumericFocus}
                       className="input-field"
                       min="1"
                     />
@@ -1099,6 +1187,7 @@ const AddProperty = () => {
                       name="base_price"
                       value={formData.base_price}
                       onChange={handleInputChange}
+                      onFocus={handleNumericFocus}
                       className="input-field"
                       min="0"
                       step="0.01"
@@ -1116,6 +1205,7 @@ const AddProperty = () => {
                       name="cleaning_fee"
                       value={formData.cleaning_fee}
                       onChange={handleInputChange}
+                      onFocus={handleNumericFocus}
                       className="input-field"
                       min="0"
                       step="0.01"
@@ -1132,6 +1222,7 @@ const AddProperty = () => {
                       name="security_deposit"
                       value={formData.security_deposit}
                       onChange={handleInputChange}
+                      onFocus={handleNumericFocus}
                       className="input-field"
                       min="0"
                       step="0.01"
@@ -1148,6 +1239,7 @@ const AddProperty = () => {
                       name="extra_guest_fee"
                       value={formData.extra_guest_fee}
                       onChange={handleInputChange}
+                      onFocus={handleNumericFocus}
                       className="input-field"
                       min="0"
                       step="0.01"
@@ -1198,6 +1290,242 @@ const AddProperty = () => {
                     </div>
                   </label>
                 </div>
+              </div>
+
+              {/* Monthly Stay Settings */}
+              <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center">
+                  <FiClock className="mr-2" />
+                  Monthly Stay Settings
+                </h2>
+
+                <div className="mb-6">
+                  <label className="flex items-start cursor-pointer group">
+                    <div className="flex items-center h-5">
+                      <input
+                        type="checkbox"
+                        name="monthly_rent_enabled"
+                        checked={formData.monthly_rent_enabled}
+                        onChange={(e) => setFormData(prev => ({ ...prev, monthly_rent_enabled: e.target.checked }))}
+                        className="w-5 h-5 text-primary-600 border-gray-300 rounded focus:ring-primary-500 cursor-pointer"
+                      />
+                    </div>
+                    <div className="ml-3">
+                      <span className="text-sm font-bold text-gray-900 group-hover:text-primary-600 transition-colors">Enable Monthly Stay Renting</span>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Enable guests to rent this property on a monthly basis. You must configure a separate monthly rate.
+                      </p>
+                    </div>
+                  </label>
+                </div>
+
+                {formData.monthly_rent_enabled && (
+                  <div className="space-y-6 animate-fadeIn">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Monthly Stay Type *
+                        </label>
+                        <select
+                          name="monthly_stay_type"
+                          value={formData.monthly_stay_type}
+                          onChange={handleInputChange}
+                          className="input-field"
+                          required
+                        >
+                          <option value="both">Short Stay + Monthly Stay</option>
+                          <option value="monthly_only">Monthly Stay Only</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Minimum Monthly Stay (nights) *
+                        </label>
+                        <input
+                          type="number"
+                          name="monthly_min_stay_nights"
+                          value={formData.monthly_min_stay_nights}
+                          onChange={handleInputChange}
+                          onFocus={handleNumericFocus}
+                          className="input-field"
+                          min="30"
+                          placeholder="e.g. 30"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Monthly Rent Amount (BDT) *
+                        </label>
+                        <input
+                          type="number"
+                          name="monthly_rent_amount"
+                          value={formData.monthly_rent_amount}
+                          onChange={handleInputChange}
+                          onFocus={handleNumericFocus}
+                          className="input-field"
+                          min="1"
+                          placeholder="e.g. 80000"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Advance Payment Amount (BDT) *
+                        </label>
+                        <input
+                          type="number"
+                          name="monthly_advance_amount"
+                          value={formData.monthly_advance_amount}
+                          onChange={handleInputChange}
+                          onFocus={handleNumericFocus}
+                          className="input-field"
+                          min="0"
+                          placeholder="e.g. 20000"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Monthly Security Deposit (BDT)
+                        </label>
+                        <input
+                          type="number"
+                          name="monthly_security_deposit"
+                          value={formData.monthly_security_deposit}
+                          onChange={handleInputChange}
+                          onFocus={handleNumericFocus}
+                          className="input-field"
+                          min="0"
+                          placeholder="e.g. 15000"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Monthly Cancellation Policy *
+                        </label>
+                        <select
+                          name="monthly_cancellation_policy"
+                          value={formData.monthly_cancellation_policy}
+                          onChange={handleInputChange}
+                          className="input-field"
+                          required
+                        >
+                          <option value="flexible">Flexible</option>
+                          <option value="moderate">Moderate</option>
+                          <option value="strict">Strict</option>
+                          <option value="custom">Custom (Specified in description)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Rent Inclusions Checklist */}
+                    <div className="pt-4 border-t border-gray-100">
+                      <label className="block text-sm font-bold text-gray-800 mb-3">
+                        Monthly Rent Includes:
+                      </label>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            name="monthly_furnished"
+                            checked={formData.monthly_furnished}
+                            onChange={(e) => setFormData(prev => ({ ...prev, monthly_furnished: e.target.checked }))}
+                            className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                          />
+                          <span className="text-sm text-gray-700">Furnished Apartment</span>
+                        </label>
+
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            name="monthly_wifi_included"
+                            checked={formData.monthly_wifi_included}
+                            onChange={(e) => setFormData(prev => ({ ...prev, monthly_wifi_included: e.target.checked }))}
+                            className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                          />
+                          <span className="text-sm text-gray-700">WiFi Included</span>
+                        </label>
+
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            name="monthly_electricity_included"
+                            checked={formData.monthly_electricity_included}
+                            onChange={(e) => setFormData(prev => ({ ...prev, monthly_electricity_included: e.target.checked }))}
+                            className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                          />
+                          <span className="text-sm text-gray-700">Electricity Included</span>
+                        </label>
+
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            name="monthly_gas_included"
+                            checked={formData.monthly_gas_included}
+                            onChange={(e) => setFormData(prev => ({ ...prev, monthly_gas_included: e.target.checked }))}
+                            className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                          />
+                          <span className="text-sm text-gray-700">Gas Included</span>
+                        </label>
+
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            name="monthly_water_included"
+                            checked={formData.monthly_water_included}
+                            onChange={(e) => setFormData(prev => ({ ...prev, monthly_water_included: e.target.checked }))}
+                            className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                          />
+                          <span className="text-sm text-gray-700">Water Included</span>
+                        </label>
+
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            name="monthly_cleaning_included"
+                            checked={formData.monthly_cleaning_included}
+                            onChange={(e) => setFormData(prev => ({ ...prev, monthly_cleaning_included: e.target.checked }))}
+                            className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                          />
+                          <span className="text-sm text-gray-700">Cleaning Included</span>
+                        </label>
+
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            name="monthly_service_charge_included"
+                            checked={formData.monthly_service_charge_included}
+                            onChange={(e) => setFormData(prev => ({ ...prev, monthly_service_charge_included: e.target.checked }))}
+                            className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                          />
+                          <span className="text-sm text-gray-700">Service Charge Included</span>
+                        </label>
+                      </div>
+
+                      <div className="mt-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Inclusions Notes (e.g. limit on electricity, schedule of cleaning)
+                        </label>
+                        <textarea
+                          name="monthly_inclusions_notes"
+                          value={formData.monthly_inclusions_notes}
+                          onChange={handleInputChange}
+                          rows="3"
+                          className="input-field"
+                          placeholder="e.g. Electricity bill up to BDT 3,000 per month included, cleaning twice a week."
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Check-in/Check-out Times */}

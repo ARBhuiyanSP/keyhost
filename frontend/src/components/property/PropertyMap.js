@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { GoogleMap, useJsApiLoader, OverlayView, Marker } from '@react-google-maps/api';
+import { GoogleMap, OverlayView } from '@react-google-maps/api';
 import { FiStar } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 import useSettingsStore from '../../store/settingsStore';
+import useGoogleMapsLoader from '../../hooks/useGoogleMapsLoader';
+import { getImageUrl } from '../../utils/imageUrl';
 
 const PropertyMap = ({ properties, hoveredPropertyId, onMarkerClick, onMarkerHover, detailView = false }) => {
     const navigate = useNavigate();
@@ -13,10 +15,10 @@ const PropertyMap = ({ properties, hoveredPropertyId, onMarkerClick, onMarkerHov
     const [selectedProperty, setSelectedProperty] = useState(null);
     const [map, setMap] = useState(null);
 
-    const { isLoaded } = useJsApiLoader({
-        id: 'google-map-script',
-        googleMapsApiKey: settings?.google_maps_api_key || '', // Gets the dynamic key from admin settings
-    });
+    const { isLoaded } = useGoogleMapsLoader();
+
+    // Don't render map until we actually have a key & script loaded
+    const mapReady = isLoaded && !!settings?.google_maps_api_key;
 
     // Filter properties with valid lat/lng and map to numbers
     const validProperties = useMemo(() => properties
@@ -101,7 +103,7 @@ const PropertyMap = ({ properties, hoveredPropertyId, onMarkerClick, onMarkerHov
         );
     };
 
-    if (!isLoaded) return <div className="w-full h-full bg-gray-100 animate-pulse flex items-center justify-center text-gray-400">Loading Map...</div>;
+    if (!mapReady) return <div className="w-full h-full bg-gray-100 animate-pulse flex items-center justify-center text-gray-400">Loading Map...</div>;
 
     const mapOptions = {
         disableDefaultUI: false,
@@ -160,7 +162,7 @@ const PropertyMap = ({ properties, hoveredPropertyId, onMarkerClick, onMarkerHov
 
                                 <div className="aspect-[4/3] w-full bg-gray-200 relative mb-2 rounded-t-xl overflow-hidden">
                                     {selectedProperty.main_image ? (
-                                        <img src={selectedProperty.main_image.image_url} alt={selectedProperty.title} className="w-full h-full object-cover" />
+                                        <img src={getImageUrl(selectedProperty.main_image.image_url)} alt={selectedProperty.title} className="w-full h-full object-cover" />
                                     ) : (
                                         <div className="w-full h-full flex items-center justify-center text-gray-400">No Image</div>
                                     )}

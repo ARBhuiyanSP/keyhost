@@ -1,9 +1,9 @@
 const { pool } = require('../config/database.js');
 
-async function listTables() {
+async function run() {
   try {
-    const [rows] = await pool.query('SHOW TABLES');
-    console.log(rows);
+    const [tables] = await pool.query('SHOW TABLES');
+    console.log(tables);
     process.exit(0);
   } catch (error) {
     console.error(error);
@@ -11,4 +11,4 @@ async function listTables() {
   }
 }
 
-listTables();
+run();

@@ -4,6 +4,7 @@ import useAuthStore from '../../store/authStore';
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import useToast from '../../hooks/useToast';
+import { getImageUrl } from '../../utils/imageUrl';
 import {
   FiChevronLeft, FiMapPin, FiCalendar, FiUsers, FiClock,
   FiDollarSign, FiPrinter, FiCheck, FiAlertCircle, FiInfo,
@@ -200,7 +201,7 @@ const GuestBookingDetail = () => {
         {/* ── Hero ── */}
         <div className="w-full h-[40vh] md:h-[55vh] bg-gray-100 relative overflow-hidden">
           {heroImage ? (
-            <img src={heroImage} alt={booking.property_title} className="w-full h-full object-cover" />
+            <img src={getImageUrl(heroImage)} alt={booking.property_title} className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full flex items-center justify-center bg-gray-200">
               <FiHome className="w-20 h-20 text-gray-400" />

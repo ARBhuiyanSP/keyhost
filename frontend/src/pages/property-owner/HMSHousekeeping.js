@@ -229,19 +229,21 @@ const HMSHousekeeping = () => {
                         <p className="text-gray-500 mt-1">Monitor and manage {terms.roomSingular} cleaning tasks.</p>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
                         <select
                             value={selectedPropertyId || ''}
                             onChange={(e) => handlePropertyChange(e.target.value)}
-                            className="bg-white border-2 border-gray-100 rounded-xl px-4 py-2.5 text-sm font-medium focus:ring-2 focus:ring-primary-500 outline-none transition-all shadow-sm"
+                            className="bg-white border-2 border-gray-100 rounded-xl px-4 py-2.5 text-sm font-medium focus:ring-2 focus:ring-primary-500 outline-none transition-all shadow-sm w-full sm:w-auto max-w-full sm:max-w-[320px] md:max-w-[420px] truncate"
                         >
                             {properties?.map(p => (
-                                <option key={p.id} value={p.id}>{p.title}</option>
+                                <option key={p.id} value={p.id}>
+                                    {p.title.length > 40 ? p.title.substring(0, 40) + '...' : p.title}
+                                </option>
                             ))}
                         </select>
                         <button
                             onClick={() => handleOpenModal()}
-                            className="flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-primary-500/20 font-semibold"
+                            className="flex items-center justify-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-primary-500/20 font-semibold w-full sm:w-auto whitespace-nowrap"
                         >
                             <FiPlus className="w-5 h-5" />
                             New Task
@@ -250,33 +252,33 @@ const HMSHousekeeping = () => {
                 </div>
 
                 {/* Stats Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                        <div className="text-gray-500 text-sm font-medium mb-1">Total Tasks</div>
-                        <div className="text-3xl font-bold text-gray-900">{stats.total}</div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 mb-8">
+                    <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-gray-100">
+                        <div className="text-gray-500 text-xs md:text-sm font-medium mb-1">Total Tasks</div>
+                        <div className="text-2xl md:text-3xl font-bold text-gray-900">{stats.total}</div>
                     </div>
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                        <div className="text-rose-500 text-sm font-medium mb-1">Dirty</div>
-                        <div className="text-3xl font-bold text-gray-900">{stats.dirty}</div>
+                    <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-gray-100">
+                        <div className="text-rose-500 text-xs md:text-sm font-medium mb-1">Dirty</div>
+                        <div className="text-2xl md:text-3xl font-bold text-gray-900">{stats.dirty}</div>
                     </div>
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                        <div className="text-amber-500 text-sm font-medium mb-1">Cleaning</div>
-                        <div className="text-3xl font-bold text-gray-900">{stats.cleaning}</div>
+                    <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-gray-100">
+                        <div className="text-amber-500 text-xs md:text-sm font-medium mb-1">Cleaning</div>
+                        <div className="text-2xl md:text-3xl font-bold text-gray-900">{stats.cleaning}</div>
                     </div>
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                        <div className="text-green-500 text-sm font-medium mb-1">Clean/Inspected</div>
-                        <div className="text-3xl font-bold text-gray-900">{stats.clean}</div>
+                    <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-gray-100">
+                        <div className="text-green-500 text-xs md:text-sm font-medium mb-1">Clean/Inspected</div>
+                        <div className="text-2xl md:text-3xl font-bold text-gray-900">{stats.clean}</div>
                     </div>
                 </div>
 
                 {/* Filters */}
                 <div className="bg-white p-4 rounded-2xl shadow-sm mb-8 flex items-center gap-4 border border-gray-100">
-                    <div className="relative">
+                    <div className="relative w-full sm:w-auto">
                         <FiFilter className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
                         <select
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value)}
-                            className="pl-11 pr-8 py-2.5 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-primary-500 transition-all text-sm cursor-pointer appearance-none min-w-[200px]"
+                            className="pl-11 pr-8 py-2.5 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-primary-500 transition-all text-sm cursor-pointer appearance-none w-full sm:min-w-[200px]"
                         >
                             <option value="">All Statuses</option>
                             {STATUS_OPTIONS.map(s => (
@@ -289,79 +291,152 @@ const HMSHousekeeping = () => {
                 {loadingTasks ? (
                     <div className="py-20 text-center"><LoadingSpinner size="large" /></div>
                 ) : (
-                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                        <table className="w-full text-left">
-                            <thead className="bg-gray-50 text-gray-600">
-                                <tr>
-                                    <th className="px-6 py-4 text-sm font-bold">{terms.room}</th>
-                                    <th className="px-6 py-4 text-sm font-bold">Staff</th>
-                                    <th className="px-6 py-4 text-sm font-bold">Priority</th>
-                                    <th className="px-6 py-4 text-sm font-bold">Status</th>
-                                    <th className="px-6 py-4 text-sm font-bold">Last Updated</th>
-                                    <th className="px-6 py-4 text-sm font-bold">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                                {filteredTasks.length > 0 ? filteredTasks.map((task) => (
-                                    <tr key={task.id} className="hover:bg-gray-50 transition-all group">
-                                        <td className="px-6 py-4">
-                                            <div className="font-bold text-gray-900">{terms.room} {task.room_number}</div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            {task.staff_first_name ? (
-                                                <div className="flex items-center gap-2">
-                                                    <div className="w-8 h-8 bg-primary-50 rounded-full flex items-center justify-center text-primary-600 text-xs font-bold">
-                                                        {task.staff_first_name[0]}{task.staff_last_name ? task.staff_last_name[0] : ''}
+                    <>
+                        {/* Desktop Table View */}
+                        <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                            <table className="w-full text-left">
+                                <thead className="bg-gray-50 text-gray-600">
+                                    <tr>
+                                        <th className="px-6 py-4 text-sm font-bold">{terms.room}</th>
+                                        <th className="px-6 py-4 text-sm font-bold">Staff</th>
+                                        <th className="px-6 py-4 text-sm font-bold">Priority</th>
+                                        <th className="px-6 py-4 text-sm font-bold">Status</th>
+                                        <th className="px-6 py-4 text-sm font-bold">Last Updated</th>
+                                        <th className="px-6 py-4 text-sm font-bold">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {filteredTasks.length > 0 ? filteredTasks.map((task) => (
+                                        <tr key={task.id} className="hover:bg-gray-50 transition-all group">
+                                            <td className="px-6 py-4">
+                                                <div className="font-bold text-gray-900">{terms.room} {task.room_number}</div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                {task.staff_first_name ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-8 h-8 bg-primary-50 rounded-full flex items-center justify-center text-primary-600 text-xs font-bold">
+                                                            {task.staff_first_name[0]}{task.staff_last_name ? task.staff_last_name[0] : ''}
+                                                        </div>
+                                                        <span className="text-sm font-medium">
+                                                            {task.staff_first_name} {task.staff_last_name || ''}
+                                                        </span>
                                                     </div>
-                                                    <span className="text-sm font-medium">
-                                                        {task.staff_first_name} {task.staff_last_name || ''}
-                                                    </span>
-                                                </div>
-                                            ) : (
-                                                <span className="text-gray-400 text-sm">Unassigned</span>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${PRIORITY_OPTIONS.find(p => p.value === task.priority)?.color}`}>
-                                                {task.priority}
+                                                ) : (
+                                                    <span className="text-gray-400 text-sm">Unassigned</span>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${PRIORITY_OPTIONS.find(p => p.value === task.priority)?.color}`}>
+                                                    {task.priority}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase border ${STATUS_OPTIONS.find(s => s.value === task.status)?.color}`}>
+                                                    {task.status}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 text-sm text-gray-500">
+                                                {new Date(task.updated_at).toLocaleString()}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <button 
+                                                    onClick={() => handleOpenModal(task)}
+                                                    className="p-2 hover:bg-primary-50 text-primary-600 rounded-lg transition-colors"
+                                                >
+                                                    <FiEdit className="w-4 h-4" />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    )) : (
+                                        <tr>
+                                            <td colSpan="6" className="py-20 text-center">
+                                                <FiActivity className="w-12 h-12 text-gray-200 mx-auto mb-4" />
+                                                <p className="text-gray-500 font-medium">No housekeeping tasks found</p>
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Mobile Cards View */}
+                        <div className="space-y-4 md:hidden">
+                            {filteredTasks.length > 0 ? (
+                                filteredTasks.map((task) => (
+                                    <div key={task.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <span className="font-bold text-gray-900 text-lg">
+                                                {terms.room} {task.room_number}
                                             </span>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase border ${STATUS_OPTIONS.find(s => s.value === task.status)?.color}`}>
-                                                {task.status}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 text-sm text-gray-500">
-                                            {new Date(task.updated_at).toLocaleString()}
-                                        </td>
-                                        <td className="px-6 py-4">
                                             <button 
                                                 onClick={() => handleOpenModal(task)}
-                                                className="p-2 hover:bg-primary-50 text-primary-600 rounded-lg transition-colors"
+                                                className="p-2 hover:bg-primary-50 text-primary-600 rounded-xl transition-colors border border-gray-100"
                                             >
                                                 <FiEdit className="w-4 h-4" />
                                             </button>
-                                        </td>
-                                    </tr>
-                                )) : (
-                                    <tr>
-                                        <td colSpan="6" className="py-20 text-center">
-                                            <FiActivity className="w-12 h-12 text-gray-200 mx-auto mb-4" />
-                                            <p className="text-gray-500 font-medium">No housekeeping tasks found</p>
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-4 py-1 border-t border-b border-gray-50 my-2">
+                                            <div>
+                                                <span className="text-xs text-gray-400 block mb-1">Status</span>
+                                                <span className={`inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase border ${STATUS_OPTIONS.find(s => s.value === task.status)?.color}`}>
+                                                    {task.status}
+                                                </span>
+                                            </div>
+                                            <div>
+                                                <span className="text-xs text-gray-400 block mb-1">Priority</span>
+                                                <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold uppercase ${PRIORITY_OPTIONS.find(p => p.value === task.priority)?.color}`}>
+                                                    {task.priority}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center justify-between text-sm">
+                                            <div className="flex items-center gap-2">
+                                                {task.staff_first_name ? (
+                                                    <>
+                                                        <div className="w-8 h-8 bg-primary-50 rounded-full flex items-center justify-center text-primary-600 text-xs font-bold">
+                                                            {task.staff_first_name[0]}{task.staff_last_name ? task.staff_last_name[0] : ''}
+                                                        </div>
+                                                        <div className="flex flex-col">
+                                                            <span className="text-xs text-gray-400">Assigned Staff</span>
+                                                            <span className="text-sm font-medium text-gray-800">
+                                                                {task.staff_first_name} {task.staff_last_name || ''}
+                                                            </span>
+                                                        </div>
+                                                    </>
+                                                ) : (
+                                                    <div className="flex flex-col">
+                                                        <span className="text-xs text-gray-400">Assigned Staff</span>
+                                                        <span className="text-gray-400 text-sm italic">Unassigned</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="text-right">
+                                                <span className="text-xs text-gray-400 block">Last Updated</span>
+                                                <span className="text-xs text-gray-500 font-medium">
+                                                    {new Date(task.updated_at).toLocaleDateString()} {new Date(task.updated_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 py-16 text-center">
+                                    <FiActivity className="w-12 h-12 text-gray-200 mx-auto mb-4" />
+                                    <p className="text-gray-500 font-medium">No housekeeping tasks found</p>
+                                </div>
+                            )}
+                        </div>
+                    </>
                 )}
             </div>
 
             {/* Task Modal */}
             {showTaskModal && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
-                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
-                        <div className="px-8 py-6 bg-primary-600 text-white flex justify-between items-center">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
+                        <div className="px-8 py-6 bg-primary-600 text-white flex justify-between items-center shrink-0">
                             <h2 className="text-xl font-bold">
                                 {editingTask ? 'Update Task' : `New ${terms.room} Cleaning Task`}
                             </h2>
@@ -370,7 +445,7 @@ const HMSHousekeeping = () => {
                             </button>
                         </div>
                         
-                        <form onSubmit={handleSubmit} className="p-8 space-y-4">
+                        <form onSubmit={handleSubmit} className="p-8 space-y-4 overflow-y-auto">
                             {!editingTask && (
                                 <div>
                                     <label className="block text-sm font-bold text-gray-700 mb-2">Select {terms.room} *</label>

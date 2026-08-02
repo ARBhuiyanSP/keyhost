@@ -4,6 +4,7 @@ import useAuthStore from '../../store/authStore';
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import useToast from '../../hooks/useToast';
+import { getImageUrl } from '../../utils/imageUrl';
 
 import LeaveReviewModal from '../../components/reviews/LeaveReviewModal';
 import CancellationModal from '../../components/bookings/CancellationModal';
@@ -25,6 +26,25 @@ const GuestBookings = () => {
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState(null);
+
+  // Show toast for payment gateway callbacks (bKash / Nagad fail redirects)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const paymentStatus = params.get('payment');
+    const paymentError = params.get('error');
+    if (paymentStatus === 'fail') {
+      const msg = paymentError
+        ? decodeURIComponent(paymentError).replace(/\+/g, ' ')
+        : 'Payment was not completed. Please try again.';
+      showError(`Payment failed: ${msg}`);
+    } else if (paymentStatus === 'cancel') {
+      showError('Payment was cancelled. Your booking is still pending.');
+    }
+    // Clean up query params from address bar without page reload
+    if (paymentStatus) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
 
   useEffect(() => {
     fetchBookings();
@@ -168,7 +188,7 @@ const GuestBookings = () => {
                     <div className="flex items-start md:items-center space-x-3 md:space-x-4 flex-1 min-w-0">
                       {booking.property_image && (
                         <img
-                          src={booking.property_image}
+                          src={getImageUrl(booking.property_image)}
                           alt={booking.property_title}
                           className="w-16 h-16 md:w-20 md:h-20 rounded-lg object-cover flex-shrink-0"
                         />

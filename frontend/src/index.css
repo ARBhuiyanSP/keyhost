@@ -669,7 +669,8 @@ body { top: 0px !important; position: static !important; }
   .h-screen, .min-h-screen { height: auto !important; min-height: 0 !important; overflow: visible !important; }
   main { overflow: visible !important; padding: 0 !important; background: white !important; }
   body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .card, .bg-white { box-shadow: none !important; border: 1px solid #e5e7eb !important; break-inside: avoid; }
+  .card { box-shadow: none !important; border: 1px solid #e5e7eb !important; break-inside: avoid; }
+  .bg-white { box-shadow: none !important; }
   .text-white { color: #000 !important; }
   .print-text-black { color: #000 !important; }
 }

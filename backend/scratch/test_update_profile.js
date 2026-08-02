@@ -1,102 +1,58 @@
 const { pool } = require('../config/database');
 
-async function main() {
+async function runTest() {
   try {
-    const userId = 64;
-    
-    // Simulate req.user for middleware
-    const [userRows] = await pool.execute(
-      'SELECT id, email, user_type, host_id, is_active FROM users WHERE id = ?',
-      [userId]
-    );
-    const reqUser = userRows[0];
-    
-    const formData = {
-      first_name: 'Atiqur Rahman',
-      last_name: 'Bhuiyan',
-      email: 'atiqur.cumilla@gmail.com',
-      phone: '01844015754', // a real phone number!
-      date_of_birth: '1990-05-15',
-      gender: 'male',
-      address: 'Test Guest Address',
-      city: 'Dhaka',
-      state: 'Dhaka',
-      country: 'Bangladesh',
-      postal_code: '1212'
-    };
+    console.log('Connecting to database via pool...');
 
-    console.log('Simulating update profile for user 64...');
-    
-    const {
-      first_name,
-      last_name,
-      phone,
-      date_of_birth,
-      gender,
-      address,
-      city,
-      state,
-      country,
-      postal_code
-    } = formData;
+    // 1. Get first property owner user ID
+    const [owners] = await pool.execute('SELECT user_id FROM property_owners LIMIT 1');
+    if (owners.length === 0) {
+      console.log('No property owners found to test with.');
+      process.exit(0);
+    }
+    const userId = owners[0].user_id;
+    console.log(`Using owner user ID: ${userId}`);
 
-    const [existing] = await pool.execute(
-      'SELECT id FROM users WHERE email = ? AND id != ?',
-      [formData.email, reqUser.id]
-    );
-    console.log('Existing email check count:', existing.length);
+    // 2. Perform manual update test query simulating PUT /profile
+    console.log('Simulating profile update...');
+    await pool.execute(`
+      UPDATE property_owners
+      SET mfs_provider = ?, mfs_wallet_number = ?, mfs_account_name = ?, updated_at = NOW()
+      WHERE user_id = ?
+    `, ['bkash', '01876543210', 'Test Owner Wallet Name', userId]);
 
-    const updateFields = [];
-    const updateValues = [];
+    // 3. Verify
+    console.log('Retrieving updated details...');
+    const [result] = await pool.execute(`
+      SELECT mfs_provider, mfs_wallet_number, mfs_account_name 
+      FROM property_owners 
+      WHERE user_id = ?
+    `, [userId]);
 
-    const allowedFields = {
-      first_name, last_name, email: formData.email, phone, date_of_birth, gender,
-      address, city, state, country, postal_code
-    };
+    const updated = result[0];
+    console.log('Verification details returned from DB:', updated);
 
-    Object.keys(allowedFields).forEach(key => {
-      if (allowedFields[key] !== undefined) {
-        let value = allowedFields[key];
-        if (value === '' && ['date_of_birth', 'gender'].includes(key)) {
-          value = null;
-        }
-        updateFields.push(`${key} = ?`);
-        updateValues.push(value);
-      }
-    });
+    if (updated.mfs_provider === 'bkash' && 
+        updated.mfs_wallet_number === '01876543210' && 
+        updated.mfs_account_name === 'Test Owner Wallet Name') {
+      console.log('🎉 DB update and retrieval verification SUCCESSFUL!');
+    } else {
+      console.error('❌ Verification FAILED: details do not match!');
+    }
 
-    updateValues.push(reqUser.id);
-    
-    console.log('Running query:', `UPDATE users SET ${updateFields.join(', ')}, updated_at = NOW() WHERE id = ?`);
-    console.log('Values:', updateValues);
+    // Clean up
+    await pool.execute(`
+      UPDATE property_owners
+      SET mfs_provider = NULL, mfs_wallet_number = NULL, mfs_account_name = NULL, updated_at = NOW()
+      WHERE user_id = ?
+    `, [userId]);
+    console.log('Database cleaned up.');
 
-    const [result] = await pool.execute(
-      `UPDATE users SET ${updateFields.join(', ')}, updated_at = NOW() WHERE id = ?`,
-      updateValues
-    );
-    console.log('Update result:', result);
-
-    // Get updated user
-    const [users] = await pool.execute(`
-      SELECT 
-        id, first_name, last_name, email, phone, user_type,
-        email_verified_at, phone_verified_at, is_active,
-        profile_image, date_of_birth, gender, address,
-        city, state, country, postal_code, language,
-        timezone, email_notifications, sms_notifications,
-        auto_accept_bookings,
-        last_login_at, created_at, updated_at
-      FROM users 
-      WHERE id = ?
-    `, [reqUser.id]);
-    
-    console.log('Updated user fetched:', users[0]);
-
-  } catch (err) {
-    console.error('CRITICAL ERROR:', err);
-  } finally {
     process.exit(0);
+  } catch (error) {
+    console.error('Test execution failed:', error);
+    process.exit(1);
   }
 }
 
-main();
+runTest();

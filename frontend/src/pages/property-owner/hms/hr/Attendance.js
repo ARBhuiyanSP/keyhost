@@ -3,6 +3,7 @@ import { useQuery } from 'react-query';
 import { FiUsers, FiClock, FiMapPin, FiCalendar, FiChevronLeft, FiChevronRight, FiSearch } from 'react-icons/fi';
 import api from '../../../../utils/api';
 import LoadingSpinner from '../../../../components/common/LoadingSpinner';
+import { getImageUrl } from '../../../../utils/imageUrl';
 
 const Attendance = () => {
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
@@ -156,7 +157,7 @@ const Attendance = () => {
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
                                             {a.photo ? (
-                                                <img src={a.photo} className="w-10 h-10 rounded-full object-cover border border-gray-200" alt="" />
+                                                <img src={getImageUrl(a.photo)} className="w-10 h-10 rounded-full object-cover border border-gray-200" alt="" />
                                             ) : (
                                                 <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
                                                     {a.employee_name?.charAt(0)}

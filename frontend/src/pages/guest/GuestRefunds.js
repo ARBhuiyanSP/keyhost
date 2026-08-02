@@ -22,49 +22,20 @@ const GuestRefunds = () => {
     const fetchRefunds = async () => {
         try {
             setLoading(true);
-            const response = await api.get('/guest/bookings'); // We'll filter from bookings that have refunds
-            const allBookings = response.data.data.bookings;
+            const response = await api.get('/guest/refunds');
+            const refundsList = response.data.data.refunds || [];
             
-            // For now, since there isn't a dedicated /guest/refunds endpoint, 
-            // we'll fetch details for each cancelled booking or rely on the join I added earlier.
-            // But to be efficient, let's just fetch all and filter those with cancellation status.
-            
-            const refundedItems = [];
             let pendingCount = 0;
             let completedCount = 0;
 
-            // Since our join was only on the single booking detail, 
-            // the list view might not have the refunds array yet.
-            // We'll iterate through cancelled bookings and fetch their specific data
-            const cancelledBookings = allBookings.filter(b => b.status === 'cancelled');
+            refundsList.forEach(refund => {
+                if (refund.status === 'pending' || refund.status === 'processing') pendingCount++;
+                if (refund.status === 'completed') completedCount++;
+            });
 
-            const detailedRefunds = await Promise.all(
-                cancelledBookings.map(async (b) => {
-                    try {
-                        const res = await api.get(`/guest/bookings/${b.id}`);
-                        const bookingData = res.data.data.booking;
-                        if (bookingData.refunds && bookingData.refunds.length > 0) {
-                            const refund = bookingData.refunds[0];
-                            if (refund.status === 'pending' || refund.status === 'processing') pendingCount++;
-                            if (refund.status === 'completed') completedCount++;
-                            return {
-                                ...refund,
-                                property_title: b.property_title,
-                                property_image: b.property_image,
-                                booking_reference: b.booking_reference
-                            };
-                        }
-                    } catch (e) {
-                        return null;
-                    }
-                    return null;
-                })
-            );
-
-            const finalRefunds = detailedRefunds.filter(r => r !== null);
-            setRefunds(finalRefunds);
+            setRefunds(refundsList);
             setStats({
-                total: finalRefunds.length,
+                total: refundsList.length,
                 pending: pendingCount,
                 completed: completedCount
             });

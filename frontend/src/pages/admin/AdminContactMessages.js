@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FiMessageSquare, FiMail, FiCheckCircle, FiClock, FiEye, FiTrash2, FiSearch, FiRefreshCw } from 'react-icons/fi';
 import { toast } from 'react-toastify';
+import api from '../../utils/api';
 
 const AdminContactMessages = () => {
     const [messages, setMessages] = useState([]);
@@ -11,21 +12,16 @@ const AdminContactMessages = () => {
     const fetchMessages = async () => {
         setLoading(true);
         try {
-            const token = localStorage.getItem('token');
-            const url = filter === 'all' ? '/api/contact' : `/api/contact?status=${filter}`;
+            const url = filter === 'all' ? '/contact' : `/contact?status=${filter}`;
+            const response = await api.get(url);
             
-            const response = await fetch(url, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await response.json();
-            
-            if (response.ok) {
-                setMessages(data.data.messages || []);
+            if (response.data?.success) {
+                setMessages(response.data.data.messages || []);
             } else {
-                toast.error(data.message || 'Failed to fetch messages');
+                toast.error(response.data?.message || 'Failed to fetch messages');
             }
         } catch (error) {
-            toast.error('Error fetching messages');
+            toast.error(error.response?.data?.message || 'Error fetching messages');
         } finally {
             setLoading(false);
         }
@@ -37,28 +33,19 @@ const AdminContactMessages = () => {
 
     const handleStatusChange = async (id, newStatus) => {
         try {
-            const token = localStorage.getItem('token');
-            const response = await fetch(`/api/contact/${id}/status`, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ status: newStatus })
-            });
-            const data = await response.json();
+            const response = await api.patch(`/contact/${id}/status`, { status: newStatus });
             
-            if (response.ok) {
+            if (response.data?.success) {
                 toast.success(`Message marked as ${newStatus}`);
                 fetchMessages();
                 if (selectedMessage && selectedMessage.id === id) {
                     setSelectedMessage({ ...selectedMessage, status: newStatus });
                 }
             } else {
-                toast.error(data.message);
+                toast.error(response.data?.message || 'Failed to update status');
             }
         } catch (error) {
-            toast.error('Error updating status');
+            toast.error(error.response?.data?.message || 'Error updating status');
         }
     };
 

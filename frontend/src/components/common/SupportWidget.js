@@ -11,7 +11,7 @@ const SupportWidget = () => {
   const email = settings?.contact_email || 'support@keyhost24.com';
 
   return (
-    <div className="fixed bottom-24 md:bottom-6 right-6 z-[9999]">
+    <div className="fixed bottom-24 md:bottom-6 right-6 z-[9999] print:hidden">
       {/* Floating Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}

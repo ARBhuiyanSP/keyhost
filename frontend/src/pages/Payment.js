@@ -5,6 +5,7 @@ import api from '../utils/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import useToast from '../hooks/useToast';
 import { formatPrice } from '../utils/textUtils';
+import useSettingsStore from '../store/settingsStore';
 
 const Payment = () => {
   const { bookingId } = useParams();
@@ -12,6 +13,43 @@ const Payment = () => {
   const location = useLocation();
   const { user } = useAuthStore();
   const { showSuccess, showError } = useToast();
+  const { settings } = useSettingsStore();
+
+  const [selectedGateway, setSelectedGateway] = useState('');
+
+  // Determine enabled payment gateways
+  // Note: DB settings come as strings ('true'/'false'), not booleans
+  const isSslEnabled = settings?.enable_sslcommerz !== false && settings?.enable_sslcommerz !== 'false';
+  const isBkashEnabled = settings?.enable_bkash === true || settings?.enable_bkash === 'true';
+  const isNagadEnabled = settings?.enable_nagad === true || settings?.enable_nagad === 'true';
+
+  // Initialize default gateway selection
+  useEffect(() => {
+    if (settings) {
+      if (settings.enable_sslcommerz !== false) {
+        setSelectedGateway('sslcommerz');
+      } else if (settings.enable_bkash) {
+        setSelectedGateway('bkash');
+      } else if (settings.enable_nagad) {
+        setSelectedGateway('nagad');
+      }
+    }
+  }, [settings]);
+
+  // Handle gateway failure redirects (bKash / Nagad redirect back here with ?payment=fail)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const paymentStatus = params.get('payment');
+    const paymentError = params.get('error');
+    if (paymentStatus === 'fail') {
+      const msg = paymentError
+        ? decodeURIComponent(paymentError).replace(/\+/g, ' ')
+        : 'Payment was not completed. Please try again.';
+      showError(`Payment failed: ${msg}`);
+      // Clean up query params from address bar
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, [location.search]);
 
   // Extension state from navigation (passed by GuestBookingDetail)
   const navState = location.state || {};
@@ -29,6 +67,17 @@ const Payment = () => {
   const [finalAmount, setFinalAmount] = useState(0);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
 
+  const isExtensionPayment = booking ? (booking.payment_status === 'pending_extra' || isExtensionNav) : false;
+  const isMonthlyBooking = booking ? (booking.booking_type === 'monthly') : false;
+  const payableAmount = booking 
+    ? (isExtensionPayment && navExtraAmount 
+        ? navExtraAmount 
+        : (isMonthlyBooking && parseFloat(booking.advance_amount) > 0 
+            ? parseFloat(booking.advance_amount) 
+            : parseFloat(booking.total_amount)))
+    : 0;
+  const alreadyPaid = booking && isExtensionPayment ? parseFloat(booking.total_amount) - payableAmount : 0;
+
   useEffect(() => {
     if (bookingId) {
       fetchBooking();
@@ -39,14 +88,14 @@ const Payment = () => {
   useEffect(() => {
     if (booking) {
       if (usePoints && pointsData) {
-        calculatePointsDiscount(pointsData, booking.total_amount);
+        calculatePointsDiscount(pointsData, payableAmount);
       } else {
         setPointsToRedeem(0);
         setPointsDiscount(0);
-        setFinalAmount(booking.total_amount);
+        setFinalAmount(payableAmount);
       }
     }
-  }, [booking, pointsData, usePoints]);
+  }, [booking, pointsData, usePoints, payableAmount]);
 
   const fetchPointsData = async () => {
     try {
@@ -104,11 +153,19 @@ const Payment = () => {
       const bookingData = response.data.data.booking;
       setBooking(bookingData);
 
+      const isMonthly = bookingData.booking_type === 'monthly';
+      const isExt = bookingData.payment_status === 'pending_extra';
+      const amt = isExt && navExtraAmount 
+        ? navExtraAmount 
+        : (isMonthly && parseFloat(bookingData.advance_amount) > 0 
+            ? parseFloat(bookingData.advance_amount) 
+            : parseFloat(bookingData.total_amount));
+
       // Calculate final amount after points discount
       if (pointsData) {
-        calculatePointsDiscount(pointsData, bookingData.total_amount);
+        calculatePointsDiscount(pointsData, amt);
       } else {
-        setFinalAmount(bookingData.total_amount);
+        setFinalAmount(amt);
       }
 
       const isExtensionPayment = bookingData.payment_status === 'pending_extra';
@@ -161,97 +218,88 @@ const Payment = () => {
     }
   };
 
-  const handlePayment = async (paymentMethod) => {
+  const handlePayment = async () => {
     try {
       setProcessing(true);
+      const amountToCharge = usePoints ? finalAmount : payableAmount;
 
-
-
-      // Handle SSLCommerz payment separately
-      if (paymentMethod === 'SSLCommerz') {
-        const { data: sslSettings } = await api.get('/sslcommerz/settings');
-        if (sslSettings) {
-          // For extensions: charge only the extra amount, not the full total
-          const amountToCharge = isExtensionPayment && payableAmount
-            ? (usePoints ? Math.max(0, payableAmount - pointsDiscount) : payableAmount)
-            : (usePoints ? (finalAmount || booking.total_amount) : booking.total_amount);
-
-          const sslRes = await api.post('/sslcommerz/ssl-request', {
-            booking_id: bookingId,
-            amount: amountToCharge,
-            customer_name: user?.name,
-            customer_email: user?.email,
-            customer_phone: user?.phone
-          });
-          if (sslRes.data.success) {
-            window.location.replace(sslRes.data.data.url);
-            return;
-          } else {
-            showError('Failed to initialize SSLCommerz gateway');
-            setProcessing(false);
-            return;
-          }
+      // 1. SSLCommerz Flow
+      if (selectedGateway === 'sslcommerz') {
+        const sslRes = await api.post('/sslcommerz/ssl-request', {
+          booking_id: bookingId,
+          amount: amountToCharge,
+          customer_name: user?.name,
+          customer_email: user?.email,
+          customer_phone: user?.phone
+        });
+        if (sslRes.data.success) {
+          window.location.replace(sslRes.data.data.url);
+          return;
+        } else {
+          showError(sslRes.data.message || 'Failed to initialize SSLCommerz gateway');
+          setProcessing(false);
+          return;
         }
       }
 
-      // For other payment methods, use existing logic
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // 2. bKash Flow
+      if (selectedGateway === 'bkash') {
+        const bkashRes = await api.post('/bkash/create', {
+          booking_id: bookingId,
+          amount: amountToCharge,
+          customer_info: {
+            name: user?.name,
+            email: user?.email,
+            phone: user?.phone
+          }
+        });
+        if (bkashRes.data.success) {
+          if (bkashRes.data.data && bkashRes.data.data.bkash_token) {
+            console.log('bkash new token ' + bkashRes.data.data.bkash_token);
+          }
+          window.location.replace(bkashRes.data.data.bkash_url);
+          return;
+        } else {
+          showError(bkashRes.data.message || 'Failed to initialize bKash gateway');
+          setProcessing(false);
+          return;
+        }
+      }
 
-      // Map display names to database ENUM values
-      const paymentMethodMap = {
-        'bKash': 'bkash',
-        'Nagad': 'nagad',
-        'Rocket': 'rocket',
-        'Bank Transfer': 'bank_transfer',
-        'Credit Card': 'credit_card',
-        'SSLCommerz': 'sslcommerz'
-      };
+      // 3. Nagad Flow
+      if (selectedGateway === 'nagad') {
+        const nagadRes = await api.post('/nagad/create', {
+          booking_id: bookingId,
+          amount: amountToCharge,
+          customer_info: {
+            name: user?.name,
+            email: user?.email,
+            phone: user?.phone
+          }
+        });
+        if (nagadRes.data.success) {
+          window.location.replace(nagadRes.data.data.nagad_url);
+          return;
+        } else {
+          showError(nagadRes.data.message || 'Failed to initialize Nagad gateway');
+          setProcessing(false);
+          return;
+        }
+      }
 
-      const dbPaymentMethod = paymentMethodMap[paymentMethod] || paymentMethod.toLowerCase();
-
-      console.log('=== PAYMENT DEBUG ===');
-      console.log('1. Payment Method (Display):', paymentMethod);
-      console.log('2. Payment Method (DB):', dbPaymentMethod);
-      console.log('3. Payment Status:', 'paid');
-
-      const requestPayload = {
-        payment_method: dbPaymentMethod,
-        payment_status: 'paid',
-        // For extension payments: record the extra amount paid, not the full total
-        amount_paid: isExtensionNav && navExtraAmount ? navExtraAmount : undefined,
-        points_to_redeem: (usePoints && pointsToRedeem > 0) ? pointsToRedeem : undefined
-      };
-
-      console.log('4. Request Payload:', JSON.stringify(requestPayload));
-
-      // Update booking payment method and status (booking already confirmed by owner)
-      const response = await api.patch(`/guest/bookings/${bookingId}/payment`, requestPayload);
-
-      console.log('5. Response:', response.data);
-      console.log('===================');
-
-      showSuccess('Payment completed successfully!');
-      // Refetch points data to show updated balance and new points earned
-      await fetchPointsData();
-      const isExt = booking?.payment_status === 'pending_extra';
-      navigate(`/booking-confirmation/${bookingId}${isExt ? '?type=extension' : ''}`);
+      showError('Please select a valid payment method');
+      setProcessing(false);
     } catch (err) {
       console.error('Payment error:', err);
-      showError(err.response?.data?.message || 'Payment failed');
-    } finally {
+      showError(err.response?.data?.message || 'Failed to initialize payment gateway');
       setProcessing(false);
     }
   };
 
-
-
   if (loading) return <LoadingSpinner />;
   if (!booking) return <div className="text-center p-8">Booking not found</div>;
 
-  const isExtensionPayment = booking.payment_status === 'pending_extra' || isExtensionNav;
-  // payableAmount: for extensions use the extra amount only, for original use total
-  const payableAmount = isExtensionPayment && navExtraAmount ? navExtraAmount : parseFloat(booking.total_amount);
-  const alreadyPaid = isExtensionPayment ? parseFloat(booking.total_amount) - payableAmount : 0;
+  // (Variables are defined at the top of the component)
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -311,6 +359,29 @@ const Payment = () => {
                         <div className="flex justify-between border-t pt-2">
                           <span className="text-gray-800 font-bold">Amount Due Now:</span>
                           <span className="font-bold text-lg text-red-600">BDT {formatPrice(payableAmount)}</span>
+                        </div>
+                      </div>
+                    </>
+                  ) : isMonthlyBooking && parseFloat(booking.advance_amount) > 0 ? (
+                    <>
+                      <div className="border-t pt-2 mt-1 space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Total Stay Amount:</span>
+                          <span className="font-semibold text-gray-900">BDT {formatPrice(booking.total_amount)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Advance Payment:</span>
+                          <span className="font-semibold text-[#E41D57]">BDT {formatPrice(booking.advance_amount)}</span>
+                        </div>
+                        {parseFloat(booking.security_deposit) > 0 && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Security Deposit (included in Total):</span>
+                            <span className="font-medium text-gray-700">BDT {formatPrice(booking.security_deposit)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between border-t pt-2">
+                          <span className="text-gray-800 font-bold">Amount Due Now (Advance):</span>
+                          <span className="font-bold text-lg text-red-600">BDT {formatPrice(booking.advance_amount)}</span>
                         </div>
                       </div>
                     </>
@@ -380,7 +451,7 @@ const Payment = () => {
                         <div className="border-t border-yellow-300 pt-2 mt-2">
                           <div className="flex justify-between">
                             <span className="text-gray-700 font-medium">Amount to Pay:</span>
-                            <span className="font-bold text-lg text-red-600">BDT {formatPrice(booking.total_amount)}</span>
+                            <span className="font-bold text-lg text-red-600">BDT {formatPrice(payableAmount)}</span>
                           </div>
                         </div>
                       )}
@@ -392,6 +463,61 @@ const Payment = () => {
               {/* Payment Methods */}
               <div>
                 <h2 className="text-lg font-semibold text-gray-900 mb-4">Payment Methods</h2>
+
+                {/* Gateway Selection Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+                  {/* bKash */}
+                  {isBkashEnabled && (
+                    <div
+                      onClick={() => setSelectedGateway('bkash')}
+                      className={`cursor-pointer rounded-2xl border-2 p-4 flex flex-col justify-between items-center transition-all shadow-sm ${
+                        selectedGateway === 'bkash'
+                          ? 'border-[#D12053] bg-[#D12053]/5 shadow-[#D12053]/5'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-center h-12 w-full mb-3">
+                        <img src="/images/bkash.svg" alt="bKash" className="max-h-full max-w-[85%] object-contain" />
+                      </div>
+                      <span className="text-xs font-bold text-gray-800 text-center">Pay with bKash</span>
+                    </div>
+                  )}
+
+                  {/* Nagad */}
+                  {isNagadEnabled && (
+                    <div
+                      onClick={() => setSelectedGateway('nagad')}
+                      className={`cursor-pointer rounded-2xl border-2 p-4 flex flex-col justify-between items-center transition-all shadow-sm ${
+                        selectedGateway === 'nagad'
+                          ? 'border-[#F57C20] bg-[#F57C20]/5 shadow-[#F57C20]/5'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-center h-12 w-full mb-3">
+                        <img src="/images/nagad.svg" alt="Nagad" className="max-h-full max-w-[85%] object-contain" />
+                      </div>
+                      <span className="text-xs font-bold text-gray-800 text-center">Pay with Nagad</span>
+                    </div>
+                  )}
+
+                  {/* SSLCommerz (Cards / Net Banking) */}
+                  {isSslEnabled && (
+                    <div
+                      onClick={() => setSelectedGateway('sslcommerz')}
+                      className={`cursor-pointer rounded-2xl border-2 p-4 flex flex-col justify-between items-center transition-all shadow-sm ${
+                        selectedGateway === 'sslcommerz'
+                          ? 'border-[#E41D57] bg-[#E41D57]/5 shadow-[#E41D57]/5'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-center h-12 w-full mb-3">
+                        <img src="/images/ssl.png" alt="Cards / Net Banking" className="max-h-full max-w-[80%] object-contain" />
+                      </div>
+                      <span className="text-xs font-bold text-gray-800 text-center">Payment Gateway</span>
+                    </div>
+                  )}
+                </div>
+
 
                 {/* Terms and Policies Checkbox */}
                 <div className="mb-4 bg-gray-50 border border-gray-200 rounded-lg p-4">
@@ -453,11 +579,11 @@ const Payment = () => {
 
                   <div className="pt-4 mt-4 border-t border-gray-100">
                     <button
-                      onClick={() => handlePayment('SSLCommerz')}
-                      disabled={processing || !agreedToTerms}
+                      onClick={handlePayment}
+                      disabled={processing || !agreedToTerms || !selectedGateway}
                       className={`w-full py-4 px-6 rounded-2xl font-bold text-lg transition-all duration-300 flex items-center justify-center gap-3 shadow-lg ${
-                        !agreedToTerms 
-                          ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none' 
+                        (!agreedToTerms || !selectedGateway)
+                          ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'
                           : 'bg-[#E41D57] text-white hover:bg-[#C31A4A] hover:shadow-[#E41D57]/20 hover:-translate-y-1 active:scale-95'
                       }`}
                     >
@@ -487,7 +613,7 @@ const Payment = () => {
 
                   <div className="text-center">
                     <p className="text-[10px] text-gray-400 font-medium">
-                      Your payment is processed securely via SSLCommerz. We do not store your card details.
+                      Your payment is processed securely via {selectedGateway === 'sslcommerz' ? 'SSLCommerz' : selectedGateway === 'bkash' ? 'bKash' : 'Nagad'}. We do not store your account or card details.
                     </p>
                   </div>
                 </div>

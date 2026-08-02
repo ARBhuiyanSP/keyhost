@@ -13,6 +13,7 @@ import useSettingsStore from '../../store/settingsStore';
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import useToast from '../../hooks/useToast';
+import { getImageUrl } from '../../utils/imageUrl';
 
 const GuestBooking = () => {
   const { propertyId } = useParams();
@@ -144,6 +145,8 @@ const GuestBooking = () => {
   };
   const pendingBookingData = getPendingBookingData();
 
+  const isMonthly = searchParams.get('booking_type') === 'monthly' || passedBookingData?.booking_type === 'monthly' || pendingBookingData?.booking_type === 'monthly';
+
   const hmsRoomId = passedBookingData?.hms_room_id || pendingBookingData?.hms_room_id || urlHmsRoomId;
 
   const getInitialFormData = () => {
@@ -204,8 +207,30 @@ const GuestBooking = () => {
 
     const dateString = formatDateLocal(date);
     const isSelectingCheckout = formData.check_in_date && !formData.check_out_date;
-    if (isSelectingCheckout && blockedDatesData.checkInDates.includes(dateString)) {
-      return false;
+    if (isSelectingCheckout) {
+      const start = parseDateLocal(formData.check_in_date);
+      const end = new Date(date);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
+
+      // Checkout date must be after check-in date
+      if (end <= start) {
+        return true; 
+      }
+
+      // Check if there are any blocked dates between check-in (inclusive) and candidate checkout (exclusive)
+      let temp = new Date(start);
+      while (temp < end) {
+        const tempStr = formatDateLocal(temp);
+        const isPast = temp < today;
+
+        if (isPast || blockedDatesData.blockedDates.includes(tempStr)) {
+          return true; // Range crosses a blocked date
+        }
+        temp.setDate(temp.getDate() + 1);
+      }
+
+      return false; // Range is clear, checkout is allowed
     }
     return blockedDatesData.blockedDates.includes(dateString);
   };
@@ -254,6 +279,33 @@ const GuestBooking = () => {
     const checkOut = parseDateLocal(formData.check_out_date);
     const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
     if (nights <= 0) return;
+
+    if (isMonthly) {
+      const monthlyRate = parseFloat(property.monthly_rent_amount) || 0;
+      const totalMonths = Math.floor(nights / 30);
+      const extraDays = nights % 30;
+
+      const baseMonthlyTotal = totalMonths * monthlyRate;
+      const extraDayAmount = extraDays > 0 ? extraDays * (monthlyRate / 30) : 0;
+      const securityDeposit = parseFloat(property.monthly_security_deposit) || 0;
+      const advancePayment = parseFloat(property.monthly_advance_amount) || 0;
+      const total = baseMonthlyTotal + extraDayAmount + securityDeposit;
+
+      setPricing({
+        isMonthly: true,
+        nights,
+        totalMonths,
+        monthlyRate,
+        baseMonthlyTotal,
+        extraDays,
+        extraDayAmount,
+        securityDeposit,
+        advancePayment,
+        remaining: Math.max(0, total - advancePayment),
+        total
+      });
+      return;
+    }
 
     // Use room price if selectedRoom is present
     const pricePerNight = selectedRoom ? parseFloat(selectedRoom.price) : Number(property.base_price || 0);
@@ -356,7 +408,8 @@ const GuestBooking = () => {
         number_of_children: parseInt(formData.number_of_children) || 0,
         number_of_infants: parseInt(formData.number_of_infants) || 0,
         special_requests: formData.special_requests || '', coupon_code: formData.coupon_code || '',
-        custom_price: customPrice
+        custom_price: customPrice,
+        booking_type: isMonthly ? 'monthly' : 'short_stay'
       };
       const response = await api.post('/guest/bookings', bookingPayload);
       const { booking, auto_accepted } = response.data.data;
@@ -384,7 +437,7 @@ const GuestBooking = () => {
       {/* ── Hero image (matches PropertyDetail top gallery) ── */}
       <div className="w-full h-[40vh] md:h-[55vh] bg-gray-100 relative overflow-hidden">
         {mainImage ? (
-          <img src={mainImage} alt={property.title} className="w-full h-full object-cover" />
+           <img src={getImageUrl(mainImage)} alt={property.title} className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-gray-200">
             <FiHome className="w-20 h-20 text-gray-400" />
@@ -554,12 +607,24 @@ const GuestBooking = () => {
                 <div className="p-0 pb-4 lg:p-6 lg:pb-4">
                   <div className="flex justify-between items-center gap-2 mb-1 flex-wrap">
                     <div className="flex items-baseline gap-1">
-                      <span className="text-2xl font-bold text-gray-900">BDT {Number(selectedRoom ? selectedRoom.price : (property.base_price || 0)).toLocaleString()}</span>
-                      <span className="text-gray-500 text-sm font-normal">/ night</span>
+                      {isMonthly ? (
+                        <>
+                          <span className="text-2xl font-bold text-gray-900">BDT {Number(property.monthly_rent_amount).toLocaleString()}</span>
+                          <span className="text-gray-500 text-sm font-normal">/ month</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-2xl font-bold text-gray-900">BDT {Number(selectedRoom ? selectedRoom.price : (property.base_price || 0)).toLocaleString()}</span>
+                          <span className="text-gray-500 text-sm font-normal">/ night</span>
+                        </>
+                      )}
                     </div>
                     {pricing && pricing.nights > 0 && (
                       <span className="text-xs font-semibold bg-gray-100 text-gray-700 px-2.5 py-1 rounded-full border border-gray-200">
-                        {pricing.nights} night{pricing.nights > 1 ? 's' : ''} selected
+                        {isMonthly
+                          ? `${pricing.totalMonths} mo ${pricing.extraDays > 0 ? `+ ${pricing.extraDays} days` : ''} stay`
+                          : `${pricing.nights} night${pricing.nights > 1 ? 's' : ''} selected`
+                        }
                       </span>
                     )}
                   </div>
@@ -583,13 +648,13 @@ const GuestBooking = () => {
                 <div className="px-0 pb-4 lg:px-6 lg:pb-4">
                   <div className="relative">
                     <div className="border border-gray-400 rounded-lg mb-4 relative z-10">
-                      <div ref={datePickerTriggerRef} className="grid grid-cols-2 border-b border-gray-400 overflow-hidden rounded-t-lg" onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}>
+                      <div ref={datePickerTriggerRef} className="grid grid-cols-2 border-b border-gray-400 overflow-hidden rounded-t-lg" onClick={() => !isMonthly && setIsDatePickerOpen(!isDatePickerOpen)}>
                         <div className="p-3 border-r border-gray-400 hover:bg-gray-50 cursor-pointer text-left">
-                          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-800">Check-in</div>
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-800">{isMonthly ? 'Move-in' : 'Check-in'}</div>
                           <div className="text-sm text-gray-700 truncate">{formatDisplayDate(formData.check_in_date) || 'Add date'}</div>
                         </div>
                         <div className="p-3 hover:bg-gray-50 cursor-pointer text-left">
-                          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-800">Checkout</div>
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-800">{isMonthly ? 'Move-out' : 'Checkout'}</div>
                           <div className="text-sm text-gray-700 truncate">{formatDisplayDate(formData.check_out_date) || 'Add date'}</div>
                         </div>
                       </div>
@@ -621,6 +686,8 @@ const GuestBooking = () => {
                                     .custom-calendar .react-datepicker__day--in-selecting-range:not(.react-datepicker__day--range-start):not(.react-datepicker__day--range-end), .custom-calendar .react-datepicker__day--in-range:not(.react-datepicker__day--range-start):not(.react-datepicker__day--range-end) { background-color: #f7f7f7 !important; color: #222222 !important; border-radius: 50%; }
                                     .custom-calendar .react-datepicker__current-month { font-size: 0.95rem; font-weight: 600; margin-bottom: 8px; color: #222222; }
                                     .custom-calendar .react-datepicker__navigation { top: 4px; }
+                                    .custom-calendar .react-datepicker__day--blocked, .custom-calendar .react-datepicker__day--disabled { background-color: #f3f4f6 !important; color: #9ca3af !important; text-decoration: line-through !important; pointer-events: none !important; opacity: 0.65; border-radius: 50%; }
+                                    .custom-calendar .react-datepicker__day--blocked .day-cell-wrapper span, .custom-calendar .react-datepicker__day--disabled .day-cell-wrapper span { color: #9ca3af !important; }
                                 `}</style>
                         <div className="flex justify-between items-start mb-4">
                           <div>
@@ -770,6 +837,125 @@ const GuestBooking = () => {
                   </div>
                 </div>
 
+                {/* Pricing breakdown */}
+                {pricing && pricing.nights > 0 && (
+                  <div className="px-0 pb-0 lg:px-6 lg:pb-6 space-y-2 text-sm mt-4 lg:mt-0">
+                    {isMonthly ? (
+                      /* ── Monthly Stay Pricing Breakdown ── */
+                      <>
+                        <div className="flex justify-between text-gray-700">
+                          <span className="underline">{pricing.totalMonths} {pricing.totalMonths === 1 ? 'month' : 'months'} × BDT {Number(pricing.monthlyRate).toLocaleString()}</span>
+                          <span>BDT {Number(pricing.baseMonthlyTotal).toLocaleString()}</span>
+                        </div>
+                        {pricing.extraDays > 0 && (
+                          <div className="flex justify-between text-gray-700">
+                            <span className="underline">{pricing.extraDays} pro-rated {pricing.extraDays === 1 ? 'day' : 'days'}</span>
+                            <span>BDT {Number(pricing.extraDayAmount).toLocaleString()}</span>
+                          </div>
+                        )}
+                        {pricing.securityDeposit > 0 && (
+                          <div className="flex justify-between text-gray-700">
+                            <span className="underline">Security deposit</span>
+                            <span>BDT {Number(pricing.securityDeposit).toLocaleString()}</span>
+                          </div>
+                        )}
+                        <div className="border-t border-gray-200 pt-3 flex justify-between font-bold text-gray-900 text-base">
+                          <span>Total</span>
+                          <span>BDT {Number(pricing.total).toLocaleString()}</span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center text-[#E41D57] font-semibold bg-rose-50 -mx-1 px-2.5 py-2 rounded-xl text-xs mt-3 border border-rose-100">
+                          <span>Advance to pay now</span>
+                          <span>BDT {Number(pricing.advancePayment).toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between text-gray-500 text-xs px-1.5">
+                          <span>Remaining (due later)</span>
+                          <span>BDT {Number(pricing.remaining).toLocaleString()}</span>
+                        </div>
+                      </>
+                    ) : (
+                      /* ── Nightly Stay Pricing Breakdown ── */
+                      <>
+                        <div className="flex justify-between text-gray-700">
+                          <span className="underline">BDT {Number(selectedRoom ? selectedRoom.price : (property.base_price || 0)).toLocaleString()} × {pricing.nights} night{pricing.nights > 1 ? 's' : ''}</span>
+                          <span>BDT {Number(pricing.basePrice).toLocaleString()}</span>
+                        </div>
+                        {pricing.cleaningFee > 0 && (
+                          <div className="flex justify-between text-gray-700">
+                            <span className="underline">Cleaning fee</span>
+                            <span>BDT {Number(pricing.cleaningFee).toLocaleString()}</span>
+                          </div>
+                        )}
+                        {pricing.securityDeposit > 0 && (
+                          <div className="flex justify-between text-gray-700">
+                            <span className="underline">Security deposit</span>
+                            <span>BDT {Number(pricing.securityDeposit).toLocaleString()}</span>
+                          </div>
+                        )}
+                        {pricing.extraGuestFee > 0 && (
+                          <div className="flex justify-between text-gray-700">
+                            <span className="underline">Extra guest fee</span>
+                            <span>BDT {Number(pricing.extraGuestFee).toLocaleString()}</span>
+                          </div>
+                        )}
+                        {pricing.serviceFee > 0 && (
+                          <div className="flex justify-between text-gray-700">
+                            <span className="underline">Service fee ({pricing.serviceFeePercent * 100}%)</span>
+                            <span>BDT {Number(pricing.serviceFee).toLocaleString()}</span>
+                          </div>
+                        )}
+                        {pricing.taxAmount > 0 && (
+                          <div className="flex justify-between text-gray-700">
+                            <span className="underline">Tax ({pricing.taxPercent * 100}%)</span>
+                            <span>BDT {Number(pricing.taxAmount).toLocaleString()}</span>
+                          </div>
+                        )}
+                        {pricing.hostDiscount > 0 && (
+                          <div className="bg-green-50 p-2 rounded-lg flex justify-between text-green-700 font-medium my-2">
+                            <span>Host Discount</span>
+                            <span>- BDT {Number(pricing.hostDiscount).toLocaleString()}</span>
+                          </div>
+                        )}
+                        {pricing.discountAmount > 0 && (
+                          <div className="bg-green-50 p-2 rounded-lg flex justify-between text-green-700 font-medium my-2">
+                            <span>Discount ({appliedCoupon?.code})</span>
+                            <span>- BDT {Number(pricing.discountAmount).toLocaleString()}</span>
+                          </div>
+                        )}
+                        <div className="border-t border-gray-200 pt-3 flex justify-between font-bold text-gray-900 text-base">
+                          <span>Total</span>
+                          <span>BDT {Number(pricing.total).toLocaleString()}</span>
+                        </div>
+
+                        {/* Section: Coupon */}
+                        <div className="pt-4 pb-2 border-t border-gray-100 border-dashed mt-2">
+                          {appliedCoupon ? (
+                            <div className="flex justify-between items-center bg-gray-50 p-2 rounded-lg">
+                              <div>
+                                <span className="text-sm font-medium text-gray-900">Code: {appliedCoupon.code}</span>
+                                <span className="text-xs text-green-600 block">Applied successfully</span>
+                              </div>
+                              <button type="button" onClick={handleRemoveCoupon} className="text-sm font-semibold text-red-600 hover:text-red-800 transition-colors">Remove</button>
+                            </div>
+                          ) : (
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                name="coupon_code"
+                                value={formData.coupon_code}
+                                onChange={handleInputChange}
+                                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E41D57] focus:border-[#E41D57] placeholder-gray-400"
+                                placeholder="Coupon code"
+                              />
+                              <button type="button" onClick={handleApplyCoupon} className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors">Apply</button>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 {/* Desktop Reserve Button */}
                 <div className="hidden lg:block px-6 pb-4">
                   {formData.check_in_date && formData.check_out_date && (
@@ -809,87 +995,6 @@ const GuestBooking = () => {
                     </p>
                   </div>
                 </div>
-
-                {/* Pricing breakdown */}
-                {pricing && pricing.nights > 0 && (
-                  <div className="px-0 pb-0 lg:px-6 lg:pb-6 space-y-2 text-sm mt-4 lg:mt-0">
-                    <div className="flex justify-between text-gray-700">
-                      <span className="underline">BDT {Number(selectedRoom ? selectedRoom.price : (property.base_price || 0)).toLocaleString()} × {pricing.nights} night{pricing.nights > 1 ? 's' : ''}</span>
-                      <span>BDT {Number(pricing.basePrice).toLocaleString()}</span>
-                    </div>
-                    {pricing.cleaningFee > 0 && (
-                      <div className="flex justify-between text-gray-700">
-                        <span className="underline">Cleaning fee</span>
-                        <span>BDT {Number(pricing.cleaningFee).toLocaleString()}</span>
-                      </div>
-                    )}
-                    {pricing.securityDeposit > 0 && (
-                      <div className="flex justify-between text-gray-700">
-                        <span className="underline">Security deposit</span>
-                        <span>BDT {Number(pricing.securityDeposit).toLocaleString()}</span>
-                      </div>
-                    )}
-                    {pricing.extraGuestFee > 0 && (
-                      <div className="flex justify-between text-gray-700">
-                        <span className="underline">Extra guest fee</span>
-                        <span>BDT {Number(pricing.extraGuestFee).toLocaleString()}</span>
-                      </div>
-                    )}
-                    {pricing.serviceFee > 0 && (
-                      <div className="flex justify-between text-gray-700">
-                        <span className="underline">Service fee ({pricing.serviceFeePercent * 100}%)</span>
-                        <span>BDT {Number(pricing.serviceFee).toLocaleString()}</span>
-                      </div>
-                    )}
-                    {pricing.taxAmount > 0 && (
-                      <div className="flex justify-between text-gray-700">
-                        <span className="underline">Tax ({pricing.taxPercent * 100}%)</span>
-                        <span>BDT {Number(pricing.taxAmount).toLocaleString()}</span>
-                      </div>
-                    )}
-                    {pricing.hostDiscount > 0 && (
-                      <div className="bg-green-50 p-2 rounded-lg flex justify-between text-green-700 font-medium my-2">
-                        <span>Host Discount</span>
-                        <span>- BDT {Number(pricing.hostDiscount).toLocaleString()}</span>
-                      </div>
-                    )}
-                    {pricing.discountAmount > 0 && (
-                      <div className="bg-green-50 p-2 rounded-lg flex justify-between text-green-700 font-medium my-2">
-                        <span>Discount ({appliedCoupon?.code})</span>
-                        <span>- BDT {Number(pricing.discountAmount).toLocaleString()}</span>
-                      </div>
-                    )}
-                    <div className="border-t border-gray-200 pt-3 flex justify-between font-bold text-gray-900 text-base">
-                      <span>Total</span>
-                      <span>BDT {Number(pricing.total).toLocaleString()}</span>
-                    </div>
-
-                    {/* Section: Coupon */}
-                    <div className="pt-4 pb-2 border-t border-gray-100 border-dashed mt-2">
-                      {appliedCoupon ? (
-                        <div className="flex justify-between items-center bg-gray-50 p-2 rounded-lg">
-                          <div>
-                            <span className="text-sm font-medium text-gray-900">Code: {appliedCoupon.code}</span>
-                            <span className="text-xs text-green-600 block">Applied successfully</span>
-                          </div>
-                          <button type="button" onClick={handleRemoveCoupon} className="text-sm font-semibold text-red-600 hover:text-red-800 transition-colors">Remove</button>
-                        </div>
-                      ) : (
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            name="coupon_code"
-                            value={formData.coupon_code}
-                            onChange={handleInputChange}
-                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E41D57] focus:border-[#E41D57] placeholder-gray-400"
-                            placeholder="Coupon code"
-                          />
-                          <button type="button" onClick={handleApplyCoupon} className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors">Apply</button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
 
                 {/* Availability warning */}
                 {!availability && formData.check_in_date && formData.check_out_date && (

@@ -2,6 +2,8 @@ import React, { useEffect, Suspense, lazy } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import useAuthStore from './store/authStore';
 import useSettingsStore from './store/settingsStore';
+import useConnectionStore from './store/connectionStore';
+import ConnectionErrorScreen from './components/common/ConnectionErrorScreen';
 
 // Always-loaded core (tiny, needed immediately)
 import LoadingSpinner from './components/common/LoadingSpinner';
@@ -61,6 +63,7 @@ const AdminEarnings = lazy(() => import('./pages/admin/AdminEarnings'));
 const AdminRewardsPoints = lazy(() => import('./pages/admin/AdminRewardsPoints'));
 const AdminReports = lazy(() => import('./pages/admin/AdminReports'));
 const AdminRefunds = lazy(() => import('./pages/admin/AdminRefunds'));
+const AdminSecurityDeposits = lazy(() => import('./pages/admin/AdminSecurityDeposits'));
 const AdminHMSSettings = lazy(() => import('./pages/admin/AdminHMSSettings'));
 
 // Shared Reports Pages
@@ -69,6 +72,9 @@ const FinancialReports = lazy(() => import('./pages/shared/reports/FinancialRepo
 const PropertyPerformance = lazy(() => import('./pages/shared/reports/PropertyPerformance'));
 const CancellationReports = lazy(() => import('./pages/shared/reports/CancellationReports'));
 const PayoutReports = lazy(() => import('./pages/shared/reports/PayoutReports'));
+const UserReports = lazy(() => import('./pages/admin/UserReports'));
+const UserAnalyticsReport = lazy(() => import('./pages/admin/UserAnalyticsReport'));
+const PropertyAnalyticsReport = lazy(() => import('./pages/admin/PropertyAnalyticsReport'));
 
 // Property Owner Pages
 const PropertyOwnerDashboard = lazy(() => import('./pages/property-owner/PropertyOwnerDashboard'));
@@ -87,6 +93,8 @@ const HMSRooms = lazy(() => import('./pages/property-owner/HMSRooms'));
 const HMSStaff = lazy(() => import('./pages/property-owner/HMSStaff'));
 const HMSBilling = lazy(() => import('./pages/property-owner/HMSBilling'));
 const HMSReservations = lazy(() => import('./pages/property-owner/HMSReservations'));
+const HMSCalendar = lazy(() => import('./pages/property-owner/HMSCalendar'));
+const HMSMaintenance = lazy(() => import('./pages/property-owner/HMSMaintenance'));
 const HMSEmployees = lazy(() => import('./pages/property-owner/hms/hr/Employees'));
 const HMSDepartments = lazy(() => import('./pages/property-owner/hms/hr/Departments'));
 const HMSDesignations = lazy(() => import('./pages/property-owner/hms/hr/Designations'));
@@ -101,8 +109,15 @@ const HMSVouchers = lazy(() => import('./pages/property-owner/hms/accounts/Vouch
 const HMSTransactions = lazy(() => import('./pages/property-owner/hms/accounts/Transactions'));
 const HMSPublicPayment = lazy(() => import('./pages/HMSPublicPayment'));
 const HMSInvoice = lazy(() => import('./pages/HMSInvoice'));
+const HMSReceipt = lazy(() => import('./pages/HMSReceipt'));
 const HMSHousekeeping = lazy(() => import('./pages/property-owner/HMSHousekeeping'));
 const HMSFoodBeverage = lazy(() => import('./pages/property-owner/HMSFoodBeverage'));
+const HMSReservationDetail = lazy(() => import('./pages/property-owner/HMSReservationDetail'));
+const HMSRoomRevenueReport = lazy(() => import('./pages/property-owner/hms/reports/HMSRoomRevenueReport'));
+const HMSFinancialReports = lazy(() => import('./pages/property-owner/hms/reports/HMSFinancialReports'));
+const HMSGuests = lazy(() => import('./pages/property-owner/HMSGuests'));
+const HMSGuestAnalytics = lazy(() => import('./pages/property-owner/HMSGuestAnalytics'));
+
 
 // Staff Pages
 const StaffAttendance = lazy(() => import('./pages/staff/StaffAttendance'));
@@ -126,6 +141,7 @@ const GuestReports = lazy(() => import('./pages/guest/GuestReports'));
 function App() {
   const { user, isAdmin } = useAuthStore();
   const { settings, isMaintenanceMode, loadPublicSettings } = useSettingsStore();
+  const { isServerUnreachable } = useConnectionStore();
 
   // Load public settings and authenticate on app initialization
   useEffect(() => {
@@ -133,7 +149,39 @@ function App() {
     if (useAuthStore.getState().isAuthenticated) {
       useAuthStore.getState().fetchProfile();
     }
+
+    // Automated client-side version check to clear cache and force updates
+    const checkVersion = async () => {
+      try {
+        const response = await fetch(`/version.json?t=${Date.now()}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        
+        const localVersion = localStorage.getItem('app_version');
+        if (localVersion && localVersion !== data.version) {
+          console.log(`New version detected: ${data.version}. Clearing cache and reloading...`);
+          localStorage.setItem('app_version', data.version);
+          
+          if ('caches' in window) {
+            const cacheNames = await caches.keys();
+            await Promise.all(cacheNames.map(name => caches.delete(name)));
+          }
+          
+          window.location.reload(true);
+        } else if (!localVersion) {
+          localStorage.setItem('app_version', data.version);
+        }
+      } catch (err) {
+        console.error('Error checking app version:', err);
+      }
+    };
+
+    checkVersion();
   }, [loadPublicSettings]);
+
+  if (isServerUnreachable) {
+    return <ConnectionErrorScreen />;
+  }
 
   // Check for maintenance mode
   if (isMaintenanceMode() && !isAdmin()) {
@@ -196,6 +244,7 @@ function App() {
           <Route path="/cookies" element={<Cookies />} />
           <Route path="/hms/pay/:token" element={<HMSPublicPayment />} />
           <Route path="/hms/invoice/:id" element={<HMSInvoice />} />
+          <Route path="/hms/receipt/:id" element={<HMSReceipt />} />
           <Route path="*" element={<NotFound />} />
 
           <Route path="/become-host" element={
@@ -300,6 +349,11 @@ function App() {
               <AdminRefunds />
             </ProtectedRoute>
           } />
+          <Route path="/admin/security-deposits" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminSecurityDeposits />
+            </ProtectedRoute>
+          } />
           <Route path="/admin/reports/bookings" element={
             <ProtectedRoute requireAuth requireRole="admin">
               <BookingReports userRole="admin" />
@@ -323,6 +377,21 @@ function App() {
           <Route path="/admin/reports/cancellations" element={
             <ProtectedRoute requireAuth requireRole="admin">
               <CancellationReports userRole="admin" />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/reports/users" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <UserReports />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/reports/user-analytics" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <UserAnalyticsReport />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/reports/property-analytics" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <PropertyAnalyticsReport />
             </ProtectedRoute>
           } />
 
@@ -474,6 +543,26 @@ function App() {
               <HMSReservations />
             </ProtectedRoute>
           } />
+          <Route path="/property-owner/hms/guests" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSGuests />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/analytics/guests" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSGuestAnalytics />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/reservations/:id" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSReservationDetail />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/calendar" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSCalendar />
+            </ProtectedRoute>
+          } />
           <Route path="/property-owner/hms/housekeeping" element={
             <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
               <HMSHousekeeping />
@@ -482,6 +571,21 @@ function App() {
           <Route path="/property-owner/hms/food-beverage" element={
             <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
               <HMSFoodBeverage />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/maintenance" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSMaintenance />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/reports/room-revenue" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSRoomRevenueReport />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/reports/financials" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSFinancialReports />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/reports/bookings" element={
@@ -502,6 +606,26 @@ function App() {
           <Route path="/property-owner/reports/cancellations" element={
             <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
               <CancellationReports userRole="property_owner" />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/reports/user-analytics" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <UserAnalyticsReport userRole="property_owner" />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/reports/user-analytics" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <UserAnalyticsReport userRole="property_owner" />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/reports/property-analytics" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <PropertyAnalyticsReport userRole="property_owner" />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/reports/property-analytics" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <PropertyAnalyticsReport userRole="property_owner" />
             </ProtectedRoute>
           } />
 

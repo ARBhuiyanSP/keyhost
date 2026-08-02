@@ -5,21 +5,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Keyhost - Modern User Manual & Documentation</title>
-    <!-- Modern Font -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Modern Google Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
             --primary: #E41D57;
             --primary-hover: #c41548;
-            --secondary: #1e2049;
-            --bg-body: #f4f7f6;
+            --secondary: #004e59;
+            --secondary-dark: #00363e;
+            --bg-body: #f8fafc;
             --bg-card: #ffffff;
             --text-main: #334155;
             --text-muted: #64748b;
             --border: #e2e8f0;
             --guest-color: #10b981;
             --host-color: #f59e0b;
-            --admin-color: #ef4444;
+            --admin-color: #3b82f6;
             --sidebar-width: 280px;
         }
 
@@ -30,7 +31,7 @@
         }
 
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: 'Plus Jakarta Sans', sans-serif;
             background-color: var(--bg-body);
             color: var(--text-main);
             line-height: 1.7;
@@ -38,7 +39,6 @@
         }
 
         @media print {
-
             .sidebar,
             .topbar,
             .no-print {
@@ -71,29 +71,33 @@
         /* Sidebar */
         .sidebar {
             width: var(--sidebar-width);
-            background: var(--secondary);
+            background: var(--secondary-dark);
             color: white;
             position: fixed;
             height: 100vh;
             overflow-y: auto;
-            padding: 2rem 1.5rem;
+            padding: 2.5rem 1.5rem;
             z-index: 100;
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
         }
 
         .sidebar h2 {
-            font-size: 1.5rem;
-            margin-bottom: 2rem;
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.6rem;
+            font-weight: 800;
+            margin-bottom: 2.5rem;
             color: white;
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 12px;
         }
 
         .sidebar-logo {
-            width: 32px;
-            height: 32px;
+            width: 36px;
+            height: 36px;
             background: var(--primary);
-            border-radius: 8px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(228, 29, 87, 0.3);
         }
 
         .nav-links {
@@ -105,23 +109,29 @@
         }
 
         .nav-links a {
-            color: #cbd5e1;
+            color: #94a3b8;
             text-decoration: none;
             font-size: 0.95rem;
+            font-weight: 500;
             display: block;
-            padding: 0.75rem 1rem;
-            border-radius: 6px;
-            transition: all 0.3s ease;
+            padding: 0.8rem 1rem;
+            border-radius: 8px;
+            transition: all 0.2s ease;
         }
 
         .nav-links a:hover,
         .nav-links a.active {
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.08);
             color: white;
             transform: translateX(5px);
         }
 
-        /* Topbar for mobile & actions */
+        .nav-links a.active {
+            border-left: 4px solid var(--primary);
+            font-weight: 600;
+        }
+
+        /* Topbar */
         .topbar {
             position: fixed;
             top: 0;
@@ -129,11 +139,12 @@
             right: 0;
             height: 70px;
             background: white;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+            border-bottom: 1px solid var(--border);
             display: flex;
             align-items: center;
             justify-content: flex-end;
-            padding: 0 2rem;
+            padding: 0 3rem;
             z-index: 90;
         }
 
@@ -141,19 +152,23 @@
             background: var(--primary);
             color: white;
             border: none;
-            padding: 0.6rem 1.2rem;
-            border-radius: 6px;
+            padding: 0.7rem 1.4rem;
+            border-radius: 8px;
             font-weight: 600;
-            font-family: 'Inter', sans-serif;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 0.9rem;
             cursor: pointer;
-            transition: background 0.3s;
+            transition: all 0.3s;
             display: flex;
             align-items: center;
             gap: 8px;
+            box-shadow: 0 4px 12px rgba(228, 29, 87, 0.2);
         }
 
         .btn:hover {
             background: var(--primary-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(228, 29, 87, 0.3);
         }
 
         /* Main Content */
@@ -169,59 +184,74 @@
         h3,
         h4 {
             color: var(--secondary);
-            margin-bottom: 1rem;
+            font-family: 'Outfit', sans-serif;
         }
 
         h1 {
-            font-size: 2.5rem;
-            font-weight: 700;
+            font-size: 2.8rem;
+            font-weight: 800;
             margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
         }
 
         .subtitle {
             color: var(--text-muted);
-            font-size: 1.1rem;
-            margin-bottom: 3rem;
+            font-size: 1.15rem;
+            margin-bottom: 3.5rem;
         }
 
         h2 {
-            font-size: 1.8rem;
-            padding-bottom: 0.5rem;
+            font-size: 2rem;
+            font-weight: 700;
+            padding-bottom: 0.75rem;
             border-bottom: 2px solid var(--border);
-            margin-top: 3rem;
+            margin-top: 4rem;
+            margin-bottom: 1.5rem;
+            letter-spacing: -0.01em;
         }
 
         h3 {
-            font-size: 1.3rem;
-            margin-top: 2rem;
+            font-size: 1.45rem;
+            font-weight: 700;
+            margin-top: 2.5rem;
+            margin-bottom: 1.2rem;
+            color: var(--secondary-dark);
+            border-left: 4px solid var(--primary);
+            padding-left: 12px;
         }
 
         p {
             margin-bottom: 1.2rem;
+            color: #475569;
         }
 
         /* Cards */
         .card {
             background: var(--bg-card);
-            border-radius: 12px;
-            padding: 2rem;
-            margin-bottom: 2rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            border-radius: 16px;
+            padding: 2.5rem;
+            margin-bottom: 2.5rem;
+            box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05), 0 2px 8px -1px rgba(15, 23, 42, 0.03);
             border: 1px solid var(--border);
+            transition: transform 0.2s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
         }
 
         /* Roles Badges */
         .badge {
             display: inline-block;
-            padding: 0.25rem 0.75rem;
+            padding: 0.3rem 0.8rem;
             border-radius: 9999px;
             font-size: 0.75rem;
-            font-weight: 600;
+            font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.05em;
             color: white;
             vertical-align: middle;
-            margin-left: 0.5rem;
+            margin-left: 0.75rem;
         }
 
         .b-guest {
@@ -238,7 +268,7 @@
 
         .b-feature {
             background: #e0f2fe;
-            color: #0284c7;
+            color: #0369a1;
         }
 
         /* Lists & Tables */
@@ -249,38 +279,42 @@
 
         ul.styled-list li {
             position: relative;
-            padding-left: 1.5rem;
-            margin-bottom: 0.75rem;
+            padding-left: 1.75rem;
+            margin-bottom: 0.8rem;
+            color: #475569;
         }
 
         ul.styled-list li::before {
-            content: "→";
+            content: "✓";
             position: absolute;
             left: 0;
             color: var(--primary);
-            font-weight: bold;
+            font-weight: 800;
+            font-size: 1.1rem;
+            line-height: 1.4;
         }
 
         table {
             width: 100%;
             border-collapse: separate;
             border-spacing: 0;
-            border-radius: 8px;
+            border-radius: 12px;
             overflow: hidden;
             border: 1px solid var(--border);
-            margin-bottom: 2rem;
+            margin-bottom: 2.5rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
         }
 
         th,
         td {
             text-align: left;
-            padding: 1rem;
+            padding: 1.2rem;
             border-bottom: 1px solid var(--border);
         }
 
         th {
             background: #f8fafc;
-            font-weight: 600;
+            font-weight: 700;
             color: var(--secondary);
         }
 
@@ -288,48 +322,92 @@
             border-bottom: none;
         }
 
-        /* Steps for Guides */
+        /* Steps Timeline */
         .step-container {
             display: flex;
-            margin-bottom: 1.5rem;
+            margin-bottom: 2rem;
+            position: relative;
+        }
+
+        .step-container:not(:last-child)::after {
+            content: "";
+            position: absolute;
+            left: 18px;
+            top: 40px;
+            bottom: -20px;
+            width: 2px;
+            background: #cbd5e1;
         }
 
         .step-number {
             flex-shrink: 0;
-            width: 32px;
-            height: 32px;
-            background: var(--primary);
+            width: 38px;
+            height: 38px;
+            background: var(--secondary);
             color: white;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: bold;
-            margin-right: 1rem;
-            margin-top: 3px;
+            font-weight: 800;
+            font-size: 1.05rem;
+            margin-right: 1.25rem;
+            margin-top: 2px;
+            box-shadow: 0 4px 6px rgba(0, 78, 89, 0.15);
+        }
+
+        .step-number.s-guest {
+            background: var(--guest-color);
+            box-shadow: 0 4px 6px rgba(16, 185, 129, 0.2);
+        }
+
+        .step-number.s-host {
+            background: var(--host-color);
+            box-shadow: 0 4px 6px rgba(245, 158, 11, 0.2);
+        }
+
+        .step-number.s-admin {
+            background: var(--admin-color);
+            box-shadow: 0 4px 6px rgba(59, 130, 246, 0.2);
+        }
+
+        .step-content {
+            padding-top: 6px;
         }
 
         .step-content h4 {
-            margin-bottom: 0.25rem;
+            font-size: 1.15rem;
+            font-weight: 700;
+            margin-bottom: 0.4rem;
+            color: var(--secondary-dark);
         }
 
-        /* Highlight Boxes */
+        .step-content p {
+            font-size: 0.95rem;
+            color: #64748b;
+        }
+
+        /* Highlight Alerts */
         .alert {
-            padding: 1rem 1.25rem;
-            border-radius: 8px;
-            background: #eff6ff;
-            border-left: 4px solid #3b82f6;
-            margin-bottom: 1.5rem;
+            padding: 1.25rem 1.5rem;
+            border-radius: 12px;
+            background: #f0f9ff;
+            border-left: 5px solid #0284c7;
+            margin-bottom: 2rem;
+            font-size: 0.95rem;
+            color: #0369a1;
         }
 
         .alert-success {
             background: #f0fdf4;
-            border-color: #22c55e;
+            border-left-color: #22c55e;
+            color: #15803d;
         }
 
         .alert-warning {
             background: #fffbeb;
-            border-color: #f59e0b;
+            border-left-color: #f59e0b;
+            color: #b45309;
         }
 
         @media (max-width: 768px) {
@@ -341,7 +419,7 @@
             .topbar {
                 left: 0;
                 justify-content: space-between;
-                padding: 0 1rem;
+                padding: 0 1.5rem;
             }
 
             .hamburger {
@@ -363,7 +441,7 @@
             display: none;
             background: none;
             border: none;
-            font-size: 1.5rem;
+            font-size: 1.7rem;
             color: var(--secondary);
             cursor: pointer;
         }
@@ -375,16 +453,17 @@
     <!-- Sidebar -->
     <nav class="sidebar no-print" id="sidebar">
         <h2>
-            <div class="sidebar-logo"></div> Keyhost Support
+            <div class="sidebar-logo"></div> Keyhost Manual
         </h2>
         <ul class="nav-links">
             <li><a href="#overview">1. System Overview</a></li>
-            <li><a href="#roles">2. User Roles & Capabilities</a></li>
-            <li><a href="#dashboards">3. Dashboard Ecosystem</a></li>
-            <li><a href="#guest-guide">4. Detailed Guest Guide</a></li>
-            <li><a href="#host-guide">5. Detailed Owner (Host) Guide</a></li>
-            <li><a href="#admin-guide">6. Detailed Admin Guide</a></li>
-            <li><a href="#latest-tech">7. Latest Tech Enhancements</a></li>
+            <li><a href="#roles">2. User Roles & Scope</a></li>
+            <li><a href="#hms-owner">3. Owner (HMS) Modules</a></li>
+            <li><a href="#admin-ops">4. Admin Operations</a></li>
+            <li><a href="#guest-flow">5. Guest Process Flow</a></li>
+            <li><a href="#host-flow">6. Host Process Flow</a></li>
+            <li><a href="#admin-flow">7. Admin Process Flow</a></li>
+            <li><a href="#technical">8. Developer Info</a></li>
         </ul>
     </nav>
 
@@ -406,319 +485,348 @@
 
     <!-- Content -->
     <main class="content">
-        <h1>Keyhost Documentation & User Manual</h1>
-        <p class="subtitle">Comprehensive Guide for Guests, Property Owners, and Administrators • Generated <span
-                id="date"></span></p>
+        <h1>Keyhost Homes Documentation & User Manual</h1>
+        <p class="subtitle">Complete Operational Step-by-Step Manual for Guests, Property Owners, and System Administrators • Updated on <span id="date"></span></p>
 
         <section id="overview" class="card">
             <h2>1. System Overview</h2>
-            <p><strong>Keyhost</strong> is a modern, responsive, and robust multi-vendor booking platform specifically
-                designed to bridge the gap between travelers seeking accommodations and property owners looking to
-                monetize their spaces.</p>
-            <p>Our platform handles end-to-end operational workflows:</p>
-            <ul class="styled-list">
-                <li>Dynamic Property Searching and Filtering (Location, Date, Guests).</li>
-                <li>Secure Real-time Payment Processing via Digital Gateways (bKash, SSLCommerz).</li>
-                <li>Granular Dashboard Ecosystems configured respectively for Guests, Owners, and Admins.</li>
-                <li>Reward Management, Bookings Handling, Live Notifications, and In-app Messaging.</li>
-            </ul>
+            <p><strong>Keyhost</strong> is a premium, fully automated multi-vendor booking and property management engine. It enables property owners (hosts) to manage their properties and receive payments, while guests can search, book, and pay for stays securely.</p>
+            <p>The platform automates the complete lifecycle of reservation, host approvals, payments, check-in management, billing, and cancellations.</p>
+            <div class="alert">
+                <strong>Key Technology integrations:</strong> SSLCommerz Card Payment, bKash Checkout (Tokenized), real-time WhatsApp & SMS notifications, iCal calendar synchronization, and automated HMS accounts ledger syncing.
+            </div>
         </section>
 
         <section id="roles">
-            <h2>2. User Roles & Capabilities</h2>
+            <h2>2. User Roles & Scope</h2>
 
             <div class="card">
-                <h3>Guest (Traveler) <span class="badge b-guest">Guest</span></h3>
-                <p>The primary consumers of the platform, searching for their next perfect stay.</p>
-                <div class="alert alert-success"><strong>Empowered Experiences:</strong> Guests have access to Advanced
-                    Searches, Multi-criteria Filters, Wishlists (Favorites), Reward points, and instant messaging
-                    directly with hosts.</div>
+                <h3>Guest (Customer / Traveler) <span class="badge b-guest">Guest</span></h3>
+                <p>Can browse properties, register, request stays, book online via mobile banking/cards, track reward points, communicate with owners, and submit reviews.</p>
             </div>
 
             <div class="card">
-                <h3>Property Owner (Host) <span class="badge b-host">Owner</span></h3>
-                <p>Platform partners listing accommodations ranging from singular rooms to boutique hotels.</p>
-                <ul class="styled-list">
-                    <li>Create sophisticated property listings via an intuitive Multi-Step Form.</li>
-                    <li>Manage availability via a centralized Interactive Calendar.</li>
-                    <li>Accept or decline guest booking requests seamlessly.</li>
-                    <li>Track live earnings, occupancy metrics, and request payouts.</li>
-                </ul>
+                <h3>Property Owner (Host) <span class="badge b-host">Host / Owner</span></h3>
+                <p>Manages individual rooms/units or entire properties. Can add listings via a multi-step form, handle bookings on the interactive calendar, log manual walk-in reservations, generate guest payment links, request earnings payouts, and sync calendars via iCal.</p>
             </div>
 
             <div class="card">
                 <h3>Administrator <span class="badge b-admin">Admin</span></h3>
-                <p>The operational orchestrator maintaining the health, financials, and configurations of Keyhost.</p>
-                <ul class="styled-list">
-                    <li>Dynamic control over branding, SEO, SMS, and Email system via Settings Hub.</li>
-                    <li>Global overview of all properties, user details, bookings, and financial analytics.</li>
-                    <li>Payment gateway credential management using integrated environmental variables workflows.</li>
-                </ul>
+                <p>Governs the entire platform. Approves listings, processes online refunds, manages global system configurations, verifies host payouts, sets commission rates, and reviews settings for general, SMS, email, and payment gateways.</p>
             </div>
         </section>
 
-        <section id="dashboards">
-            <h2>3. The Dashboard Ecosystem</h2>
-            <p>Each user type experiences a personalized workspace optimized for operational speed and device reactivity
-                (fully mobile responsive).</p>
-
-            <table>
-                <thead>
-                    <tr>
-                        <th>Core Module</th>
-                        <th>Feature Highlights</th>
-                        <th>Target User</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><strong>Property Matrix</strong></td>
-                        <td>Responsive Data Tables allowing smooth navigation without horizontal scrolling, including
-                            "View More" drilldowns.</td>
-                        <td>Owner, Admin</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Booking Engine</strong></td>
-                        <td>Comprehensive timeline of reservations categorized cleanly into Active, Upcoming, Cancelled,
-                            and Pending arrays.</td>
-                        <td>All Roles</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Analytics Engine</strong></td>
-                        <td>Accurate live charts pulling directly from live databases representing revenue, booking
-                            conversions, and property traffic.</td>
-                        <td>Owner, Admin</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Settings Hub</strong></td>
-                        <td>A massive categorized section for Admins covering General Setup, Gateways (e.g., SSLCommerz
-                            configs), Mail, and Social links.</td>
-                        <td>Admin</td>
-                    </tr>
-                </tbody>
-            </table>
-        </section>
-
-        <section id="guest-guide">
-            <h2>4. Detailed Guest Guide</h2>
-            <p>A step-by-step walkthrough covering the entire guest lifecycle from discovery to payment.</p>
+        <section id="hms-owner">
+            <h2>3. Owner Host Management System (HMS) Suite (Detailed)</h2>
+            <p>The Host Management System (HMS) provides a detailed, comprehensive software suite for hosts to automate hotel, flat, or resort unit operations. Below is a detailed operational guide for each sub-module.</p>
 
             <div class="card">
-                <h3>The Complete Booking Process</h3>
+                <h3>HMS Central Calendar (Room Matrix & Grid View)</h3>
+                <p>The HMS Calendar is an interactive timeline grid layout showing rooms/units on the vertical axis and days of the month on the horizontal axis.</p>
+                <ul class="styled-list">
+                    <li><strong>Visual Coding:</strong> Reservations are color-coded based on their booking status (e.g., green for checked-in, orange for confirmed, gray for checked-out, purple for monthly long stays).</li>
+                    <li><strong>Drag-Select Reservations:</strong> Click and drag across dates in a specific room's row to trigger a walk-in booking instantly, with dates pre-filled.</li>
+                    <li><strong>Unassigned Row:</strong> A designated top row shows bookings that have not yet been assigned to a specific room, allowing hosts to drag and drop them to assign rooms.</li>
+                    <li><strong>Room Navigation:</strong> Centralized property selector dropdown, filter rooms by type, and navigate between months or days with left/right buttons.</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>Reservations & Walk-In Bookings</h3>
+                <p>Manage bookings generated online or logged manually on-desk:
+                    <br/>• <strong>Create Reservation:</strong> Select check-in/out dates. The system fetches available rooms for those dates. Set guest name, phone, email, number of guests, and booking source.
+                    <br/>• <strong>Modifications:</strong> Add nights, shorten stays, change room numbers, or transfer guests to another room. The system recalculates room price balances and adjusts room status records automatically.
+                </p>
+            </div>
+
+            <div class="card">
+                <h3>Guests CRM & Identity (KYC) Management</h3>
+                <p>A central customer database built into the HMS:
+                    <br/>• <strong>Guest Records:</strong> Track previous check-ins, guest emails, phone numbers, and special requests (e.g., extra pillows, late check-out).
+                    <br/>• <strong>KYC Verification:</strong> Scan and upload images of guest NID (National ID) cards or passport photos directly into the guest detail panel. This provides instant security clearance and record availability during checkout.
+                </p>
+            </div>
+
+            <div class="card">
+                <h3>Food & Beverage (F&B) POS Module</h3>
+                <p>Manages in-house restaurant, cafe, or room-service dining orders:</p>
+                <ul class="styled-list">
+                    <li><strong>Menu Customization:</strong> Hosts configure items (e.g., breakfast combos, coffee, soft drinks), categories, descriptions, and pricing.</li>
+                    <li><strong>Order Logging:</strong> Select room number, add food items, adjust quantities, and place the order.</li>
+                    <li><strong>Billing Settle Methods:</strong> Settle the F&B bill immediately as cash/card payment, or add it to the guest's master room bill to pay during final checkout.</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>Housekeeping & Room Turnovers</h3>
+                <p>Keeps physical rooms clean and coordinates cleaning staff:</p>
+                <ul class="styled-list">
+                    <li><strong>Room States:</strong> Rooms are automatically marked <em>Dirty</em> upon check-out or checkout time limit. Cleaners sweep the rooms and toggle them back to <em>Clean</em>.</li>
+                    <li><strong>Staff Ticketing:</strong> Create housekeeping tickets, assign them to specific employees (cleaners), and track progress (Pending, In Progress, Completed).</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>HMS Maintenance & Ticketing</h3>
+                <p>Ensures room quality and minimizes unit downtime:
+                    <br/>• <strong>Issue Reporting:</strong> Report physical failures (e.g., broken geyser, faulty lock, damaged lightbulb) specifying severity and description.
+                    <br/>• <strong>Auto-Block Rooms:</strong> The system disables dirty or damaged rooms on the calendar, preventing booking requests or reservation allocations until the ticket is marked resolved.
+                </p>
+            </div>
+
+            <div class="card">
+                <h3>Staff & Employee Management</h3>
+                <p>Create separate credentials for staff members:
+                    <br/>• <strong>Roles:</strong> Assign roles such as Receptionist, Housekeeper, Chef, Manager, or Admin.
+                    <br/>• <strong>Permission Gates:</strong> Receptionists can create bookings and take bills but cannot alter room base rates. Managers can request payouts and adjust configurations.
+                </p>
+            </div>
+
+            <div class="card">
+                <h3>HMS Pricing, Weekend & Seasonal Rates</h3>
+                <p>Override baseline prices to match market demand:
+                    <br/>• Configure weekend rates (Friday & Saturday) to apply price markups automatically.
+                    <br/>• block out special dates or holidays and define fixed rate overrides for specific units.
+                </p>
+            </div>
+        </section>
+
+        <section id="admin-ops">
+            <h2>4. Admin Operations & Governance Suite</h2>
+            <p>The operational cockpit for Admin controls and financial accountability.</p>
+
+            <div class="card">
+                <h3>General Ledger & Platform Accounting</h3>
+                <p>The <strong>Accounting</strong> module tracks the system's ledger, showing a double-entry balance sheet:
+                    <br/>• <strong>Revenues:</strong> Visual summaries of commission margins collected from completed bookings.
+                    <br/>• <strong>Expenses:</strong> Platform host payouts, transaction processing fees, and running operational expenses.
+                </p>
+            </div>
+
+            <div class="card">
+                <h3>Coupon & Promo Engine</h3>
+                <p>Create promotional discount codes (e.g., WELCOME10, EID2026):
+                    <br/>• Set discounts as flat BDT amounts or percentage-based deductions.
+                    <br/>• Configure usage limits (per user or globally) and set strict start/end expiry dates.
+                </p>
+            </div>
+
+            <div class="card">
+                <h3>Review Moderation & Approvals</h3>
+                <p>Review submittals are queued for Admin audit to prevent spam or abusive language:
+                    <br/>• Admin can approve, reject, or delete submitted guest reviews.
+                    <br/>• In Settings, Admin can toggle <strong>Auto-Approve Reviews</strong> if direct moderation is not desired.
+                </p>
+            </div>
+
+            <div class="card">
+                <h3>Security Deposit Management</h3>
+                <p>For properties requiring security deposits (to protect hosts against damages):
+                    <br/>• Track deposits collected during booking.
+                    <br/>• Release the deposit holding to the guest after checkout, or log deductions for reported room damages.
+                </p>
+            </div>
+
+            <div class="card">
+                <h3>Loyalty Rewards Setup</h3>
+                <p>Manage the platform's customer retention rewards:
+                    <br/>• Set point earning factor (e.g. 1 point awarded per 100 BDT spent).
+                    <br/>• Define point redeem value (e.g. 1 point = 1 BDT discount).
+                </p>
+            </div>
+
+            <div class="card">
+                <h3>Customer Support Panel</h3>
+                <p>Provides a central queue of questions submitted via the public contact form. Admins can view message threads and send email replies directly from the panel.</p>
+            </div>
+        </section>
+
+        <section id="guest-flow">
+            <h2>5. Guest Process Flow (Step-by-Step)</h2>
+            <div class="card">
+                <p>A seamless, secure workflow from search to checkout and post-stay feedback.</p>
 
                 <div class="step-container">
-                    <div class="step-number">1</div>
+                    <div class="step-number s-guest">1</div>
                     <div class="step-content">
                         <h4>Search & Filtering</h4>
-                        <p>Begin on the Home Page. Use the sticky header search bar to input your desired Destination,
-                            Check-In/Check-Out Dates, and Guest counts (Adults, Children). Click Search to generate a
-                            tailored property list.</p>
+                        <p>Guest enters the destination, check-in/out dates, and number of guests on the home page search bar. The system shows available properties, which can be filtered by price, ratings, and features.</p>
                     </div>
                 </div>
 
                 <div class="step-container">
-                    <div class="step-number">2</div>
+                    <div class="step-number s-guest">2</div>
                     <div class="step-content">
-                        <h4>Evaluating Properties</h4>
-                        <p>Scroll through visual cards showing Key amenities and price per night. Use secondary filters
-                            (Price ranges, Rating, Facilities) to narrow choices. Click a property to open its detailed
-                            page showing Map Location, precise descriptions, and House Rules.</p>
+                        <h4>Booking Request Submission</h4>
+                        <p>After selecting a property and verifying the nightly price, the guest clicks <strong>"Request to Book"</strong>. The booking is placed in a <em>Pending</em> status, and the Host is instantly notified.</p>
                     </div>
                 </div>
 
                 <div class="step-container">
-                    <div class="step-number">3</div>
+                    <div class="step-number s-guest">3</div>
                     <div class="step-content">
-                        <h4>Initiating Reservation</h4>
-                        <p>On the right sidebar of the property page, adjust your dates and guest numbers if needed. The
-                            system auto-calculates Total Cost (including system fees and taxes). Click "Request to
-                            Book".</p>
+                        <h4>Host Approval & Accept State</h4>
+                        <p>Once the host reviews and accepts the booking, the booking status transitions to <strong>"Request Accepted"</strong>. The guest receives a WhatsApp/SMS alert with the booking details and payment time limit (default: 30 minutes).</p>
                     </div>
                 </div>
 
                 <div class="step-container">
-                    <div class="step-number">4</div>
+                    <div class="step-number s-guest">4</div>
                     <div class="step-content">
-                        <h4>Host Approval Matrix</h4>
-                        <p>Your request goes into "Pending" status. The Owner is notified and evaluates your request.
-                            Once they approve it, the status transitions to <strong>"Request Accepted"</strong>. At this
-                            point, the Payment button activates in your Dashboard.</p>
-                    </div>
-                </div>
-
-                <div class="step-container">
-                    <div class="step-number">5</div>
-                    <div class="step-content">
-                        <h4>Secure Checkout</h4>
-                        <p>Navigate to <em>Dashboard > Bookings</em>. Click "Make Payment to Confirm" on your accepted
-                            request. You are redirected to our SSLCommerz/bKash digital gateway.</p>
-                        <ul class="styled-list">
-                            <li>Enter payment details within the secure portal.</li>
-                            <li>Upon success, the Gateway dynamically redirects you back to the Keyhost confirmation
-                                screen.</li>
-                            <li>Booking status upgrades to <strong>"Confirmed/Paid"</strong>.</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card">
-                <h3>Managing Favorites (Wishlist)</h3>
-                <p>Click the <strong>Heart Icon</strong> on any property card or detail page. The heart fills red,
-                    instantly storing it in your account's Favorites menu. Visit your Dashboard's Favorite tab to review
-                    or effortlessly remove saved properties.</p>
-            </div>
-
-            <div class="card">
-                <h3>In-App Messaging</h3>
-                <p>Communication is essential for a great stay. You can message the property owner directly before,
-                    during, or after your stay. Go to the <strong>Messages</strong> tab in your Dashboard, or click the
-                    "Message Host" button directly on the property listing to ask questions or confirm details.
-                    Real-time notifications ensure you never miss a reply.</p>
-            </div>
-
-            <div class="card">
-                <h3>Reviews & Feedback</h3>
-                <p>After completing your stay, you can leave a comprehensive review and rating for the property.
-                    Navigate to your <strong>Dashboard > My Bookings</strong> and find your past completed stays to
-                    submit a review. Your honest feedback helps other guests make informed decisions and allows hosts to
-                    continually improve their services.</p>
-            </div>
-
-            <div class="card">
-                <h3>Rewards Points System</h3>
-                <p>Loyalty pays off! Earn <strong>Rewards Points</strong> for every completed booking. Navigate to your
-                    Dashboard's <strong>Rewards Points</strong> section to view your current balance and history. You
-                    can redeem these points during checkout for discounts on future stays.</p>
-            </div>
-        </section>
-
-        <section id="host-guide">
-            <h2>5. Detailed Owner (Host) Guide</h2>
-            <p>Maximize your property portfolio with integrated management tools.</p>
-
-            <div class="card">
-                <h3>Creating a Listing (Multi-Step Wizard)</h3>
-                <p>We revamped listing creations to reduce cognitive load using a modern Step-by-Step wizard flow:</p>
-                <ul class="styled-list">
-                    <li><strong>Step 1 (Basic Details):</strong> Title, detailed description, and Property type
-                        designation.</li>
-                    <li><strong>Step 2 (Location):</strong> Enter exact Address, coordinates, or use Map pinpointing.
-                    </li>
-                    <li><strong>Step 3 (Features):</strong> Room counts, Bathrooms, Max Guest Capacity limiters.</li>
-                    <li><strong>Step 4 (Amenities):</strong> Checkbox grid for WiFi, Pools, Air Conditioning, Kitchen,
-                        etc.</li>
-                    <li><strong>Step 5 (Gallery):</strong> Drag and drop primary and secondary high-resolution photos.
-                    </li>
-                    <li><strong>Step 6 (Pricing):</strong> Anchor a base nightly rate.</li>
-                </ul>
-                <div class="alert alert-warning"><strong>Validation:</strong> The system strictly validates each step
-                    before allowing progression. This guarantees high-quality, publish-ready listings!</div>
-            </div>
-
-            <div class="card">
-                <h3>Calendar & Availability Control</h3>
-                <p>Navigate to the <strong>Calendar</strong> tab. A full-month graphical view provides a bird's-eye view
-                    of your property's schedule. Days marked grey are booked, enabling you to proactively plan
-                    turnovers.</p>
-            </div>
-
-            <div class="card">
-                <h3>Earnings & Requesting Payouts</h3>
-                <p>Hosts possess a dedicated "Earnings" module showing gross revenue minus platform commissions. When
-                    "Available Balance" exceeds the withdrawal threshold, utilize the <strong>Withdraw Funds</strong>
-                    trigger, select preferred bank protocols, and submit.</p>
-            </div>
-
-            <div class="card">
-                <h3>Managing Guests & Messages</h3>
-                <p>Stay connected with your guests through the built-in <strong>Messages</strong> system. Respond
-                    promptly to inquiries, provide check-in instructions, and assist guests during their stay. Fast
-                    response rates improve your property's visibility and guest satisfaction.</p>
-            </div>
-
-            <div class="card">
-                <h3>Handling Reviews</h3>
-                <p>Monitor guest reviews from your Dashboard. Constructive feedback helps you maintain high standards,
-                    and responding to reviews publicly (if applicable) shows future guests that you are an engaged and
-                    caring host.</p>
-            </div>
-
-            <div class="card">
-                <h3>iCal Calendar Synchronization</h3>
-                <p>Prevent double-bookings by syncing your Keyhost calendar with external platforms (like Airbnb or
-                    Booking.com). Go to the Calendar tab to <strong>Import</strong> an external iCal link or
-                    <strong>Export</strong> your property's Keyhost iCal link to other services. This ensures your
-                    availability is always accurate across the web.</p>
-            </div>
-        </section>
-
-        <section id="admin-guide">
-            <h2>6. Detailed Admin Guide</h2>
-            <p>Mastering backend operations to scale and govern Keyhost.</p>
-
-            <div class="card">
-                <h3>The Admin Settings Hub</h3>
-                <p>Accessed through the Admin Dashboard, the Settings module is organized via horizontal tabs for
-                    laser-focused adjustments.</p>
-                <div class="step-container">
-                    <div class="step-number">A</div>
-                    <div class="step-content">
-                        <h4>Branding & SEO</h4>
-                        <p>Inject Site titles, meta descriptions, and analytics tracking IDs natively without touching
-                            source code. Configure primary brand palettes.</p>
-                    </div>
-                </div>
-                <div class="step-container">
-                    <div class="step-number">B</div>
-                    <div class="step-content">
-                        <h4>Payment Gateways setup</h4>
-                        <p>Securely enter API Keys, Store Passwords, and Store IDs for networks like
-                            <strong>SSLCommerz</strong> directly into encrypted database tables. Toggle "Live/Sandbox"
-                            environments with dedicated switches.
+                        <h4>Making Secure Payment</h4>
+                        <p>Guest goes to <em>My Bookings > Make Payment</em> in their dashboard. They select their preferred gateway:
+                            <br/>• <strong>bKash:</strong> Redirects to tokenized checkout where they input their PIN.
+                            <br/>• <strong>SSLCommerz:</strong> Redirects to card, mobile banking (Nagad, Rocket), or net banking.
                         </p>
                     </div>
                 </div>
+
                 <div class="step-container">
-                    <div class="step-number">C</div>
+                    <div class="step-number s-guest">5</div>
                     <div class="step-content">
-                        <h4>Email & Communication</h4>
-                        <p>Configure SMTP relays, default mailing addresses, and template configurations to ensure
-                            emails (Booking Confirmations, Payout alerts) reach users reliably.</p>
+                        <h4>Booking Confirmation & Rewards</h4>
+                        <p>Upon successful payment, the gateway redirects back to Keyhost. The status upgrades to <strong>"Confirmed"</strong>. The guest is awarded loyalty reward points based on the transaction amount, which can be redeemed for discounts on subsequent bookings.</p>
                     </div>
                 </div>
+
                 <div class="step-container">
-                    <div class="step-number">D</div>
+                    <div class="step-number s-guest">6</div>
                     <div class="step-content">
-                        <h4>User Management & Reports</h4>
-                        <p>Maintain total control over platform participants. View, edit, or suspend Guest and Host
-                            accounts. Additionally, generate comprehensive system <strong>Reports</strong> covering
-                            bookings, revenue, and platform growth over specified timeframes.</p>
+                        <h4>Stay, Checkout, and Reviews</h4>
+                        <p>After staying at the property, the guest checks out. They can visit their dashboard to write a rating and review for the property, contributing to its public rating score.</p>
                     </div>
                 </div>
             </div>
         </section>
 
-        <section id="latest-tech">
-            <h2>7. Latest Technological Enhancements</h2>
+        <section id="host-flow">
+            <h2>6. Host (Owner) Process Flow (Step-by-Step)</h2>
             <div class="card">
-                <ul class="styled-list">
-                    <li><strong>Dynamic Routing in Environments:</strong> Post-payment redirections (Success, Fail,
-                        Cancel) for SSLCommerz no longer rely on rigid localhost paths. They ingest frontend parameters
-                        natively via <code>.env</code> configs.</li>
-                    <li><strong>Advanced Mobile Tables:</strong> Implementation of structural CSS modifications allowing
-                        Admin/Owner tables to nest deep data (like Property descriptions and IDs) inside elegant
-                        toggleable "View More" bays, eliminating horizontal scrolling on smartphones.</li>
-                    <li><strong>Reliable State Flow:</strong> Resolved critical logic preventing users from paying after
-                        properties achieved 'Requested_Accepted' states.</li>
-                    <li><strong>Robust Backend Validators:</strong> Favorites (Wishlist) endpoints reinforced with
-                        rigorous type-checking to block param mutations causing generic bad request errors.</li>
-                </ul>
+                <p>Comprehensive property management, walk-in guests, billing, and financials.</p>
+
+                <div class="step-container">
+                    <div class="step-number s-host">1</div>
+                    <div class="step-content">
+                        <h4>Host Registration & Verification</h4>
+                        <p>User registers as a Host on the platform, completes their business profile (company name, address, tax details), and gains access to the Host Management System (HMS).</p>
+                    </div>
+                </div>
+
+                <div class="step-container">
+                    <div class="step-number s-host">2</div>
+                    <div class="step-content">
+                        <h4>Listing Property via 6-Step Wizard</h4>
+                        <p>Hosts add properties through the listing creation wizard:
+                            <br/>• <strong>Step 1:</strong> Title, Description, Property Type.
+                            <br/>• <strong>Step 2:</strong> Address and Map Coordinates.
+                            <br/>• <strong>Step 3:</strong> Rooms, Bathrooms, Max Guest Capacity.
+                            <br/>• <strong>Step 4:</strong> Checkbox grid of amenities (WiFi, Pool, AC, Kitchen).
+                            <br/>• <strong>Step 5:</strong> Upload high-res images (drag & drop).
+                            <br/>• <strong>Step 6:</strong> Set nightly price and submit for Admin review/approval.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="step-container">
+                    <div class="step-number s-host">3</div>
+                    <div class="step-content">
+                        <h4>Interactive Calendar & Walk-In Bookings</h4>
+                        <p>Hosts use the graphical <strong>HMS Calendar</strong> to manage room inventory. If a guest arrives offline (Walk-in), the host selects the dates directly on the calendar, inputs guest details, selects the room, and confirms the manual booking.</p>
+                    </div>
+                </div>
+
+                <div class="step-container">
+                    <div class="step-number s-host">4</div>
+                    <div class="step-content">
+                        <h4>Billing, Extra Charges & Payment Links</h4>
+                        <p>For manual bookings, hosts can record payments:
+                            <br/>• <strong>Cash Payment:</strong> Logged as manual cash, generating an offline payment ledger entry.
+                            <br/>• <strong>Online Payment Link:</strong> Generates a secure URL. Guest scans the QR code or clicks the link to pay online via bKash/SSLCommerz.
+                            <br/>• <strong>Extra Bills:</strong> Log food, laundry, or damages to the invoice. All bills must be settled before checkout.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="step-container">
+                    <div class="step-number s-host">5</div>
+                    <div class="step-content">
+                        <h4>Cancellation & Refund Rules</h4>
+                        <p>• If a booking with an offline/cash payment is cancelled, the system automatically marks the refund as <strong>"Completed"</strong>.
+                            <br/>• If the booking was paid online, the host cannot refund directly; the refund goes to the Admin queue as <strong>"Pending"</strong> to process the gateway transaction safely.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="step-container">
+                    <div class="step-number s-host">6</div>
+                    <div class="step-content">
+                        <h4>iCal Calendar Sync & Payout Requests</h4>
+                        <p>Hosts can import/export iCal links to sync availability with Airbnb and Booking.com. Earnings (minus system commissions) accumulate in the Host Wallet, from which they can request payouts directly to their bank accounts once the minimum balance is met.</p>
+                    </div>
+                </div>
             </div>
         </section>
 
-        <footer
-            style="margin-top: 4rem; text-align: center; color: var(--text-muted); font-size: 0.9rem; border-top: 1px solid var(--border); padding-top: 2rem;">
+        <section id="admin-flow">
+            <h2>7. Admin Process Flow (Step-by-Step)</h2>
+            <div class="card">
+                <p>Platform monitoring, system controls, transaction gateways, and reporting.</p>
+
+                <div class="step-container">
+                    <div class="step-number s-admin">1</div>
+                    <div class="step-content">
+                        <h4>System Configuration & Gateway Switches</h4>
+                        <p>Admin sets up site branding, logos, SEO, and social handles in the Settings Hub. Admin manages API credentials for bKash, SSLCommerz, and Nagad, toggling between <strong>Sandbox (Testing)</strong> and <strong>Live (Production)</strong> environments.</p>
+                    </div>
+                </div>
+
+                <div class="step-container">
+                    <div class="step-number s-admin">2</div>
+                    <div class="step-content">
+                        <h4>Listing Verifications</h4>
+                        <p>When a host submits a new property, it goes into a pending review state. Admin inspects the images, description, pricing, and approves/publishes the listing to the guest-facing website.</p>
+                    </div>
+                </div>
+
+                <div class="step-container">
+                    <div class="step-number s-admin">3</div>
+                    <div class="step-content">
+                        <h4>Gateway Payouts & Commission Rates</h4>
+                        <p>Admin defines global or host-specific commission rates (e.g. 10%). When hosts submit a payout request, Admin reviews their ledger, deducts the platform fee, transfers the money, and marks the request as "Paid".</p>
+                    </div>
+                </div>
+
+                <div class="step-container">
+                    <div class="step-number s-admin">4</div>
+                    <div class="step-content">
+                        <h4>Refund Queue Management</h4>
+                        <p>Admin monitors all online refund requests in the admin panel. When Admin clicks <strong>"Approve Refund"</strong>, the backend calls the respective gateway (bKash/SSLCommerz) APIs to automatically refund the money to the guest's MFS wallet or bank account.</p>
+                    </div>
+                </div>
+
+                <div class="step-container">
+                    <div class="step-number s-admin">5</div>
+                    <div class="step-content">
+                        <h4>Communication Channels & Audit Logs</h4>
+                        <p>Admin configures default SMTP email relays and links WhatsApp/SMS gateways. All transaction logs and token flows are written to the database and logs (like <code>bkash_tokens.txt</code> and <code>whatsapp.log</code>) for continuous audit and troubleshooting.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="technical" class="card">
+            <h2>8. Developer & Maintenance Information</h2>
+            <div class="alert alert-warning">
+                <strong>Attention Maintenance Developers:</strong> Ensure to run the database migration scripts (like <code>migration_live.sql</code>) on the production database before pushing any backend updates to prevent missing settings fields.
+            </div>
+            <ul class="styled-list">
+                <li><strong>Local Cache:</strong> Settings state is cached using Zustand persist middleware under the key <code>'settings-storage'</code>. Hard refresh the browser page if any setting does not reflect instantly.</li>
+                <li><strong>Token Logging:</strong> bKash API requests, responses, and errors are logged under <code>backend/bkash_tokens.txt</code>. Use this log to verify gateway communication status.</li>
+                <li><strong>WhatsApp Logger:</strong> Baileys connections are logged under <code>backend/whatsapp.log</code>. Check this file for connection errors like WhatsApp's 405 WebSocket blocks.</li>
+            </ul>
+        </section>
+
+        <footer style="margin-top: 4rem; text-align: center; color: var(--text-muted); font-size: 0.9rem; border-top: 1px solid var(--border); padding-top: 2rem;">
             &copy; 2026 Keyhost Platform Software. All rights reserved. <br /> Designed dynamically for Keyhost Homes.
             By <a href="#">88 Innovations Engineering Ltd</a>
         </footer>

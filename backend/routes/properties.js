@@ -38,6 +38,8 @@ router.get('/', optionalAuth, validatePagination, cacheMiddleware(30), async (re
       page = 1,
       limit = 10,
       city,
+      latitude,
+      longitude,
       property_type,
       min_price,
       max_price,
@@ -98,9 +100,81 @@ router.get('/', optionalAuth, validatePagination, cacheMiddleware(30), async (re
     }
 
     // Build WHERE conditions
-    if (city) {
-      whereConditions.push('p.city LIKE ?');
-      queryParams.push(`%${city}%`);
+    let hasCoords = false;
+    const latVal = parseFloat(latitude);
+    const lngVal = parseFloat(longitude);
+    if (!isNaN(latVal) && !isNaN(lngVal)) {
+      hasCoords = true;
+      whereConditions.push(`p.latitude IS NOT NULL AND p.longitude IS NOT NULL`);
+      whereConditions.push(`(6371 * acos(cos(radians(?)) * cos(radians(p.latitude)) * cos(radians(p.longitude) - radians(?)) + sin(radians(?)) * sin(radians(p.latitude)))) <= 50`);
+      queryParams.push(latVal, lngVal, latVal);
+    }
+
+    let selectFields = `
+      p.*,
+      u.first_name as owner_first_name,
+      u.last_name as owner_last_name,
+      u.email as owner_email,
+      u.phone as owner_phone,
+      p.auto_accept_bookings as owner_auto_accept,
+      po.business_name,
+      po.is_verified as owner_verified
+    `;
+    let selectParams = [];
+    let orderByClause = '';
+
+    if (hasCoords) {
+      selectFields += `, (6371 * acos(cos(radians(?)) * cos(radians(p.latitude)) * cos(radians(p.longitude) - radians(?)) + sin(radians(?)) * sin(radians(p.latitude)))) AS distance`;
+      selectParams.push(latVal, lngVal, latVal);
+      orderByClause = 'ORDER BY distance ASC';
+    } else if (city && city !== 'Nearby') {
+      const keywords = city.split(/[\s,]+/).map(t => t.trim()).filter(t => t.length > 0);
+      if (keywords.length > 0) {
+        let cityConditions = [];
+        let cityParams = [];
+        
+        // Match exact phrase on title, address, city, state
+        cityConditions.push('p.title LIKE ? OR p.address LIKE ? OR p.city LIKE ? OR p.state LIKE ?');
+        cityParams.push(`%${city}%`, `%${city}%`, `%${city}%`, `%${city}%`);
+        
+        // Match individual keywords on title, address, city, state
+        keywords.forEach(keyword => {
+          cityConditions.push('p.title LIKE ? OR p.address LIKE ? OR p.city LIKE ? OR p.state LIKE ?');
+          cityParams.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
+        });
+        
+        whereConditions.push(`(${cityConditions.join(' OR ')})`);
+        queryParams.push(...cityParams);
+
+        // Calculate relevance score
+        let relevanceCases = [];
+        let relevanceParams = [];
+        
+        relevanceCases.push('WHEN p.title LIKE ? OR p.address LIKE ? THEN 1');
+        relevanceParams.push(`%${city}%`, `%${city}%`);
+        
+        relevanceCases.push('WHEN p.city LIKE ? OR p.state LIKE ? THEN 2');
+        relevanceParams.push(`%${city}%`, `%${city}%`);
+        
+        keywords.forEach((keyword, index) => {
+          const score = 3 + index;
+          relevanceCases.push(`WHEN p.title LIKE ? OR p.address LIKE ? THEN ${score}`);
+          relevanceParams.push(`%${keyword}%`, `%${keyword}%`);
+          
+          relevanceCases.push(`WHEN p.city LIKE ? OR p.state LIKE ? THEN ${score + 10}`);
+          relevanceParams.push(`%${keyword}%`, `%${keyword}%`);
+        });
+        
+        const relevanceExpression = `(CASE ${relevanceCases.join(' ')} ELSE 99 END)`;
+        selectFields += `, ${relevanceExpression} AS relevance_score`;
+        selectParams.push(...relevanceParams);
+        
+        orderByClause = `ORDER BY relevance_score ASC, p.${sort_by} ${sort_order}`;
+      } else {
+        orderByClause = `ORDER BY p.${sort_by} ${sort_order}`;
+      }
+    } else {
+      orderByClause = `ORDER BY p.${sort_by} ${sort_order}`;
     }
 
     if (property_type) {
@@ -187,21 +261,14 @@ router.get('/', optionalAuth, validatePagination, cacheMiddleware(30), async (re
     // Get properties with owner info
     const [properties] = await pool.query(`
       SELECT 
-        p.*,
-        u.first_name as owner_first_name,
-        u.last_name as owner_last_name,
-        u.email as owner_email,
-        u.phone as owner_phone,
-        p.auto_accept_bookings as owner_auto_accept,
-        po.business_name,
-        po.is_verified as owner_verified
+        ${selectFields}
       FROM properties p
       JOIN property_owners po ON p.owner_id = po.id
       JOIN users u ON po.user_id = u.id
       ${whereClause}
-      ORDER BY p.${sort_by} ${sort_order}
+      ${orderByClause}
       LIMIT ? OFFSET ?
-    `, [...queryParams, parseInt(limit), parseInt(offset)]);
+    `, [...selectParams, ...queryParams, parseInt(limit), parseInt(offset)]);
 
     // Get amenities for each property
     for (let property of properties) {
@@ -772,14 +839,15 @@ router.get('/property-types/list', cacheMiddleware(10), async (req, res) => {
       await pool.execute(`ALTER TABLE property_types ADD COLUMN IF NOT EXISTS icon_url VARCHAR(500) NULL`);
     } catch (e) { /* ignore */ }
 
-    // Auto-seed default property types (including Flight) if table is empty
+    // Auto-seed default property types (including Flight and Monthly Rent) if table is empty
     const [countResult] = await pool.execute('SELECT COUNT(*) as total FROM property_types');
     if (countResult[0].total === 0) {
       const defaults = [
-        { name: 'Rooms', icon_url: '/images/nav-icon-room.png', sort_order: 1 },
+        { name: 'Room', icon_url: '/images/nav-icon-room.png', sort_order: 1 },
         { name: 'Apartment', icon_url: '/images/nav-icon-apartment.png', sort_order: 2 },
         { name: 'Hotel', icon_url: '/images/nav-icon-hotel.png', sort_order: 3 },
-        { name: 'Flight', icon_url: '/images/flight.png', sort_order: 4 },
+        { name: 'Monthly Rent', icon_url: '/images/nav-icon-monthly.png', sort_order: 4 },
+        { name: 'Flight', icon_url: '/images/flight.png', sort_order: 99 },
       ];
       for (const d of defaults) {
         try {
@@ -790,18 +858,8 @@ router.get('/property-types/list', cacheMiddleware(10), async (req, res) => {
         } catch (e) { /* ignore individual insert errors */ }
       }
     } else {
-      // Ensure Flight exists individually even if other types already exist
-      const [flightExists] = await pool.execute(
-        "SELECT id FROM property_types WHERE LOWER(name) = 'flight'"
-      );
-      if (flightExists.length === 0) {
-        try {
-          await pool.execute(
-            'INSERT INTO property_types (name, icon_url, sort_order, is_active, created_at) VALUES (?, ?, 99, 1, NOW())',
-            ['Flight', '/images/flight.png']
-          );
-        } catch (e) { /* ignore */ }
-      }
+      // Table already has data — do NOT auto-re-seed individual types.
+      // Admin may have renamed/deleted them intentionally.
     }
 
     // Fetch active property types
@@ -863,7 +921,7 @@ router.get('/:id/blocked-dates', validateId, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const { hms_room_id } = req.query;
+    const { hms_room_id, exclude_booking_id } = req.query;
     
     let query = `
       SELECT 
@@ -879,6 +937,11 @@ router.get('/:id/blocked-dates', validateId, async (req, res) => {
     if (hms_room_id) {
         query += ' AND hms_room_id = ?';
         params.push(hms_room_id);
+    }
+
+    if (exclude_booking_id) {
+        query += ' AND id != ?';
+        params.push(exclude_booking_id);
     }
     
     query += ' ORDER BY check_in_date ASC';

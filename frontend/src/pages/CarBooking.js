@@ -5,6 +5,7 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import api from '../utils/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
+import { getImageUrl } from '../utils/imageUrl';
 
 const CarBooking = () => {
   const [searchData, setSearchData] = useState({
@@ -241,7 +242,7 @@ const CarBooking = () => {
               <div key={car.id} className="card-hover">
                 <div className="relative">
                   <img
-                    src={car.image_url || '/images/car-placeholder.jpg'}
+                    src={getImageUrl(car.image_url) || '/images/car-placeholder.jpg'}
                     alt={car.model}
                     className="w-full h-48 object-cover rounded-lg mb-4"
                   />

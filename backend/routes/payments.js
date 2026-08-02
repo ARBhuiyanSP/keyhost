@@ -8,6 +8,7 @@ const { syncPaymentToHMSAccounts } = require('../utils/hms-sync');
 const { 
   validateId 
 } = require('../middleware/validation');
+const { sendBookingPaidSms } = require('../utils/sms');
 
 const router = express.Router();
 
@@ -192,6 +193,12 @@ router.patch('/:id/status', validateId, async (req, res) => {
         'UPDATE bookings SET payment_status = "paid", confirmed_at = NOW() WHERE id = ?',
         [payments[0].booking_id]
       );
+
+      try {
+        await sendBookingPaidSms(payments[0].booking_id);
+      } catch (smsErr) {
+        console.error(`Failed to send booking paid SMS for booking ${payments[0].booking_id}:`, smsErr.message);
+      }
 
       // Check if DR entry exists (owner accepted)
       const [drPayments] = await pool.execute(`

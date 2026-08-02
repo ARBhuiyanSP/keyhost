@@ -6,7 +6,7 @@ const {
   isPastDate,
   isValidDateRange
 } = require('../../utils/helpers');
-const { sendSMS } = require('../../utils/sms');
+const { sendSMS, sendBookingAcceptedSms, sendCheckoutSms } = require('../../utils/sms');
 const {
   validateProperty,
   validateId,
@@ -39,6 +39,7 @@ const clearPropertiesCache = () => {
 // Import earnings routes
 const earningsRoutes = require('./property-owner-earnings');
 const hmsMgmtRoutes = require('./hms-management');
+const maintenanceRoutes = require('./hms-maintenance');
 
 const router = express.Router();
 
@@ -48,6 +49,7 @@ router.use(requirePropertyOwner);
 
 // Mount sub-routes
 router.use('/earnings', earningsRoutes);
+router.use('/hms/maintenance', maintenanceRoutes);
 router.use('/hms', hmsMgmtRoutes);
 
 // Get property owner dashboard
@@ -135,6 +137,32 @@ router.get('/dashboard', async (req, res) => {
     res.status(500).json(
       formatResponse(false, 'Failed to retrieve dashboard data', null, error.message)
     );
+  }
+});
+
+// Get list of all properties (id, title, city) for owner dropdowns
+router.get('/properties/list', async (req, res) => {
+  try {
+    const [owners] = await pool.execute(
+      'SELECT id FROM property_owners WHERE user_id = ?',
+      [req.user.id]
+    );
+
+    if (owners.length === 0) {
+      return res.status(404).json(
+        formatResponse(false, 'Property owner profile not found')
+      );
+    }
+
+    const ownerId = owners[0].id;
+    const [properties] = await pool.execute(
+      'SELECT id, title, city FROM properties WHERE owner_id = ? ORDER BY title ASC',
+      [ownerId]
+    );
+    res.json(formatResponse(true, 'Properties list retrieved successfully', { properties }));
+  } catch (error) {
+    console.error('Get property owner properties list error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to retrieve properties list', null, error.message));
   }
 });
 
@@ -307,6 +335,7 @@ router.post('/properties', requireHMSPermission('manage_properties'), async (req
   try {
     const {
       title,
+      internal_name,
       description,
       property_type,
       property_category = 'standard',
@@ -336,7 +365,23 @@ router.post('/properties', requireHMSPermission('manage_properties'), async (req
       is_non_refundable = false,
       is_hms_enabled = false,
       is_single_unit,
-      auto_accept_bookings
+      auto_accept_bookings,
+      // Monthly Stay Settings
+      monthly_rent_enabled = false,
+      monthly_stay_type = 'both',
+      monthly_min_stay_nights = 30,
+      monthly_rent_amount,
+      monthly_advance_amount,
+      monthly_furnished = true,
+      monthly_wifi_included = false,
+      monthly_electricity_included = false,
+      monthly_gas_included = false,
+      monthly_water_included = false,
+      monthly_cleaning_included = false,
+      monthly_service_charge_included = false,
+      monthly_inclusions_notes,
+      monthly_security_deposit,
+      monthly_cancellation_policy = 'moderate'
     } = req.body;
 
     // Validate required fields only if not saving a draft
@@ -392,16 +437,23 @@ router.post('/properties', requireHMSPermission('manage_properties'), async (req
     // Create property - ensure null values for optional fields
     const [result] = await pool.execute(`
       INSERT INTO properties (
-        owner_id, title, description, property_type, property_category,
+        owner_id, title, internal_name, description, property_type, property_category,
         address, city, state, country, postal_code, latitude, longitude,
         bedrooms, bathrooms, max_guests, size_sqft, floor_number,
         base_price, cleaning_fee, security_deposit, extra_guest_fee,
         check_in_time, check_out_time, minimum_stay, maximum_stay,
-        is_instant_book, is_non_refundable, is_hms_enabled, is_single_unit, auto_accept_bookings, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        is_instant_book, is_non_refundable, is_hms_enabled, is_single_unit, auto_accept_bookings,
+        monthly_rent_enabled, monthly_stay_type, monthly_min_stay_nights, monthly_rent_amount, monthly_advance_amount,
+        monthly_furnished, monthly_wifi_included, monthly_electricity_included, monthly_gas_included,
+        monthly_water_included, monthly_cleaning_included, monthly_service_charge_included,
+        monthly_inclusions_notes, monthly_security_deposit, monthly_cancellation_policy,
+        status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+               ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
     `, [
       ownerId,
       title || 'Draft Property',
+      internal_name || null,
       description || '',
       property_type || 'room',
       property_category || 'standard',
@@ -430,6 +482,22 @@ router.post('/properties', requireHMSPermission('manage_properties'), async (req
       isHmsEnabledValue,
       isSingleUnitValue,
       autoAcceptValue,
+      // Monthly fields
+      monthly_rent_enabled ? 1 : 0,
+      monthly_stay_type || 'both',
+      monthly_min_stay_nights || 30,
+      monthly_rent_amount || null,
+      monthly_advance_amount || null,
+      monthly_furnished ? 1 : 0,
+      monthly_wifi_included ? 1 : 0,
+      monthly_electricity_included ? 1 : 0,
+      monthly_gas_included ? 1 : 0,
+      monthly_water_included ? 1 : 0,
+      monthly_cleaning_included ? 1 : 0,
+      monthly_service_charge_included ? 1 : 0,
+      monthly_inclusions_notes || null,
+      monthly_security_deposit || null,
+      monthly_cancellation_policy || 'moderate',
       is_draft ? 'in_progress' : 'pending_approval'
     ]);
 
@@ -530,8 +598,9 @@ router.put('/properties/:id', requireHMSPermission('manage_properties'), validat
     const { id } = req.params;
     const updateData = req.body;
 
-    // Ignore direct updates to is_hms_enabled from the frontend forms
+    // Ignore direct updates to is_hms_enabled and monthly_approved from the frontend forms
     delete updateData.is_hms_enabled;
+    delete updateData.monthly_approved; // Admin-only field — host cannot set this
 
     // Get property owner ID
     const [owners] = await pool.execute(
@@ -561,13 +630,20 @@ router.put('/properties/:id', requireHMSPermission('manage_properties'), validat
 
     // Build update query
     const allowedFields = [
-      'title', 'description', 'property_type', 'property_category',
+      'title', 'internal_name', 'description', 'property_type', 'property_category',
       'address', 'city', 'state', 'country', 'postal_code',
       'latitude', 'longitude', 'bedrooms', 'bathrooms', 'max_guests',
       'size_sqft', 'floor_number', 'base_price', 'cleaning_fee',
       'security_deposit', 'extra_guest_fee', 'check_in_time',
       'check_out_time', 'minimum_stay', 'maximum_stay', 'is_instant_book', 'is_non_refundable', 'is_hms_enabled',
-      'is_single_unit', 'auto_accept_bookings'
+      'is_single_unit', 'auto_accept_bookings',
+      // Monthly Stay fields (monthly_approved is NOT here — admin only)
+      'monthly_rent_enabled', 'monthly_stay_type', 'monthly_min_stay_nights',
+      'monthly_rent_amount', 'monthly_advance_amount',
+      'monthly_furnished', 'monthly_wifi_included', 'monthly_electricity_included',
+      'monthly_gas_included', 'monthly_water_included', 'monthly_cleaning_included',
+      'monthly_service_charge_included', 'monthly_inclusions_notes',
+      'monthly_security_deposit', 'monthly_cancellation_policy'
     ];
 
     const updateFields = [];
@@ -923,7 +999,9 @@ router.get('/bookings', requireHMSPermission('manage_reservations'), validatePag
       limit = 10,
       status,
       search,
-      property_id
+      property_id,
+      startDate,
+      endDate
     } = req.query;
     const offset = (page - 1) * limit;
 
@@ -964,6 +1042,16 @@ router.get('/bookings', requireHMSPermission('manage_reservations'), validatePag
     if (property_id && property_id !== 'all') {
       whereClause += ' AND b.property_id = ?';
       queryParams.push(property_id);
+    }
+
+    if (startDate) {
+      whereClause += ' AND b.check_in_date >= ?';
+      queryParams.push(startDate);
+    }
+
+    if (endDate) {
+      whereClause += ' AND b.check_in_date <= ?';
+      queryParams.push(endDate);
     }
 
     // Get total count
@@ -1228,7 +1316,7 @@ router.get('/earnings', async (req, res) => {
 // Get analytics data
 router.get('/analytics', async (req, res) => {
   try {
-    const { days = '30' } = req.query; // period in days
+    const { days = '30', startDate, endDate } = req.query; // period in days
     const period = parseInt(days, 10) || 30;
 
     // Get property owner ID
@@ -1315,6 +1403,18 @@ router.get('/analytics', async (req, res) => {
     const occupancyRate = potentialNights > 0 ? Math.min(100, Math.round((actualNights / potentialNights) * 100)) : 0;
     const occupancyChange = 0; // Simplified
 
+    let dateWhere = '';
+    const topPropsParams = [];
+
+    if (startDate && endDate) {
+      dateWhere = 'AND DATE(b.created_at) BETWEEN ? AND ?';
+      topPropsParams.push(startDate, endDate);
+    } else {
+      dateWhere = 'AND b.created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)';
+      topPropsParams.push(period);
+    }
+    topPropsParams.push(ownerId);
+
     // 4. Top Properties
     const [topProps] = await pool.execute(`
       SELECT 
@@ -1324,12 +1424,12 @@ router.get('/analytics', async (req, res) => {
       FROM properties p
       LEFT JOIN bookings b ON p.id = b.property_id 
         AND b.status != 'cancelled'
-        AND b.created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+        ${dateWhere}
       WHERE p.owner_id = ?
       GROUP BY p.id, p.title, p.city
       ORDER BY revenue DESC
       LIMIT 5
-    `, [period, ownerId]);
+    `, topPropsParams);
 
     const topPropertiesList = topProps.map(p => ({
       ...p,
@@ -1440,7 +1540,8 @@ router.get('/profile', async (req, res) => {
              city, state, country, postal_code, language,
              timezone, email_notifications, sms_notifications,
              auto_accept_bookings, last_login_at, created_at, updated_at,
-             bio
+             bio, nationality, nid_number, passport_number,
+             nid_document_url, passport_document_url
       FROM users
       WHERE id = ?
     `, [userId]);
@@ -1497,8 +1598,27 @@ router.put('/profile', async (req, res) => {
       bank_account_number,
       bank_name,
       bank_routing_number,
-      auto_accept_bookings // from users table
+      mfs_provider,
+      mfs_wallet_number,
+      mfs_account_name,
+      auto_accept_bookings, // from users table
+      nationality,
+      nid_number,
+      passport_number,
+      nid_document_url,
+      passport_document_url
     } = req.body;
+
+    // Process base64 document images if provided
+    let processedNidDoc = nid_document_url;
+    if (nid_document_url && nid_document_url.startsWith('data:')) {
+      processedNidDoc = await processBase64Image(nid_document_url, `nid-${userId}`, 'documents');
+    }
+
+    let processedPassportDoc = passport_document_url;
+    if (passport_document_url && passport_document_url.startsWith('data:')) {
+      processedPassportDoc = await processBase64Image(passport_document_url, `passport-${userId}`, 'documents');
+    }
 
     // Check if email is already in use
     if (email) {
@@ -1516,13 +1636,16 @@ router.put('/profile', async (req, res) => {
     const userUpdateValues = [];
     const allowedUserFields = {
       first_name, last_name, email, phone, date_of_birth, gender,
-      address, city, state, country, postal_code, bio, auto_accept_bookings
+      address, city, state, country, postal_code, bio, auto_accept_bookings,
+      nationality, nid_number, passport_number,
+      nid_document_url: processedNidDoc,
+      passport_document_url: processedPassportDoc
     };
 
     Object.keys(allowedUserFields).forEach(key => {
       if (allowedUserFields[key] !== undefined) {
         let value = allowedUserFields[key];
-        if (value === '' && ['date_of_birth', 'gender'].includes(key)) {
+        if (value === '' && ['date_of_birth', 'gender', 'nationality', 'nid_number', 'passport_number', 'nid_document_url', 'passport_document_url'].includes(key)) {
           value = null;
         }
         if (key === 'auto_accept_bookings') {
@@ -1553,11 +1676,13 @@ router.put('/profile', async (req, res) => {
         UPDATE property_owners
         SET business_name = ?, business_license = ?, tax_id = ?,
             bank_account_number = ?, bank_name = ?, bank_routing_number = ?,
+            mfs_provider = ?, mfs_wallet_number = ?, mfs_account_name = ?,
             updated_at = NOW()
         WHERE user_id = ?
       `, [
         business_name, business_license, tax_id,
         bank_account_number, bank_name, bank_routing_number,
+        mfs_provider || null, mfs_wallet_number || null, mfs_account_name || null,
         userId
       ]);
     } else {
@@ -1566,11 +1691,13 @@ router.put('/profile', async (req, res) => {
         INSERT INTO property_owners (
           user_id, business_name, business_license, tax_id,
           bank_account_number, bank_name, bank_routing_number,
+          mfs_provider, mfs_wallet_number, mfs_account_name,
           commission_rate, is_verified, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, NOW())
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NOW())
       `, [
         userId, business_name, business_license, tax_id,
-        bank_account_number, bank_name, bank_routing_number
+        bank_account_number, bank_name, bank_routing_number,
+        mfs_provider || null, mfs_wallet_number || null, mfs_account_name || null
       ]);
     }
 
@@ -1582,7 +1709,8 @@ router.put('/profile', async (req, res) => {
              city, state, country, postal_code, language,
              timezone, email_notifications, sms_notifications,
              auto_accept_bookings, last_login_at, created_at, updated_at,
-             bio
+             bio, nationality, nid_number, passport_number,
+             nid_document_url, passport_document_url
       FROM users
       WHERE id = ?
     `, [userId]);
@@ -1728,29 +1856,10 @@ router.patch('/bookings/:id/confirm', requireHMSPermission('manage_reservations'
         console.error('Failed to lookup guest info for SMS:', lookupError.message || lookupError);
       }
 
-      if (guestPhone) {
-        const propertyTitle = confirmedBooking.property_title || 'your booking';
-        // Format deadline time
-        const deadlineDate = confirmedBooking.payment_deadline ? new Date(confirmedBooking.payment_deadline) : null;
-        const deadlineStr = deadlineDate ? deadlineDate.toLocaleString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          hour: 'numeric',
-          minute: '2-digit',
-          hour12: true
-        }) : `${paymentTimeLimitMinutes} minutes`;
-        const message = `Hi ${guestName || 'Guest'}, your booking request (${confirmedBooking.booking_reference}) for ${propertyTitle} has been accepted. Please complete payment within ${paymentTimeLimitMinutes} minutes (by ${deadlineStr}) to confirm your stay. Otherwise, the booking will be automatically cancelled.`;
-
-        try {
-          await sendSMS({
-            to: guestPhone,
-            message
-          });
-        } catch (smsError) {
-          console.error('Failed to send booking confirmation SMS:', smsError.message || smsError);
-        }
-      } else {
-        console.warn(`Skipping SMS for booking ${id}: missing guest phone number.`);
+      try {
+        await sendBookingAcceptedSms(confirmedBooking.id);
+      } catch (smsError) {
+        console.error('Failed to send booking confirmation SMS:', smsError.message || smsError);
       }
     }
 
@@ -1894,6 +2003,12 @@ router.patch('/bookings/:id/checkout', requireHMSPermission('manage_reservations
       WHERE id = ?
     `, [id]);
 
+    try {
+      await sendCheckoutSms(id);
+    } catch (smsErr) {
+      console.error(`Failed to send checkout SMS for booking ${id}:`, smsErr.message);
+    }
+
     // Update HMS room status if applicable
     if (booking.hms_room_id) {
         await pool.execute(
@@ -1970,7 +2085,7 @@ router.patch('/bookings/:id/cancel', requireHMSPermission('manage_reservations')
     try {
       // Specifically find the guest_payment (CR) entry to correctly link payment_method
       const [payments] = await pool.execute(`
-        SELECT id FROM payments 
+        SELECT id, payment_method FROM payments 
         WHERE booking_id = ? AND transaction_type = 'guest_payment'
         AND status IN ('completed', 'processing', 'authorized')
         ORDER BY id DESC LIMIT 1
@@ -1986,24 +2101,34 @@ router.patch('/bookings/:id/cancel', requireHMSPermission('manage_reservations')
 
       if (amountActuallyPaid > 0 && payments.length > 0) {
         const paymentId = payments[0].id;
+        const paymentMethod = payments[0].payment_method;
         const refundReference = `REF-${Date.now()}-${id}`;
+
+        const isOnline = ['bkash', 'sslcommerz', 'nagad'].includes(paymentMethod);
+        const refundStatus = isOnline ? 'pending' : 'completed';
+        const now = new Date();
+        const approvedAt = isOnline ? null : now;
+        const completedAt = isOnline ? null : now;
 
         await pool.execute(`
           INSERT INTO refunds (
             booking_id, payment_id, refund_reference, original_amount, refund_amount, net_refund, 
-            refund_reason, refund_type, cancellation_policy_applied, status, requested_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'full', ?, 'pending', NOW())
+            refund_reason, refund_type, cancellation_policy_applied, status, requested_at, approved_at, completed_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'full', ?, ?, NOW(), ?, ?)
         `, [
           id, 
           paymentId,
           refundReference,
           amountActuallyPaid,
-          amountActuallyPaid, // Full amount
-          amountActuallyPaid, // Full amount
+          amountActuallyPaid,
+          amountActuallyPaid,
           (reason || 'Host Cancellation').substring(0, 255), 
-          'Host Cancelled. Guest receives full refund.'
+          'Host Cancelled. Guest receives full refund.',
+          refundStatus,
+          approvedAt,
+          completedAt
         ]);
-        console.log(`✅ Full Refund request generated for cancelled booking ${id}`);
+        console.log(`✅ Full Refund request generated for cancelled booking ${id} with status ${refundStatus}`);
       }
     } catch (refErr) {
         console.error('❌ Refund creation error on Host Cancel:', refErr);
@@ -2063,7 +2188,11 @@ router.post('/bookings/:id/deduction-claim', requireHMSPermission('manage_reserv
       return res.status(400).json(formatResponse(false, 'Deduction can only be requested after check-out'));
     }
 
-    if (booking.security_deposit_status && booking.security_deposit_status !== 'pending') {
+    if (booking.security_deposit_status === 'processed') {
+      return res.status(400).json(formatResponse(false, 'The security deposit for this booking has already been processed and resolved by Admin'));
+    }
+
+    if (booking.security_deposit_status === 'claim_requested') {
       return res.status(400).json(formatResponse(false, 'A security deposit claim has already been submitted for this booking'));
     }
 
@@ -2495,28 +2624,48 @@ router.post('/hms/start-trial', async (req, res) => {
 router.get('/hms/rooms/:propertyId', requireHMSAccess, requireHMSPermission('manage_inventory'), async (req, res) => {
   try {
     const { propertyId } = req.params;
-    const propId = parseInt(propertyId);
-    console.log(`[HMS] Fetching rooms for property ${propId} by user ${req.user.id}`);
-    
-    // Security check: Verify the host owns this property
-    console.log('[HMS] Verifying property ownership...');
-    const [property] = await pool.query(
-      'SELECT id FROM properties WHERE id = ? AND owner_id = (SELECT id FROM property_owners WHERE user_id = ?)',
-      [propId, req.user.id]
-    );
+    let rooms = [];
 
-    if (property.length === 0) {
-      console.log(`[HMS] Ownership verification failed for property ${propId} and user ${req.user.id}`);
-      return res.status(403).json(formatResponse(false, 'Access denied. You do not own this property.'));
+    if (propertyId === 'all') {
+      console.log(`[HMS] Fetching ALL rooms for host user ${req.user.id}`);
+      const [properties] = await pool.query(
+        'SELECT id FROM properties WHERE owner_id = (SELECT id FROM property_owners WHERE user_id = ?)',
+        [req.user.id]
+      );
+      if (properties.length === 0) {
+        return res.status(200).json(formatResponse(true, 'Success: Found 0 rooms', { rooms: [] }));
+      }
+      const propIds = properties.map(p => p.id);
+      const [allRooms] = await pool.query(
+        'SELECT id, property_id, room_number, room_type, floor, price, status, features, images, created_at FROM hms_rooms WHERE property_id IN (?) ORDER BY room_number ASC',
+        [propIds]
+      );
+      rooms = allRooms;
+      console.log(`[HMS] Success: Found ${rooms.length} rooms total across all properties`);
+    } else {
+      const propId = parseInt(propertyId);
+      console.log(`[HMS] Fetching rooms for property ${propId} by user ${req.user.id}`);
+      
+      // Security check: Verify the host owns this property
+      console.log('[HMS] Verifying property ownership...');
+      const [property] = await pool.query(
+        'SELECT id FROM properties WHERE id = ? AND owner_id = (SELECT id FROM property_owners WHERE user_id = ?)',
+        [propId, req.user.id]
+      );
+
+      if (property.length === 0) {
+        console.log(`[HMS] Ownership verification failed for property ${propId} and user ${req.user.id}`);
+        return res.status(403).json(formatResponse(false, 'Access denied. You do not own this property.'));
+      }
+
+      console.log('[HMS] Ownership verified. Querying rooms...');
+      const [singlePropertyRooms] = await pool.query(
+        'SELECT id, property_id, room_number, room_type, floor, price, status, features, images, created_at FROM hms_rooms WHERE property_id = ? ORDER BY room_number ASC',
+        [propId]
+      );
+      rooms = singlePropertyRooms;
+      console.log(`[HMS] Success: Found ${rooms.length} rooms`);
     }
-
-    console.log('[HMS] Ownership verified. Querying rooms...');
-    const [rooms] = await pool.query(
-      'SELECT id, property_id, room_number, room_type, floor, price, status, features, images, created_at FROM hms_rooms WHERE property_id = ? ORDER BY room_number ASC',
-      [propId]
-    );
-
-    console.log(`[HMS] Success: Found ${rooms.length} rooms`);
     
     // Robust JSON parser
     const safeParse = (data) => {
@@ -2628,7 +2777,15 @@ router.post('/hms/rooms', requireHMSAccess, requireHMSPermission('manage_invento
           const savedUrl = await processBase64Image(img, 'hms-room', 'rooms');
           finalImages.push(savedUrl);
         } else if (img.startsWith('/uploads/') || img.startsWith('http')) {
-          finalImages.push(img);
+          // Normalize to relative path if absolute URL is provided
+          let cleanUrl = img;
+          if (img.startsWith('http') && img.includes('/uploads/')) {
+            const index = img.indexOf('/uploads/');
+            if (index !== -1) {
+              cleanUrl = img.substring(index);
+            }
+          }
+          finalImages.push(cleanUrl);
         }
       }
     }
@@ -2672,7 +2829,15 @@ router.put('/hms/rooms/:id', requireHMSAccess, requireHMSPermission('manage_inve
           const savedUrl = await processBase64Image(img, 'hms-room', 'rooms');
           finalImages.push(savedUrl);
         } else if (img.startsWith('/uploads/') || img.startsWith('http')) {
-          finalImages.push(img);
+          // Normalize to relative path if absolute URL is provided
+          let cleanUrl = img;
+          if (img.startsWith('http') && img.includes('/uploads/')) {
+            const index = img.indexOf('/uploads/');
+            if (index !== -1) {
+              cleanUrl = img.substring(index);
+            }
+          }
+          finalImages.push(cleanUrl);
         }
       }
     }
@@ -2799,18 +2964,26 @@ router.get('/hms/reservations/:propertyId', requireHMSAccess, requireHMSPermissi
         const [reservations] = await pool.query(`
             SELECT 
                 b.*, 
-                r.room_number, 
-                r.room_type,
+                DATEDIFF(b.check_out_date, b.check_in_date) as nights,
+                COALESCE(b.hms_room_id, ep.id) as hms_room_id,
+                COALESCE(r.room_number, ep.room_number) as room_number, 
+                COALESCE(r.room_type, ep.room_type) as room_type,
                 u.first_name as guest_first_name,
                 u.last_name as guest_last_name,
                 u.email as guest_user_email,
                 u.phone as guest_user_phone,
+                COALESCE(b.guest_nationality, u.nationality) as guest_nationality,
+                COALESCE(b.guest_nid_number, u.nid_number) as guest_nid_number,
+                COALESCE(b.guest_passport_number, u.passport_number) as guest_passport_number,
+                COALESCE(b.guest_nid_document_url, u.nid_document_url) as guest_nid_document_url,
+                COALESCE(b.guest_passport_document_url, u.passport_document_url) as guest_passport_document_url,
                 (SELECT COALESCE(SUM(amount), 0) FROM hms_bills WHERE booking_id = b.id) as extra_billing_amount,
                 (SELECT COALESCE(SUM(cr_amount), 0) FROM payments WHERE booking_id = b.id AND status = 'completed') as paid_amount,
                 (SELECT COUNT(*) FROM hms_food_orders WHERE booking_id = b.id AND payment_status IN ('unpaid', 'billed_to_room')) as unpaid_food_count,
                 (SELECT COUNT(*) FROM hms_bills WHERE booking_id = b.id) as extra_bills_count
             FROM bookings b
             LEFT JOIN hms_rooms r ON b.hms_room_id = r.id
+            LEFT JOIN hms_rooms ep ON ep.property_id = b.property_id AND ep.room_number = 'Entire Place' AND b.hms_room_id IS NULL
             LEFT JOIN users u ON b.guest_id = u.id
             WHERE b.property_id = ?
             ORDER BY b.created_at DESC
@@ -2823,14 +2996,222 @@ router.get('/hms/reservations/:propertyId', requireHMSAccess, requireHMSPermissi
     }
 });
 
+// Lookup guest by phone number for auto-fill in HMS Reservations
+router.get('/hms/guests/lookup', requireHMSAccess, async (req, res) => {
+    try {
+        const { phone } = req.query;
+        if (!phone) {
+            return res.status(400).json(formatResponse(false, 'Phone number is required'));
+        }
+
+        const digitsOnly = phone.replace(/\D/g, '');
+        const suffixMatch = digitsOnly.length >= 10 ? `%${digitsOnly.slice(-10)}` : `%${digitsOnly}`;
+
+        // 1. Search in bookings table for the most recent reservation containing identity info
+        const [recentBookings] = await pool.query(`
+            SELECT 
+                guest_name, guest_email, guest_phone,
+                guest_nationality as nationality, 
+                guest_nid_number as nid_number, 
+                guest_passport_number as passport_number, 
+                guest_nid_document_url as nid_document_url, 
+                guest_passport_document_url as passport_document_url
+            FROM bookings
+            WHERE (guest_phone = ? OR guest_phone LIKE ? OR REPLACE(guest_phone, '+', '') = ?)
+              AND (guest_nid_number IS NOT NULL OR guest_passport_number IS NOT NULL OR guest_nationality IS NOT NULL)
+            ORDER BY id DESC
+            LIMIT 1
+        `, [phone, suffixMatch, digitsOnly]);
+
+        let guest = null;
+
+        if (recentBookings.length > 0) {
+            const b = recentBookings[0];
+            const nameParts = b.guest_name ? b.guest_name.trim().split(/\s+/) : [''];
+            const firstName = nameParts[0];
+            const lastName = nameParts.slice(1).join(' ');
+
+            guest = {
+                first_name: firstName,
+                last_name: lastName,
+                email: b.guest_email,
+                phone: b.guest_phone,
+                nationality: b.nationality,
+                nid_number: b.nid_number,
+                passport_number: b.passport_number,
+                nid_document_url: b.nid_document_url,
+                passport_document_url: b.passport_document_url
+            };
+        } else {
+            // 2. Fallback to users table
+            const [users] = await pool.query(`
+                SELECT id, first_name, last_name, email, phone, 
+                       nationality, nid_number, passport_number, 
+                       nid_document_url, passport_document_url
+                FROM users
+                WHERE phone = ? OR phone LIKE ? OR REPLACE(phone, '+', '') = ?
+                LIMIT 1
+            `, [phone, suffixMatch, digitsOnly]);
+
+            if (users.length > 0) {
+                guest = users[0];
+            }
+        }
+
+        if (!guest) {
+            return res.json(formatResponse(true, 'Guest not found', { guest: null }));
+        }
+
+        res.json(formatResponse(true, 'Guest found successfully', { guest }));
+    } catch (error) {
+        console.error('[HMS] Lookup guest error:', error);
+        res.status(500).json(formatResponse(false, 'Failed to lookup guest', null, error.message));
+    }
+});
+
+// Get HMS guests list for a specific property
+router.get('/hms/guests/:propertyId', requireHMSAccess, requireHMSPermission('manage_reservations'), async (req, res) => {
+    try {
+        const { propertyId } = req.params;
+        const propId = parseInt(propertyId);
+
+        // Security check
+        const [property] = await pool.query(
+            'SELECT id FROM properties WHERE id = ? AND owner_id = (SELECT id FROM property_owners WHERE user_id = ?)',
+            [propId, req.user.id]
+        );
+
+        if (property.length === 0) {
+            return res.status(403).json(formatResponse(false, 'Access denied. You do not own this property.'));
+        }
+
+        // Get unique guests from bookings table matching the property ID
+        const [guests] = await pool.query(`
+            SELECT 
+                b.guest_phone,
+                MAX(b.guest_name) as guest_name,
+                MAX(b.guest_email) as guest_email,
+                MAX(b.guest_nationality) as nationality,
+                MAX(b.guest_nid_number) as nid_number,
+                MAX(b.guest_passport_number) as passport_number,
+                MAX(b.guest_nid_document_url) as nid_document_url,
+                MAX(b.guest_passport_document_url) as passport_document_url,
+                COUNT(b.id) as total_bookings_count,
+                SUM(b.total_amount) as total_revenue_spent,
+                MAX(b.check_out_date) as last_visit_date,
+                MIN(b.check_in_date) as first_visit_date
+            FROM bookings b
+            WHERE b.property_id = ? AND b.guest_phone IS NOT NULL AND b.guest_phone != ''
+            GROUP BY b.guest_phone
+            ORDER BY last_visit_date DESC
+        `, [propId]);
+
+        res.json(formatResponse(true, 'Guests retrieved successfully', { guests }));
+    } catch (error) {
+        console.error('[HMS] Get guests list error:', error);
+        res.status(500).json(formatResponse(false, 'Failed to retrieve guests list', null, error.message));
+    }
+});
+
+// Get HMS guest analytics for a specific property
+router.get('/hms/analytics/guests/:propertyId', requireHMSAccess, requireHMSPermission('manage_reservations'), async (req, res) => {
+    try {
+        const { propertyId } = req.params;
+        const propId = parseInt(propertyId);
+
+        // Security check
+        const [property] = await pool.query(
+            'SELECT id FROM properties WHERE id = ? AND owner_id = (SELECT id FROM property_owners WHERE user_id = ?)',
+            [propId, req.user.id]
+        );
+
+        if (property.length === 0) {
+            return res.status(403).json(formatResponse(false, 'Access denied. You do not own this property.'));
+        }
+
+        // 1. Revenue Contribution: Walk-in (admin) vs Online (website)
+        const [revenueSplit] = await pool.query(`
+            SELECT 
+                COALESCE(booking_source, 'website') as source,
+                SUM(total_amount) as total_revenue,
+                COUNT(id) as bookings_count
+            FROM bookings
+            WHERE property_id = ? AND status IN ('confirmed', 'checked_in', 'checked_out')
+            GROUP BY booking_source
+        `, [propId]);
+
+        // 2. Retention rate: repeat vs new guests
+        const [retentionStats] = await pool.query(`
+            SELECT 
+                CASE WHEN visits_count > 1 THEN 'Repeat Guest' ELSE 'New Guest' END as guest_type,
+                COUNT(guest_phone) as guests_count,
+                SUM(revenue_spent) as total_revenue
+            FROM (
+                SELECT 
+                    guest_phone,
+                    COUNT(id) as visits_count,
+                    SUM(total_amount) as revenue_spent
+                FROM bookings
+                WHERE property_id = ? AND guest_phone IS NOT NULL AND guest_phone != ''
+                GROUP BY guest_phone
+            ) as guest_summary
+            GROUP BY guest_type
+        `, [propId]);
+
+        // 3. Nationality distribution
+        const [nationalityStats] = await pool.query(`
+            SELECT 
+                COALESCE(guest_nationality, 'Unknown') as nationality,
+                COUNT(id) as bookings_count,
+                SUM(total_amount) as total_revenue
+            FROM bookings
+            WHERE property_id = ? AND status IN ('confirmed', 'checked_in', 'checked_out')
+            GROUP BY guest_nationality
+            ORDER BY bookings_count DESC
+            LIMIT 5
+        `, [propId]);
+
+        // 4. Stay Duration Analytics (Length of Stay distribution)
+        const [stayDuration] = await pool.query(`
+            SELECT 
+                DATEDIFF(check_out_date, check_in_date) as nights,
+                COUNT(id) as bookings_count
+            FROM bookings
+            WHERE property_id = ? AND status IN ('confirmed', 'checked_in', 'checked_out')
+            GROUP BY nights
+            ORDER BY nights ASC
+        `, [propId]);
+
+        res.json(formatResponse(true, 'Guest analytics retrieved successfully', {
+            revenueSplit,
+            retentionStats,
+            nationalityStats,
+            stayDuration
+        }));
+    } catch (error) {
+        console.error('[HMS] Get guest analytics error:', error);
+        res.status(500).json(formatResponse(false, 'Failed to retrieve guest analytics', null, error.message));
+    }
+});
+
+
+
 // Create manual HMS reservation (Walk-in/Offline)
 router.post('/hms/reservations', requireHMSAccess, requireHMSPermission('manage_reservations'), async (req, res) => {
     try {
         const { 
             property_id, hms_room_id, check_in_date, check_out_date, 
             guest_name, guest_email, guest_phone, total_amount, 
-            payment_status, special_requests, source 
+            payment_status, special_requests, source,
+            nationality, nid_number, passport_number,
+            nid_document_url, passport_document_url,
+            number_of_guests, number_of_children, number_of_infants,
+            extra_guests, paid_amount
         } = req.body;
+
+        const numGuests = number_of_guests ? parseInt(number_of_guests) : 1;
+        const numChildren = number_of_children ? parseInt(number_of_children) : 0;
+        const numInfants = number_of_infants ? parseInt(number_of_infants) : 0;
 
         const propId = parseInt(property_id);
         const roomId = hms_room_id ? parseInt(hms_room_id) : null;
@@ -2845,39 +3226,151 @@ router.post('/hms/reservations', requireHMSAccess, requireHMSPermission('manage_
             return res.status(403).json(formatResponse(false, 'Access denied. You do not own this property.'));
         }
 
+        // Check for date overlaps with existing active bookings for the same room
+        if (roomId) {
+            const [conflicts] = await pool.query(`
+                SELECT id, booking_reference FROM bookings
+                WHERE hms_room_id = ?
+                AND status IN ('request_accepted', 'confirmed', 'checked_in')
+                AND check_in_date < ?
+                AND check_out_date > ?
+            `, [roomId, check_out_date, check_in_date]);
+
+            if (conflicts.length > 0) {
+                return res.status(400).json(formatResponse(false, `The selected room is already booked for these dates (Booking Ref: ${conflicts[0].booking_reference})`));
+            }
+        }
+
+        // Check if guest exists by phone and link guest_id
+        let guestId = null;
+        if (guest_phone) {
+            const digitsOnly = guest_phone.replace(/\D/g, '');
+            const suffixMatch = digitsOnly.length >= 10 ? `%${digitsOnly.slice(-10)}` : `%${digitsOnly}`;
+            const [users] = await pool.query(
+                `SELECT id FROM users WHERE phone = ? OR phone LIKE ? OR REPLACE(phone, '+', '') = ? LIMIT 1`,
+                [guest_phone, suffixMatch, digitsOnly]
+            );
+            if (users.length > 0) {
+                guestId = users[0].id;
+            }
+        }
+
         // Generate a booking reference
         const bookingReference = `HMS-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+        // Process base64 document images if provided
+        let processedNidDoc = null;
+        let processedPassportDoc = null;
+        if (nid_document_url) {
+            processedNidDoc = await processBase64Image(nid_document_url, `hms-nid-${Date.now()}`, 'documents');
+        }
+        if (passport_document_url) {
+            processedPassportDoc = await processBase64Image(passport_document_url, `hms-passport-${Date.now()}`, 'documents');
+        }
+
+        // If guest is linked to a registered user, update user profile
+        if (guestId) {
+            await pool.query(`
+                UPDATE users 
+                SET nationality = ?,
+                    nid_number = ?,
+                    passport_number = ?,
+                    nid_document_url = ?,
+                    passport_document_url = ?
+                WHERE id = ?
+            `, [
+                nationality || null, nid_number || null, passport_number || null,
+                processedNidDoc, processedPassportDoc,
+                guestId
+            ]);
+        }
 
         const [result] = await pool.query(`
             INSERT INTO bookings (
                 booking_reference, property_id, hms_room_id, check_in_date, check_out_date,
-                guest_name, guest_email, guest_phone, base_price, total_amount,
+                guest_name, guest_email, guest_phone, guest_id, base_price, total_amount,
                 status, payment_status, special_requests, source, booking_source,
                 admin_commission_rate, admin_commission_amount, property_owner_earnings,
+                guest_nationality, guest_nid_number, guest_passport_number,
+                guest_nid_document_url, guest_passport_document_url,
+                number_of_guests, number_of_children, number_of_infants,
                 created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
         `, [
             bookingReference, propId, roomId, check_in_date, check_out_date,
-            guest_name, guest_email, guest_phone, total_amount, total_amount,
+            guest_name, guest_email, guest_phone, guestId, total_amount, total_amount,
             'confirmed', payment_status || 'pending', special_requests, source || 'Walk-in', 'admin',
-            0, 0, total_amount
+            0, 0, total_amount,
+            nationality || null, nid_number || null, passport_number || null,
+            processedNidDoc, processedPassportDoc,
+            numGuests, numChildren, numInfants
         ]);
 
         const bookingId = result.insertId;
 
-        // If paid, record payment and sync to HMS accounts
-        if (payment_status === 'paid') {
-            try {
-                const payRef = `HMS-MANUAL-${Date.now()}-${bookingId}`;
-                const [pResult] = await pool.query(`
-                    INSERT INTO payments (
-                        booking_id, payment_reference, payment_method, payment_type, 
-                        amount, cr_amount, dr_amount, transaction_type, status, notes,
-                        payment_date
-                    ) VALUES (?, ?, 'cash', 'booking', ?, ?, 0, 'guest_payment', 'completed', 'Manual HMS reservation creation', NOW())
-                `, [bookingId, payRef, total_amount, total_amount]);
+        // --- Save extra guests and auto-log billing entries ---
+        if (Array.isArray(extra_guests) && extra_guests.length > 0) {
+            const hostId = req.user.user_type === 'staff' ? req.user.host_id : req.user.id;
+            for (const eg of extra_guests) {
+                const firstName = (eg.first_name || '').trim();
+                const lastName = (eg.last_name || '').trim();
+                const email = (eg.email || '').trim();
+                const phone = (eg.phone || '').trim();
+                const nidNumber = (eg.nid_number || '').trim();
+                const passportNumber = (eg.passport_number || '').trim();
+                const gender = eg.gender || 'Male';
 
-                await syncPaymentToHMSAccounts(pResult.insertId);
+                // Skip completely empty extra guest records
+                if (!firstName && !lastName && !email && !phone && !nidNumber && !passportNumber) {
+                    continue;
+                }
+
+                // 1. Save profile to booking_guests
+                await pool.query(
+                    `INSERT INTO booking_guests (booking_id, first_name, last_name, email, phone, gender, nid_number, passport_number, is_primary_guest, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NOW())`,
+                    [bookingId, firstName, lastName, email || null, phone || null, gender, nidNumber || null, passportNumber || null]
+                );
+
+                // 2. If extra_charge provided, auto-log to hms_bills (Folio)
+                const charge = parseFloat(eg.extra_charge);
+                if (!isNaN(charge) && charge > 0) {
+                    await pool.query(
+                        `INSERT INTO hms_bills (host_id, booking_id, guest_name, service_name, amount, created_at)
+                         VALUES (?, ?, ?, ?, ?, NOW())`,
+                        [hostId, bookingId, guest_name, `Extra Guest Charge - ${firstName || 'Guest'} ${lastName}`, charge]
+                    );
+                }
+            }
+        }
+
+        // Record payment if paid or partial
+        if (payment_status === 'paid' || payment_status === 'partial') {
+            try {
+                const amountToRecord = payment_status === 'partial'
+                    ? parseFloat(paid_amount || 0)
+                    : parseFloat(total_amount);
+
+                if (amountToRecord > 0) {
+                    const payRef = `HMS-MANUAL-${Date.now()}-${bookingId}`;
+                    const [userRow] = await pool.query('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
+                    const creatorName = userRow.length > 0 ? `${userRow[0].first_name} ${userRow[0].last_name}`.trim() : 'Staff';
+                    const creatorFirstName = userRow.length > 0 ? userRow[0].first_name : 'Staff';
+                    const defaultAccountName = `Petty Cash-${creatorFirstName}`;
+                    const paymentNotes = payment_status === 'partial'
+                        ? `Partial payment at HMS reservation creation (Total: BDT ${total_amount})`
+                        : 'Manual HMS reservation creation - Full payment';
+
+                    const [pResult] = await pool.query(`
+                        INSERT INTO payments (
+                            booking_id, payment_reference, payment_method, payment_type, 
+                            amount, cr_amount, dr_amount, transaction_type, status, notes,
+                            payment_date, received_by, account_name
+                        ) VALUES (?, ?, 'cash', 'booking', ?, ?, 0, 'guest_payment', 'completed', ?, NOW(), ?, ?)
+                    `, [bookingId, payRef, amountToRecord, amountToRecord, paymentNotes, creatorName, defaultAccountName]);
+
+                    await syncPaymentToHMSAccounts(pResult.insertId);
+                }
             } catch (accError) {
                 console.error('[HMS] Failed to auto-sync reservation payment to accounts:', accError);
             }
@@ -2887,6 +3380,209 @@ router.post('/hms/reservations', requireHMSAccess, requireHMSPermission('manage_
     } catch (error) {
         console.error('[HMS] Create reservation error:', error);
         res.status(500).json(formatResponse(false, 'Failed to create reservation', null, error.message));
+    }
+});
+
+// Edit manual HMS reservation
+router.put('/hms/reservations/:id', requireHMSAccess, requireHMSPermission('manage_reservations'), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { 
+            hms_room_id, check_in_date, check_out_date, 
+            guest_name, guest_email, guest_phone, total_amount, 
+            payment_status, special_requests, source,
+            nationality, nid_number, passport_number,
+            nid_document_url, passport_document_url,
+            number_of_guests, number_of_children, number_of_infants,
+            extra_guests
+        } = req.body;
+
+        const numGuests = number_of_guests ? parseInt(number_of_guests) : 1;
+        const numChildren = number_of_children ? parseInt(number_of_children) : 0;
+        const numInfants = number_of_infants ? parseInt(number_of_infants) : 0;
+
+        const bookingId = parseInt(id);
+        const roomId = hms_room_id ? parseInt(hms_room_id) : null;
+
+        // Fetch existing booking and do security check (owner validation)
+        const [booking] = await pool.query(
+            `SELECT b.* FROM bookings b
+             JOIN properties p ON b.property_id = p.id
+             WHERE b.id = ? AND p.owner_id = (SELECT id FROM property_owners WHERE user_id = ?)`,
+            [bookingId, req.user.id]
+        );
+
+        if (booking.length === 0) {
+            return res.status(403).json(formatResponse(false, 'Access denied. You do not own the property for this reservation.'));
+        }
+
+        // Check for date overlaps with other bookings for the same room
+        if (roomId) {
+            const [conflicts] = await pool.query(`
+                SELECT id, booking_reference FROM bookings
+                WHERE hms_room_id = ?
+                AND id != ?
+                AND status IN ('request_accepted', 'confirmed', 'checked_in')
+                AND check_in_date < ?
+                AND check_out_date > ?
+            `, [roomId, bookingId, check_out_date, check_in_date]);
+
+            if (conflicts.length > 0) {
+                return res.status(400).json(formatResponse(false, `The selected room is already booked for these dates (Booking Ref: ${conflicts[0].booking_reference})`));
+            }
+        }
+
+        // Check if guest exists by phone and link guest_id
+        let guestId = null;
+        if (guest_phone) {
+            const digitsOnly = guest_phone.replace(/\D/g, '');
+            const suffixMatch = digitsOnly.length >= 10 ? `%${digitsOnly.slice(-10)}` : `%${digitsOnly}`;
+            const [users] = await pool.query(
+                `SELECT id FROM users WHERE phone = ? OR phone LIKE ? OR REPLACE(phone, '+', '') = ? LIMIT 1`,
+                [guest_phone, suffixMatch, digitsOnly]
+            );
+            if (users.length > 0) {
+                guestId = users[0].id;
+            }
+        }
+
+        const currentBooking = booking[0];
+
+        // Process base64 document images if provided
+        let processedNidDoc = nid_document_url;
+        let processedPassportDoc = passport_document_url;
+        if (nid_document_url && nid_document_url.startsWith('data:')) {
+            processedNidDoc = await processBase64Image(nid_document_url, `hms-nid-${Date.now()}`, 'documents');
+        }
+        if (passport_document_url && passport_document_url.startsWith('data:')) {
+            processedPassportDoc = await processBase64Image(passport_document_url, `hms-passport-${Date.now()}`, 'documents');
+        }
+
+        // If guest is linked to a registered user, update user profile
+        if (guestId) {
+            await pool.query(`
+                UPDATE users 
+                SET nationality = ?,
+                    nid_number = ?,
+                    passport_number = ?,
+                    nid_document_url = ?,
+                    passport_document_url = ?
+                WHERE id = ?
+            `, [
+                nationality || null, nid_number || null, passport_number || null,
+                processedNidDoc, processedPassportDoc,
+                guestId
+            ]);
+        }
+
+        // Update the booking record
+        await pool.query(`
+            UPDATE bookings 
+            SET hms_room_id = ?, 
+                check_in_date = ?, 
+                check_out_date = ?,
+                guest_name = ?, 
+                guest_email = ?, 
+                guest_phone = ?, 
+                guest_id = ?,
+                base_price = ?, 
+                total_amount = ?,
+                payment_status = ?, 
+                special_requests = ?, 
+                source = ?,
+                property_owner_earnings = ?,
+                guest_nationality = ?,
+                guest_nid_number = ?,
+                guest_passport_number = ?,
+                guest_nid_document_url = ?,
+                guest_passport_document_url = ?,
+                number_of_guests = ?,
+                number_of_children = ?,
+                number_of_infants = ?,
+                updated_at = NOW()
+            WHERE id = ?
+        `, [
+            roomId, check_in_date, check_out_date,
+            guest_name, guest_email, guest_phone, guestId, total_amount, total_amount,
+            payment_status, special_requests, source, total_amount,
+            nationality || null, nid_number || null, passport_number || null,
+            processedNidDoc, processedPassportDoc,
+            numGuests, numChildren, numInfants,
+            bookingId
+        ]);
+
+        // --- Sync extra guests and auto-log billing entries ---
+        // 1. Delete existing non-primary guests
+        await pool.query(
+            `DELETE FROM booking_guests WHERE booking_id = ? AND is_primary_guest = 0`,
+            [bookingId]
+        );
+
+        // 2. Insert new extra guests list
+        if (Array.isArray(extra_guests) && extra_guests.length > 0) {
+            const hostId = req.user.user_type === 'staff' ? req.user.host_id : req.user.id;
+            for (const eg of extra_guests) {
+                const firstName = (eg.first_name || '').trim();
+                const lastName = (eg.last_name || '').trim();
+                const email = (eg.email || '').trim();
+                const phone = (eg.phone || '').trim();
+                const nidNumber = (eg.nid_number || '').trim();
+                const passportNumber = (eg.passport_number || '').trim();
+                const gender = eg.gender || 'Male';
+
+                // Skip completely empty extra guest records
+                if (!firstName && !lastName && !email && !phone && !nidNumber && !passportNumber) {
+                    continue;
+                }
+
+                // Save profile to booking_guests
+                await pool.query(
+                    `INSERT INTO booking_guests (booking_id, first_name, last_name, email, phone, gender, nid_number, passport_number, is_primary_guest, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NOW())`,
+                    [bookingId, firstName, lastName, email || null, phone || null, gender, nidNumber || null, passportNumber || null]
+                );
+
+                // If extra_charge provided, auto-log to hms_bills (Folio)
+                const charge = parseFloat(eg.extra_charge);
+                if (!isNaN(charge) && charge > 0) {
+                    await pool.query(
+                        `INSERT INTO hms_bills (host_id, booking_id, guest_name, service_name, amount, created_at)
+                         VALUES (?, ?, ?, ?, ?, NOW())`,
+                        [hostId, bookingId, guest_name, `Extra Guest Charge - ${firstName || 'Guest'} ${lastName}`, charge]
+                    );
+                }
+            }
+        }
+
+        // If payment status changed to paid, and there was no payment recorded yet, record payment
+        if (payment_status === 'paid' && currentBooking.payment_status !== 'paid') {
+            try {
+                // Check if payment already exists
+                const [existingPayments] = await pool.query(
+                    'SELECT id FROM payments WHERE booking_id = ? AND status = "completed"',
+                    [bookingId]
+                );
+                if (existingPayments.length === 0) {
+                    const payRef = `HMS-MANUAL-EDIT-${Date.now()}-${bookingId}`;
+                    const [pResult] = await pool.query(`
+                        INSERT INTO payments (
+                            booking_id, payment_reference, payment_method, payment_type, 
+                            amount, cr_amount, dr_amount, transaction_type, status, notes,
+                            payment_date
+                        ) VALUES (?, ?, 'cash', 'booking', ?, ?, 0, 'guest_payment', 'completed', 'Manual HMS reservation edit payment', NOW())
+                    `, [bookingId, payRef, total_amount, total_amount]);
+
+                    await syncPaymentToHMSAccounts(pResult.insertId);
+                }
+            } catch (accError) {
+                console.error('[HMS] Failed to auto-sync reservation payment to accounts on edit:', accError);
+            }
+        }
+
+        res.json(formatResponse(true, 'Reservation updated successfully'));
+    } catch (error) {
+        console.error('[HMS] Edit reservation error:', error);
+        res.status(500).json(formatResponse(false, 'Failed to update reservation', null, error.message));
     }
 });
 
@@ -2932,7 +3628,7 @@ router.patch('/hms/reservations/:id/status', requireHMSAccess, requireHMSPermiss
             try {
                 // Specifically find the guest_payment (CR) entry to correctly link payment_method
                 const [payments] = await pool.query(`
-                    SELECT id FROM payments 
+                    SELECT id, payment_method FROM payments 
                     WHERE booking_id = ? AND transaction_type = 'guest_payment'
                     AND status IN ('completed', 'processing', 'authorized')
                     ORDER BY id DESC LIMIT 1
@@ -2948,28 +3644,39 @@ router.patch('/hms/reservations/:id/status', requireHMSAccess, requireHMSPermiss
 
                 if (amountActuallyPaid > 0 && payments.length > 0) {
                     const paymentId = payments[0].id;
+                    const paymentMethod = payments[0].payment_method;
                     const refundReference = `REF-${Date.now()}-${id}`;
+
+                    const isOnline = ['bkash', 'sslcommerz', 'nagad'].includes(paymentMethod);
+                    const refundStatus = isOnline ? 'pending' : 'completed';
+                    const now = new Date();
+                    const approvedAt = isOnline ? null : now;
+                    const completedAt = isOnline ? null : now;
 
                     await pool.query(`
                         INSERT INTO refunds (
                             booking_id, payment_id, refund_reference, original_amount, refund_amount, net_refund, 
-                            refund_reason, refund_type, cancellation_policy_applied, status, requested_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'full', ?, 'pending', NOW())
+                            refund_reason, refund_type, cancellation_policy_applied, status, requested_at, approved_at, completed_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'full', ?, ?, NOW(), ?, ?)
                     `, [
                         id, 
                         paymentId,
                         refundReference,
                         amountActuallyPaid,
-                        amountActuallyPaid, // Full amount
-                        amountActuallyPaid, // Full amount
+                        amountActuallyPaid,
+                        amountActuallyPaid,
                         'Host Cancellation (via HMS Status Update)', 
-                        'Host Cancelled. Guest receives full refund.'
+                        'Host Cancelled. Guest receives full refund.',
+                        refundStatus,
+                        approvedAt,
+                        completedAt
                     ]);
-                    console.log(`✅ Full Refund request generated for cancelled booking ${id} via HMS status update`);
+                    console.log(`✅ Full Refund request generated for cancelled booking ${id} via HMS status update with status ${refundStatus}`);
                 }
             } catch (refErr) {
                 console.error('❌ Refund creation error on Host Cancel via HMS status update:', refErr);
             }
+
 
             // Refund rewards points if any were redeemed for this booking
             try {
@@ -3034,6 +3741,10 @@ router.patch('/hms/reservations/:id/manual-payment', requireHMSAccess, requireHM
             'UPDATE bookings SET payment_status = "paid", payment_method = ?, payment_notes = ? WHERE id = ?',
             [payment_method, payment_notes, id]
         );
+
+        // Also mark all extra bills and food orders for this booking as paid
+        await pool.query('UPDATE hms_bills SET status = "paid", updated_at = NOW() WHERE booking_id = ?', [id]);
+        await pool.query('UPDATE hms_food_orders SET payment_status = "paid", updated_at = NOW() WHERE booking_id = ?', [id]);
 
         // Record in payments table for accounting
         const payRef = `HMS-MANUAL-${Date.now()}-${id}`;
@@ -3100,7 +3811,7 @@ router.get('/hms/reservations/:id/invoice-data', requireHMSAccess, requireHMSPer
         let query = `
             SELECT 
                 b.*, 
-                p.title as property_title, p.address as property_address, p.city as property_city,
+                p.title as property_title, p.address as property_address, p.city as property_city, p.property_type as property_type,
                 r.room_number, r.room_type,
                 po.business_name as company_name,
                 DATEDIFF(b.check_out_date, b.check_in_date) as nights
@@ -3135,6 +3846,492 @@ router.get('/hms/reservations/:id/invoice-data', requireHMSAccess, requireHMSPer
         console.error('[HMS] Invoice data error:', error);
         res.status(500).json(formatResponse(false, 'Failed to fetch invoice data'));
     }
+});
+
+// ─── HMS Reservation Detail (Full) ──────────────────────────────────────────
+// Returns booking info, payment history, extra bills, and food orders
+router.get('/hms/reservations/:id/detail', requireHMSAccess, requireHMSPermission('manage_reservations'), async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        let query = `
+            SELECT 
+                b.*, 
+                DATEDIFF(b.check_out_date, b.check_in_date) as nights,
+                r.room_number, r.room_type,
+                p.title as property_title, p.address as property_address, p.city as property_city, p.property_type as property_type,
+                po.business_name as company_name,
+                u.first_name as guest_first_name,
+                u.last_name as guest_last_name,
+                u.email as guest_user_email,
+                u.phone as guest_user_phone,
+                COALESCE(b.guest_nationality, u.nationality) as guest_nationality,
+                COALESCE(b.guest_nid_number, u.nid_number) as guest_nid_number,
+                COALESCE(b.guest_passport_number, u.passport_number) as guest_passport_number,
+                COALESCE(b.guest_nid_document_url, u.nid_document_url) as guest_nid_document_url,
+                COALESCE(b.guest_passport_document_url, u.passport_document_url) as guest_passport_document_url
+            FROM bookings b
+            JOIN properties p ON b.property_id = p.id
+            JOIN property_owners po ON p.owner_id = po.id
+            LEFT JOIN hms_rooms r ON b.hms_room_id = r.id
+            LEFT JOIN users u ON b.guest_id = u.id
+            WHERE b.id = ?
+        `;
+        let params = [id];
+
+        if (req.user.role !== 'admin') {
+            query += ' AND po.user_id = ?';
+            params.push(req.user.id);
+        }
+
+        const [rows] = await pool.query(query, params);
+        if (rows.length === 0) {
+            return res.status(404).json(formatResponse(false, 'Reservation not found or access denied.'));
+        }
+
+        const reservation = rows[0];
+
+        // Payment history
+        const [payments] = await pool.query(
+            `SELECT id, payment_reference, payment_method, amount, cr_amount, dr_amount, 
+                    transaction_type, status, notes, payment_date, created_at
+             FROM payments WHERE booking_id = ? ORDER BY created_at DESC`,
+            [id]
+        );
+
+        // Extra bills
+        const [extraBills] = await pool.query('SELECT * FROM hms_bills WHERE booking_id = ? ORDER BY created_at DESC', [id]);
+
+        // Food orders summary
+        const [foodOrders] = await pool.query(
+            `SELECT id, total_amount, payment_status, status, notes, created_at
+             FROM hms_food_orders WHERE booking_id = ? ORDER BY created_at DESC`,
+            [id]
+        );
+
+        // Extra guests / room occupants
+        const [extraGuests] = await pool.query(
+            `SELECT id, first_name, last_name, email, phone, gender, nid_number, passport_number
+             FROM booking_guests WHERE booking_id = ? AND is_primary_guest = 0 ORDER BY id ASC`,
+            [id]
+        );
+
+        const paidAmount = payments
+            .filter(p => p.status === 'completed' && p.cr_amount > 0)
+            .reduce((s, p) => s + parseFloat(p.cr_amount || 0), 0);
+
+        const extraTotal = extraBills.reduce((s, b) => s + parseFloat(b.amount || 0), 0);
+        const foodTotal = foodOrders
+            .filter(f => f.payment_status !== 'cancelled')
+            .reduce((s, f) => s + parseFloat(f.total_amount || 0), 0);
+
+        const grandTotal = parseFloat(reservation.total_amount || 0) + extraTotal + foodTotal;
+        const dueAmount = Math.max(grandTotal - paidAmount, 0);
+
+        res.json(formatResponse(true, 'Reservation detail retrieved', {
+            reservation,
+            payments,
+            extraBills,
+            foodOrders,
+            extraGuests,
+            summary: {
+                room_total: parseFloat(reservation.total_amount || 0),
+                extra_total: extraTotal,
+                food_total: foodTotal,
+                grand_total: grandTotal,
+                paid_amount: paidAmount,
+                due_amount: dueAmount
+            }
+        }));
+    } catch (error) {
+        console.error('[HMS] Reservation detail error:', error);
+        res.status(500).json(formatResponse(false, 'Failed to fetch reservation detail', null, error.message));
+    }
+});
+
+// ─── HMS Saved Invoices: List ────────────────────────────────────────────────
+router.get('/hms/reservations/:id/invoices', requireHMSAccess, requireHMSPermission('manage_reservations'), async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Security: verify ownership
+        const [check] = await pool.query(
+            `SELECT b.id FROM bookings b
+             JOIN properties p ON b.property_id = p.id
+             JOIN property_owners po ON p.owner_id = po.id
+             WHERE b.id = ? AND (po.user_id = ? OR ? = 'admin')`,
+            [id, req.user.id, req.user.role]
+        );
+        if (check.length === 0) {
+            return res.status(403).json(formatResponse(false, 'Access denied.'));
+        }
+
+        // Fetch saved invoices if hms_invoices table exists
+        const [tables] = await pool.query(`SHOW TABLES LIKE 'hms_invoices'`);
+        let invoices = [];
+        if (tables.length > 0) {
+            const [rows] = await pool.query(
+                'SELECT * FROM hms_invoices WHERE booking_id = ? ORDER BY created_at DESC',
+                [id]
+            );
+            invoices = rows;
+        }
+
+        // Fetch completed payments for this booking to serve as virtual invoices
+        const [payments] = await pool.query(
+            `SELECT id, payment_reference, payment_method, amount, cr_amount, dr_amount, 
+                    transaction_type, status, notes, payment_date, created_at
+             FROM payments WHERE booking_id = ? AND status = 'completed' ORDER BY created_at ASC`,
+            [id]
+        );
+
+        const combinedInvoices = [...invoices];
+
+        // Filter completed payments to only include credit transactions (actual guest payments received)
+        const creditPayments = payments.filter(pay => parseFloat(pay.cr_amount || 0) > 0);
+
+        creditPayments.forEach((pay, idx) => {
+            // Check if there is already a saved invoice with that reference
+            const exists = invoices.some(inv => inv.invoice_number === pay.payment_reference);
+            if (!exists) {
+                combinedInvoices.push({
+                    id: `virtual-pay-${pay.id}`,
+                    booking_id: parseInt(id),
+                    invoice_number: pay.payment_reference || `PAY-${pay.id}`,
+                    invoice_type: idx === 0 ? 'booking_payment' : 'partial_payment',
+                    amount: parseFloat(pay.cr_amount || 0),
+                    notes: pay.notes || (idx === 0 ? 'Initial Booking Payment' : 'Payment Receipt'),
+                    created_at: pay.payment_date || pay.created_at,
+                    generated_at: pay.payment_date || pay.created_at,
+                    is_virtual: true
+                });
+            }
+        });
+
+        // Sort combined list by created_at DESC
+        combinedInvoices.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+        res.json(formatResponse(true, 'Invoices retrieved', { invoices: combinedInvoices }));
+    } catch (error) {
+        console.error('[HMS] Get invoices error:', error);
+        res.status(500).json(formatResponse(false, 'Failed to fetch invoices', null, error.message));
+    }
+});
+
+// ─── HMS Save Invoice ────────────────────────────────────────────────────────
+router.post('/hms/reservations/:id/invoices', requireHMSAccess, requireHMSPermission('manage_reservations'), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { invoice_number, invoice_type, amount, notes, items, record_payment, payment_method } = req.body;
+
+        // Security: verify ownership
+        const [check] = await pool.query(
+            `SELECT b.id, b.booking_reference FROM bookings b
+             JOIN properties p ON b.property_id = p.id
+             JOIN property_owners po ON p.owner_id = po.id
+             WHERE b.id = ? AND (po.user_id = ? OR ? = 'admin')`,
+            [id, req.user.id, req.user.role]
+        );
+        if (check.length === 0) {
+            return res.status(403).json(formatResponse(false, 'Access denied.'));
+        }
+
+        // Auto-create hms_invoices table if not exist
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS hms_invoices (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                booking_id BIGINT UNSIGNED NOT NULL,
+                invoice_number VARCHAR(100) NOT NULL,
+                invoice_type VARCHAR(50) DEFAULT 'full',
+                amount DECIMAL(12,2) DEFAULT 0,
+                notes TEXT,
+                items_json TEXT,
+                generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE
+            )
+        `);
+
+        // Ensure items_json column exists
+        const [columns] = await pool.query(`SHOW COLUMNS FROM hms_invoices LIKE 'items_json'`);
+        if (columns.length === 0) {
+            await pool.query(`ALTER TABLE hms_invoices ADD COLUMN items_json TEXT`);
+        }
+
+        const bookingRef = check[0].booking_reference || id;
+        const invoiceNum = invoice_number || `INV-${bookingRef}-${Date.now().toString().slice(-4)}`;
+        const itemsJsonStr = items ? JSON.stringify(items) : null;
+
+        const [result] = await pool.query(
+            `INSERT INTO hms_invoices (booking_id, invoice_number, invoice_type, amount, notes, items_json)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [id, invoiceNum, invoice_type || 'full', amount || 0, notes || null, itemsJsonStr]
+        );
+
+        // Record manual payment if requested
+        if (record_payment && amount > 0) {
+            const payRef = invoiceNum;
+            const paymentNotes = notes || `Payment received for Invoice #${invoiceNum}`;
+            const payMethod = payment_method || 'cash';
+
+            // Fetch logged-in user's name
+            const [userRow] = await pool.query('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
+            const creatorName = userRow.length > 0 ? `${userRow[0].first_name} ${userRow[0].last_name}`.trim() : 'Staff';
+            const creatorFirstName = userRow.length > 0 ? userRow[0].first_name : 'Staff';
+
+            let defaultAccountName = 'Petty Cash';
+            if (payMethod === 'cash') {
+                defaultAccountName = `Petty Cash-${creatorFirstName}`;
+            } else if (payMethod === 'card') {
+                defaultAccountName = 'Card Settlement';
+            } else if (payMethod === 'mobile_banking') {
+                defaultAccountName = 'bKash Merchant';
+            } else if (payMethod === 'bank_transfer') {
+                defaultAccountName = 'Bank Account';
+            }
+
+            const [payInsertResult] = await pool.query(`
+                INSERT INTO payments (
+                    booking_id, payment_reference, payment_method, payment_type, 
+                    amount, cr_amount, dr_amount, transaction_type, status, notes,
+                    payment_date, received_by, account_name
+                ) VALUES (?, ?, ?, 'booking', ?, ?, 0, 'guest_payment', 'completed', ?, NOW(), ?, ?)
+            `, [id, payRef, payMethod, amount, amount, paymentNotes, creatorName, defaultAccountName]);
+
+            // Sync to HMS accounts
+            try {
+                await syncPaymentToHMSAccounts(payInsertResult.insertId);
+            } catch (accError) {
+                console.error('[HMS-ACCOUNTS] Failed to link reservation payment to accounts:', accError);
+            }
+        }
+
+        res.status(201).json(formatResponse(true, 'Invoice saved successfully', {
+            invoice_id: result.insertId,
+            invoice_number: invoiceNum
+        }));
+    } catch (error) {
+        console.error('[HMS] Save invoice error:', error);
+        res.status(500).json(formatResponse(false, 'Failed to save invoice', null, error.message));
+    }
+});
+
+// Private route to update custom receipt metadata (account_name, received_by)
+router.put('/hms/payments/:id/receipt-meta', requireHMSAccess, requireHMSPermission('manage_reservations'), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { account_name, received_by } = req.body;
+
+        // Security check: verify this payment's booking property belongs to the logged-in owner/staff
+        const [check] = await pool.query(`
+            SELECT p.id 
+            FROM payments p
+            JOIN bookings b ON p.booking_id = b.id
+            JOIN properties pr ON b.property_id = pr.id
+            JOIN property_owners po ON pr.owner_id = po.id
+            WHERE p.id = ? AND (po.user_id = ? OR ? = 'admin')
+        `, [id, req.user.id, req.user.role]);
+
+        if (check.length === 0) {
+            return res.status(403).json(formatResponse(false, 'Access denied.'));
+        }
+
+        await pool.query(`
+            UPDATE payments 
+            SET account_name = ?, received_by = ?, updated_at = NOW()
+            WHERE id = ?
+        `, [account_name, received_by, id]);
+
+        res.json(formatResponse(true, 'Receipt metadata updated successfully'));
+    } catch (error) {
+        console.error('[HMS] Update payment receipt-meta error:', error);
+        res.status(500).json(formatResponse(false, 'Failed to update receipt details'));
+    }
+});
+
+// =============================================
+// GET PROPERTY OWNER/HOST ANALYTICS
+// =============================================
+
+// 1. Get Host User Analytics (Demographics, Age groups, Gender, Repeated guests)
+router.get('/reports/users/analytics', async (req, res) => {
+  try {
+    const [owners] = await pool.execute(
+      'SELECT id FROM property_owners WHERE user_id = ?',
+      [req.user.id]
+    );
+    if (owners.length === 0) {
+      return res.status(404).json(formatResponse(false, 'Property owner profile not found'));
+    }
+    const ownerId = owners[0].id;
+
+    // 1. Total & Type-wise counts (restricted to guests of owner's properties)
+    const [typeCounts] = await pool.execute(`
+      SELECT 'guest' as user_type, COUNT(DISTINCT u.id) as count
+      FROM users u
+      JOIN bookings b ON u.id = b.guest_id
+      JOIN properties p ON b.property_id = p.id
+      WHERE p.owner_id = ?
+    `, [ownerId]);
+
+    // 2. Gender-wise distribution
+    const [genderCounts] = await pool.execute(`
+      SELECT COALESCE(u.gender, 'unspecified') as gender, COUNT(DISTINCT u.id) as count
+      FROM users u
+      JOIN bookings b ON u.id = b.guest_id
+      JOIN properties p ON b.property_id = p.id
+      WHERE p.owner_id = ?
+      GROUP BY u.gender
+    `, [ownerId]);
+
+    // 3. Age-wise distribution (using date_of_birth)
+    const [ageCounts] = await pool.execute(`
+      SELECT 
+        CASE 
+          WHEN u.date_of_birth IS NULL THEN 'Unspecified'
+          WHEN TIMESTAMPDIFF(YEAR, u.date_of_birth, CURDATE()) < 18 THEN 'Under 18'
+          WHEN TIMESTAMPDIFF(YEAR, u.date_of_birth, CURDATE()) BETWEEN 18 AND 25 THEN '18-25'
+          WHEN TIMESTAMPDIFF(YEAR, u.date_of_birth, CURDATE()) BETWEEN 26 AND 35 THEN '26-35'
+          WHEN TIMESTAMPDIFF(YEAR, u.date_of_birth, CURDATE()) BETWEEN 36 AND 50 THEN '36-50'
+          ELSE '51+'
+        END as age_group,
+        COUNT(DISTINCT u.id) as count
+      FROM users u
+      JOIN bookings b ON u.id = b.guest_id
+      JOIN properties p ON b.property_id = p.id
+      WHERE p.owner_id = ?
+      GROUP BY age_group
+    `, [ownerId]);
+
+    // 4. Top Repeated Guests of this owner
+    const [repeatedGuests] = await pool.execute(`
+      SELECT 
+        u.id, u.first_name, u.last_name, u.email, u.phone, u.city, u.country,
+        COUNT(b.id) as bookings_count, 
+        SUM(b.total_amount) as total_spent,
+        GROUP_CONCAT(DISTINCT CONCAT(p.title, ' (', pb.cnt, ' bookings)') SEPARATOR ', ') as repeated_properties
+      FROM users u
+      JOIN bookings b ON u.id = b.guest_id
+      JOIN properties p ON b.property_id = p.id
+      JOIN (
+        SELECT b2.guest_id, b2.property_id, COUNT(*) as cnt
+        FROM bookings b2
+        JOIN properties p2 ON b2.property_id = p2.id
+        WHERE b2.status IN ('confirmed', 'checked_in', 'checked_out') AND p2.owner_id = ?
+        GROUP BY b2.guest_id, b2.property_id
+      ) pb ON u.id = pb.guest_id AND b.property_id = pb.property_id
+      WHERE p.owner_id = ? AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+      GROUP BY u.id
+      HAVING bookings_count > 1
+      ORDER BY bookings_count DESC
+      LIMIT 500
+    `, [ownerId, ownerId]);
+
+    // 5. Detailed stays history of repeated guests
+    const [repeatedGuestsBookings] = await pool.execute(`
+      SELECT 
+        b.id as booking_id,
+        b.guest_id,
+        b.property_id,
+        p.title as property_title,
+        b.check_in_date,
+        b.check_out_date,
+        b.status,
+        b.total_amount
+      FROM bookings b
+      JOIN properties p ON b.property_id = p.id
+      WHERE p.owner_id = ? AND b.guest_id IN (
+        SELECT b2.guest_id
+        FROM bookings b2
+        JOIN properties p2 ON b2.property_id = p2.id
+        WHERE b2.status IN ('confirmed', 'checked_in', 'checked_out') AND p2.owner_id = ?
+        GROUP BY b2.guest_id
+        HAVING COUNT(*) > 1
+      )
+      AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+      ORDER BY b.guest_id, p.title, b.check_in_date DESC
+    `, [ownerId, ownerId]);
+
+    // 6. Complete list of users (only the guests of this owner)
+    const [users] = await pool.execute(`
+      SELECT DISTINCT
+        u.id, u.first_name, u.last_name, u.email, u.phone, 'guest' as user_type, u.gender, u.date_of_birth, u.city, u.country, u.created_at
+      FROM users u
+      JOIN bookings b ON u.id = b.guest_id
+      JOIN properties p ON b.property_id = p.id
+      WHERE p.owner_id = ?
+      ORDER BY u.created_at DESC
+    `, [ownerId]);
+
+    res.json(formatResponse(true, 'User analytics data retrieved successfully', {
+      typeCounts,
+      genderCounts,
+      ageCounts,
+      repeatedGuests,
+      repeatedGuestsBookings,
+      users
+    }));
+  } catch (error) {
+    console.error('[HostReports] User analytics error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to fetch user analytics', null, error.message));
+  }
+});
+
+// 2. Get Host Property Analytics (Top booked, top earning, top reviewed)
+router.get('/reports/properties/analytics', async (req, res) => {
+  try {
+    const [owners] = await pool.execute(
+      'SELECT id FROM property_owners WHERE user_id = ?',
+      [req.user.id]
+    );
+    if (owners.length === 0) {
+      return res.status(404).json(formatResponse(false, 'Property owner profile not found'));
+    }
+    const ownerId = owners[0].id;
+
+    // 1. Top properties by booking count
+    const [topBooked] = await pool.execute(`
+      SELECT p.id, p.title, p.city, p.property_type, COUNT(b.id) as bookings_count
+      FROM properties p
+      LEFT JOIN bookings b ON p.id = b.property_id AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+      WHERE p.owner_id = ?
+      GROUP BY p.id
+      ORDER BY bookings_count DESC
+      LIMIT 500
+    `, [ownerId]);
+
+    // 2. Top earning properties by total revenue
+    const [topEarning] = await pool.execute(`
+      SELECT p.id, p.title, p.city, p.property_type, COALESCE(SUM(b.total_amount), 0) as total_earnings
+      FROM properties p
+      LEFT JOIN bookings b ON p.id = b.property_id AND b.payment_status = 'paid'
+      WHERE p.owner_id = ?
+      GROUP BY p.id
+      ORDER BY total_earnings DESC
+      LIMIT 500
+    `, [ownerId]);
+
+    // 3. Top reviewed properties by average rating
+    const [topReviewed] = await pool.execute(`
+      SELECT p.id, p.title, p.city, p.property_type, AVG(r.rating) as avg_rating, COUNT(r.id) as reviews_count
+      FROM properties p
+      LEFT JOIN reviews r ON p.id = r.property_id AND r.status = 'approved'
+      WHERE p.owner_id = ?
+      GROUP BY p.id
+      HAVING reviews_count > 0
+      ORDER BY avg_rating DESC, reviews_count DESC
+      LIMIT 500
+    `, [ownerId]);
+
+    res.json(formatResponse(true, 'Property analytics data retrieved successfully', {
+      topBooked,
+      topEarning,
+      topReviewed
+    }));
+  } catch (error) {
+    console.error('[HostReports] Property analytics error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to fetch property analytics', null, error.message));
+  }
 });
 
 module.exports = router;

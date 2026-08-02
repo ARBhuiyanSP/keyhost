@@ -9,6 +9,7 @@ import api from '../../utils/api';
 import useToast from '../../hooks/useToast';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import ImageUpload from '../../components/common/ImageUpload';
+import { getFirstImageUrl, getImageUrl } from '../../utils/imageUrl';
 
 const HMSRooms = () => {
     const queryClient = useQueryClient();
@@ -21,30 +22,7 @@ const HMSRooms = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [statusModalRoom, setStatusModalRoom] = useState(null); // room object or null
 
-    const getRoomImage = (images) => {
-        if (!images) return null;
-        let imageList = images;
-        if (typeof images === 'string') {
-            try {
-                imageList = JSON.parse(images);
-                if (typeof imageList === 'string') imageList = JSON.parse(imageList);
-            } catch (e) {
-                return null;
-            }
-        }
-        
-        if (!Array.isArray(imageList) || imageList.length === 0) return null;
-        
-        const firstImage = imageList[0];
-        if (!firstImage) return null;
-        
-        if (firstImage.startsWith('http') || firstImage.startsWith('data:')) {
-            return firstImage;
-        }
-        
-        const backendUrl = 'http://localhost:5000';
-        return `${backendUrl}${firstImage}`;
-    };
+    const getRoomImage = (images) => getFirstImageUrl(images);
     const [statusFilter, setStatusFilter] = useState('');
     const [typeFilter, setTypeFilter] = useState('');
 
@@ -368,16 +346,18 @@ const HMSRooms = () => {
     return (
         <div className="p-4 md:p-6 max-w-[1600px] mx-auto bg-[#f8fafc] min-h-screen">
             {/* Property Selector Header */}
-            <div className="mb-6 flex items-center justify-between">
+            <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-800">{terms.room} Management</h1>
-                    <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
-                        <FiHome />
-                        <span>Select Property:</span>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 text-sm text-gray-500 mt-1.5">
+                        <div className="flex items-center gap-2">
+                            <FiHome className="flex-shrink-0" />
+                            <span className="font-semibold whitespace-nowrap">Select Property:</span>
+                        </div>
                         <select 
                             value={selectedPropertyId || ''} 
                             onChange={(e) => handlePropertyChange(e.target.value)}
-                            className="bg-transparent font-bold text-primary-600 border-none p-0 focus:ring-0 cursor-pointer"
+                            className="bg-transparent font-bold text-primary-600 border-none p-0 focus:ring-0 cursor-pointer max-w-[280px] sm:max-w-xs md:max-w-md lg:max-w-lg truncate"
                         >
                             {properties.map(p => (
                                 <option key={p.id} value={p.id}>{p.title}</option>
@@ -386,26 +366,26 @@ const HMSRooms = () => {
                     </div>
                 </div>
                 
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2.5">
                     {selectedProperty?.is_single_unit !== 1 && selectedProperty?.is_single_unit !== true && (
                         <>
                             <button 
                                 onClick={() => setIsBulkModalOpen(true)}
-                                className="flex items-center gap-2 px-4 py-2 bg-[#003d4d] text-white rounded font-bold text-sm shadow-sm"
+                                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-[#003d4d] text-white rounded font-bold text-xs shadow-sm whitespace-nowrap"
                             >
                                 <FiPlus />
                                 Add Multiple {terms.rooms}
                             </button>
                             <button 
                                 onClick={() => handleOpenModal()}
-                                className="flex items-center gap-2 px-4 py-2 bg-[#004e59] text-white rounded font-bold text-sm shadow-sm"
+                                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-[#004e59] text-white rounded font-bold text-xs shadow-sm whitespace-nowrap"
                             >
                                 <FiPlus />
                                 Add {terms.room}
                             </button>
                         </>
                     )}
-                    <button className="p-2 bg-white border border-gray-200 text-[#004e59] rounded shadow-sm">
+                    <button className="p-2 bg-white border border-gray-250/70 text-[#004e59] rounded shadow-sm flex items-center justify-center">
                         <FiFilter />
                     </button>
                 </div>
@@ -658,10 +638,10 @@ const HMSRooms = () => {
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 ml-1">{terms.room} Photos</label>
                                 <ImageUpload 
-                                    images={(formData.images || []).map((url, idx) => ({ 
-                                        id: idx, 
-                                        preview: url.startsWith('http') || url.startsWith('data:') ? url : `http://localhost:5000${url}` 
-                                     }))}
+                                    images={(formData.images || []).map((url, idx) => ({
+                                        id: idx,
+                                        preview: getImageUrl(url)
+                                    }))}
                                     onImagesChange={(imgs) => setFormData({ ...formData, images: imgs.map(i => i.preview) })}
                                     maxImages={10}
                                 />

@@ -8,6 +8,8 @@ import useAuthStore from '../../store/authStore';
 import useSettingsStore from '../../store/settingsStore';
 import api from '../../utils/api';
 import AuthModal from '../auth/AuthModal';
+import { getLocationSubtitle } from '../../utils/textUtils';
+import useLocationAutocomplete from '../../hooks/useLocationAutocomplete';
 
 // Lazy load FlightSearchForm — only loaded when Flight tab is active
 const FlightSearchForm = lazy(() => import('../search/FlightSearchForm'));
@@ -25,6 +27,8 @@ const PropertyTypeIcon = ({ name = '', active = false, iconUrl = '' }) => {
       imgSrc = '/images/nav-icon-hotel.png';
     } else if (normalized.includes('flight')) {
       imgSrc = '/images/flight.png';
+    } else if (normalized.includes('monthly') || normalized.includes('rent')) {
+      imgSrc = '/images/nav-icon-monthly.png';
     }
   }
 
@@ -32,7 +36,7 @@ const PropertyTypeIcon = ({ name = '', active = false, iconUrl = '' }) => {
     <img
       src={imgSrc}
       alt={name}
-      className={`w-10 h-10 object-contain transition-all duration-300 group-hover:scale-110 ${active
+      className={`w-7 h-7 object-contain transition-all duration-300 group-hover:scale-110 ${active
         ? 'opacity-100 grayscale-0 scale-110 animate-shake-active'
         : 'opacity-100 grayscale-0 hover:opacity-80'
         }`}
@@ -40,6 +44,12 @@ const PropertyTypeIcon = ({ name = '', active = false, iconUrl = '' }) => {
     />
   );
 };
+
+const TakaIcon = ({ className = "w-4 h-4" }) => (
+  <span className={`${className} font-bold font-sans flex items-center justify-center select-none leading-none`} style={{ fontSize: '1.2em' }}>
+    ৳
+  </span>
+);
 
 const Navbar = () => {
   const navigate = useNavigate();
@@ -114,12 +124,13 @@ const Navbar = () => {
   const loadSearchState = () => {
     try {
       const saved = localStorage.getItem('searchState');
+      const isHomePage = window.location.pathname === '/';
       if (saved) {
         const parsed = JSON.parse(saved);
         return {
-          location: parsed.location || '',
-          checkIn: parsed.checkIn ? new Date(parsed.checkIn) : null,
-          checkOut: parsed.checkOut ? new Date(parsed.checkOut) : null,
+          location: isHomePage ? '' : (parsed.location || ''),
+          checkIn: (!isHomePage && parsed.checkIn) ? new Date(parsed.checkIn) : null,
+          checkOut: (!isHomePage && parsed.checkOut) ? new Date(parsed.checkOut) : null,
           guests: parsed.guests || 1,
           propertyType: parsed.propertyType || '',
           flightClass: parsed.flightClass || 'Economy' // Added for Flight Class
@@ -148,6 +159,37 @@ const Navbar = () => {
   const [isHeaderSearchActive, setIsHeaderSearchActive] = useState(false);
   const [headerHoverSection, setHeaderHoverSection] = useState(null);
   const [headerActivePillStyle, setHeaderActivePillStyle] = useState({ x: 0, w: 0, visible: false });
+
+  // Google Places Autocomplete search hook integration
+  const { placePredictions, handlePlaceSelect } = useLocationAutocomplete(
+    searchData.location,
+    headerActiveType,
+    ({ location, latitude, longitude }) => {
+      setSearchData(prev => {
+        const updated = {
+          ...prev,
+          location,
+          latitude,
+          longitude
+        };
+        persistSearchState({
+          ...updated,
+          checkIn: prev.checkIn ? formatDateLocal(prev.checkIn) : null,
+          checkOut: prev.checkOut ? formatDateLocal(prev.checkOut) : null,
+          propertyType: headerActiveType
+        });
+        return updated;
+      });
+
+      if (latitude && longitude) {
+        setShowHeaderLocationSuggestions(false);
+        setTimeout(() => {
+          setHeaderDateOpen(true);
+          setShowGuestsDropdown(false);
+        }, 100);
+      }
+    }
+  );
 
   // Flight Search State
   const [flightSearchData, setFlightSearchData] = useState({
@@ -247,20 +289,24 @@ const Navbar = () => {
     'nav-property-types',
     () => api.get('/properties/property-types/list'),
     {
-      staleTime: 0,
-      cacheTime: 0,
-      refetchOnWindowFocus: true,
-      refetchOnMount: true,
+      staleTime: 600000, // 10 minutes
+      cacheTime: 900000, // 15 minutes
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
       select: (response) =>
         (response.data?.data?.propertyTypes || []).filter(pt => pt.is_active !== false),
     }
   );
 
-  // Fetch property locations for suggestions
+  // Fetch property locations for suggestions - cached aggressively since locations change rarely
   const { data: locationSuggestionsData } = useQuery(
     'nav-property-locations',
     () => api.get('/properties/locations/list'),
     {
+      staleTime: 600000, // 10 minutes
+      cacheTime: 900000, // 15 minutes
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
       select: (response) => response.data?.data?.locations || [],
     }
   );
@@ -311,6 +357,23 @@ const Navbar = () => {
       setIsHeaderSearchActive(false);
     }
   }, [location.pathname, isHome, isSearchPage, isPropertyDetail, isContactHost]);
+
+  // Clear search dates and location when returning to the homepage
+  useEffect(() => {
+    if (isHome) {
+      setSearchData(prev => {
+        if (prev.checkIn !== null || prev.checkOut !== null || prev.location !== '') {
+          return {
+            ...prev,
+            location: '',
+            checkIn: null,
+            checkOut: null
+          };
+        }
+        return prev;
+      });
+    }
+  }, [location.pathname, isHome]);
 
   // Listen for sticky search request to open main header search sections
   useEffect(() => {
@@ -478,6 +541,54 @@ const Navbar = () => {
     return null;
   };
 
+  const handleNearbyClick = (e) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    if (navigator.geolocation) {
+      setSearchData(prev => ({ ...prev, location: 'Locating...' }));
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const newLocation = 'Nearby';
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          setSearchData(prev => ({
+            ...prev,
+            location: newLocation,
+            latitude: lat,
+            longitude: lng
+          }));
+          
+          // Save to localStorage for persistence
+          const searchState = {
+            ...searchData,
+            location: newLocation,
+            latitude: lat,
+            longitude: lng,
+            locationTo: searchData.locationTo,
+            checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
+            checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
+            guests: searchData.guests,
+            flightClass: searchData.flightClass
+          };
+          localStorage.setItem('searchState', JSON.stringify(searchState));
+          window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
+          setShowHeaderLocationSuggestions(false);
+        },
+        (error) => {
+          console.error("Geolocation error:", error);
+          setSearchData(prev => ({ ...prev, location: 'Nearby' }));
+          setShowHeaderLocationSuggestions(false);
+        }
+      );
+    } else {
+      setSearchData(prev => ({ ...prev, location: 'Nearby' }));
+      setShowHeaderLocationSuggestions(false);
+    }
+  };
+
+
+
   const handleSearch = (e) => {
     e.preventDefault();
     const params = new URLSearchParams();
@@ -501,7 +612,13 @@ const Navbar = () => {
       params.append('travelers', totalGuests || 1); // Keep for backward compatibility
       if (searchData.flightClass) params.append('class', searchData.flightClass);
     } else {
-      if (searchData.location) params.append('city', searchData.location);
+      if (searchData.latitude && searchData.longitude) {
+        params.append('city', searchData.location || '');
+        params.append('latitude', searchData.latitude);
+        params.append('longitude', searchData.longitude);
+      } else if (searchData.location) {
+        params.append('city', searchData.location);
+      }
       if (searchData.checkIn) params.append('check_in_date', formatDateLocal(searchData.checkIn));
       if (searchData.checkOut) params.append('check_out_date', formatDateLocal(searchData.checkOut));
       if (searchData.guests) params.append('min_guests', searchData.guests);
@@ -511,7 +628,10 @@ const Navbar = () => {
 
     // Save search state to localStorage for persistence
     const searchState = {
+      ...searchData,
       location: searchData.location,
+      latitude: searchData.latitude || null,
+      longitude: searchData.longitude || null,
       locationTo: searchData.locationTo,
       checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
       checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
@@ -647,8 +767,8 @@ const Navbar = () => {
         { name: 'Reviews', path: '/admin/reviews', icon: FiHeart },
         { name: 'Rewards Points', path: '/admin/rewards-points', icon: FiAward },
         { name: 'Analytics', path: '/admin/analytics', icon: FiSettings },
-        { name: 'Accounting', path: '/admin/accounting', icon: FiDollarSign },
-        { name: 'Earnings', path: '/admin/earnings', icon: FiDollarSign },
+        { name: 'Accounting', path: '/admin/accounting', icon: TakaIcon },
+        { name: 'Earnings', path: '/admin/earnings', icon: TakaIcon },
         { name: 'Settings', path: '/admin/settings', icon: FiSettings },
       ];
     } else if (isPropertyOwner()) {
@@ -659,7 +779,7 @@ const Navbar = () => {
         { name: 'Bookings [Owner ]', path: '/property-owner/bookings', icon: FiBookOpen },
         { name: 'Calendar Sync', path: '/property-owner/calendar', icon: FiCalendar },
         { name: 'Analytics', path: '/property-owner/analytics', icon: FiSettings },
-        { name: 'Earnings', path: '/property-owner/earnings', icon: FiDollarSign },
+        { name: 'Earnings', path: '/property-owner/earnings', icon: TakaIcon },
         { name: 'Messages', path: '/messages', icon: FiMessageSquare },
         { name: 'Profile', path: '/property-owner/profile', icon: FiUser },
       ];
@@ -719,21 +839,21 @@ const Navbar = () => {
           </Link>
 
           {/* Desktop Navigation / Home tabs */}
-          <div className="hidden md:flex items-center flex-1 justify-center">
+          <div className="hidden md:flex items-center flex-1 justify-center overflow-hidden">
             {(isHome || isSearchPage || isPropertyDetail || location.pathname.startsWith('/flight') || location.pathname === '/booking' || location.pathname.startsWith('/booking-success') || location.pathname.startsWith('/ticket-issue') || location.pathname.startsWith('/react/ticket-issue')) && propertyTypes && propertyTypes.length > 0 ? (
-              <div ref={propertyTypesRef} className="flex items-center gap-10 flex-wrap justify-center">
+              <div ref={propertyTypesRef} className="flex items-center gap-3 md:gap-4 overflow-x-auto scrollbar-hide flex-nowrap max-w-full justify-start md:justify-center py-1">
                 {/* All Property Tab */}
                 <button
                   type="button"
                   onClick={() => handleTypeClick('')}
-                  className={`flex flex-col items-center justify-center py-1.5 transition-colors group ${headerActiveType === ''
+                  className={`flex flex-col items-center justify-center py-1.5 transition-colors group flex-shrink-0 min-w-max ${headerActiveType === ''
                     ? 'text-gray-900'
                     : 'text-gray-500 hover:text-gray-800'
                     }`}
                 >
                   <div className="flex flex-col items-center px-2">
                     <div className="flex items-center gap-2">
-                      <FiGrid className={`w-8 h-8 transition-all duration-300 ${headerActiveType === '' ? 'opacity-100 grayscale-0' : 'opacity-70 grayscale'}`} />
+                      <FiGrid className={`w-7 h-7 transition-all duration-300 ${headerActiveType === '' ? 'opacity-100 grayscale-0' : 'opacity-70 grayscale'}`} />
                       <span className="text-sm font-bold">All</span>
                     </div>
                     <span
@@ -750,7 +870,7 @@ const Navbar = () => {
                       key={type.id}
                       type="button"
                       onClick={() => handleTypeClick(type.name)}
-                      className={`flex flex-col items-center justify-center py-1.5 transition-colors group ${isActiveTab
+                      className={`flex flex-col items-center justify-center py-1.5 transition-colors group flex-shrink-0 min-w-max ${isActiveTab
                         ? 'text-gray-900'
                         : 'text-gray-500 hover:text-gray-800'
                         }`}
@@ -1241,8 +1361,8 @@ const Navbar = () => {
                         ref={headerLocationSuggestionsRef}
                         className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-xl border border-gray-100 max-h-96 overflow-y-auto z-[9999]"
                       >
-                        <div className="px-4 pt-4 pb-2">
-                          <h3 className="text-sm font-semibold text-gray-900">Search results</h3>
+                        <div className="px-5 pt-4 pb-2 border-b border-gray-50">
+                          <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Suggested destinations</h3>
                         </div>
                         {headerActiveType === 'flight' ? (
                           // Airport Suggestions for 'From'
@@ -1290,63 +1410,119 @@ const Navbar = () => {
                           ))
                         ) : (
                           // Standard Property Suggestions
-                          locationSuggestionsData && locationSuggestionsData.length > 0 ? (
-                            locationSuggestionsData
-                              .filter(loc => {
-                                const query = (searchData.location || '').toLowerCase();
-                                const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ').toLowerCase();
-                                return !query || label.includes(query);
-                              })
-                              .slice(0, 8)
-                              .map((loc, idx) => {
-                                const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ');
-                                return (
-                                  <button
-                                    key={`${label}-${idx}`}
-                                    type="button"
-                                    onMouseDown={(e) => e.preventDefault()}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const newLocation = loc.city || label;
-                                      setSearchData(prev => ({ ...prev, location: newLocation }));
-                                      // Save to localStorage for persistence
-                                      const searchState = {
-                                        location: newLocation,
-                                        locationTo: searchData.locationTo, // Added for 'To' field
-                                        checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
-                                        checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
-                                        guests: searchData.guests,
-                                        flightClass: searchData.flightClass // Added for Flight Class
-                                      };
-                                      localStorage.setItem('searchState', JSON.stringify(searchState));
-                                      window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
-
-                                      setShowHeaderLocationSuggestions(false);
-
-                                      if (headerActiveType === 'flight') {
-                                        // Flight mode: Auto-open 'Where to' suggestions
-                                        setShowHeaderToSuggestions(true);
-                                        setTimeout(() => {
-                                          headerToInputRef.current?.focus();
-                                        }, 100);
-                                      } else {
-                                        // Standard mode: Auto-open calendar
-                                        setTimeout(() => {
-                                          setHeaderDateOpen(true);
-                                          setShowGuestsDropdown(false);
-                                        }, 100);
-                                      }
-                                    }}
-                                    className="w-full text-left px-4 py-3 hover:bg-pink-50 active:bg-pink-50 transition-colors flex items-start gap-3"
-                                  >
-                                    <FiMapPin className="w-5 h-5 text-[#E41D57] mt-0.5 flex-shrink-0" />
-                                    <div className="flex flex-col">
-                                      <span className="text-sm font-semibold text-gray-900">{loc.city}</span>
-                                      <span className="text-xs text-gray-500">{[loc.state, loc.country].filter(Boolean).join(', ')}</span>
+                          searchData.location && searchData.location.trim().length >= 2 && placePredictions.length > 0 ? (
+                            <>
+                              {placePredictions.map((pred, idx) => (
+                                <button
+                                  key={pred.place_id || idx}
+                                  type="button"
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handlePlaceSelect(pred);
+                                  }}
+                                  className="w-full text-left px-5 py-3 hover:bg-gray-50 active:bg-gray-100 transition-all flex items-center gap-3.5 group border-b border-gray-50/50"
+                                >
+                                  <div className="w-9 h-9 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 text-gray-500 group-hover:bg-pink-100 group-hover:text-[#E41D57] transition-all duration-300">
+                                    <FiMapPin className="w-5 h-5" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-bold text-gray-900 group-hover:text-black transition-colors truncate">
+                                      {pred.structured_formatting?.main_text || pred.description}
                                     </div>
-                                  </button>
-                                );
-                              })
+                                    <div className="text-xs text-gray-400 group-hover:text-gray-500 transition-colors truncate mt-0.5">
+                                      {pred.structured_formatting?.secondary_text || ''}
+                                    </div>
+                                  </div>
+                                </button>
+                              ))}
+                            </>
+                          ) : locationSuggestionsData && locationSuggestionsData.length > 0 ? (
+                            <>
+                              {headerActiveType !== 'flight' && (!searchData.location || 'nearby'.includes(searchData.location.toLowerCase())) && (
+                                <button
+                                  type="button"
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={handleNearbyClick}
+                                  className="w-full text-left px-5 py-3 hover:bg-gray-50 flex items-center gap-3.5 group transition-colors"
+                                >
+                                  <div className="w-9 h-9 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 text-gray-500 group-hover:bg-pink-100 group-hover:text-[#E41D57] transition-all duration-300">
+                                    <FiMapPin className="w-5 h-5" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-bold text-gray-900 group-hover:text-black transition-colors">Nearby</div>
+                                    <div className="text-[10px] text-gray-400 group-hover:text-gray-500 transition-colors italic font-normal mt-0.5">Find what's around you using GPS</div>
+                                  </div>
+                                </button>
+                              )}
+                              {locationSuggestionsData
+                                .filter(loc => {
+                                  const query = (searchData.location || '').toLowerCase();
+                                  const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ').toLowerCase();
+                                  return !query || label.includes(query);
+                                })
+                                .slice(0, 8)
+                                .map((loc, idx) => {
+                                  const label = [loc.city, loc.state, loc.country].filter(Boolean).join(', ');
+                                  return (
+                                    <button
+                                      key={`${label}-${idx}`}
+                                      type="button"
+                                      onMouseDown={(e) => e.preventDefault()}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const newLocation = loc.city || label;
+                                        setSearchData(prev => ({
+                                          ...prev,
+                                          location: newLocation,
+                                          latitude: null,
+                                          longitude: null
+                                        }));
+                                        // Save to localStorage for persistence
+                                        const searchState = {
+                                          ...searchData,
+                                          location: newLocation,
+                                          latitude: null,
+                                          longitude: null,
+                                          locationTo: searchData.locationTo, // Added for 'To' field
+                                          checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
+                                          checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
+                                          guests: searchData.guests,
+                                          flightClass: searchData.flightClass // Added for Flight Class
+                                        };
+                                        localStorage.setItem('searchState', JSON.stringify(searchState));
+                                        window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
+
+                                        setShowHeaderLocationSuggestions(false);
+
+                                        if (headerActiveType === 'flight') {
+                                          // Flight mode: Auto-open 'Where to' suggestions
+                                          setShowHeaderToSuggestions(true);
+                                          setTimeout(() => {
+                                            headerToInputRef.current?.focus();
+                                          }, 100);
+                                        } else {
+                                          // Standard mode: Auto-open calendar
+                                          setTimeout(() => {
+                                            setHeaderDateOpen(true);
+                                            setShowGuestsDropdown(false);
+                                          }, 100);
+                                        }
+                                      }}
+                                      className="w-full text-left px-5 py-3 hover:bg-gray-50 active:bg-gray-100 transition-all flex items-center gap-3.5 group border-b border-gray-50/50"
+                                    >
+                                      <div className="w-9 h-9 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 text-gray-500 group-hover:bg-pink-100 group-hover:text-[#E41D57] transition-all duration-300">
+                                        <FiMapPin className="w-5 h-5" />
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-bold text-gray-900 group-hover:text-black transition-colors truncate">{loc.city}</div>
+                                        <div className="text-xs text-gray-400 group-hover:text-gray-500 transition-colors truncate mt-0.5">{[loc.state, loc.country].filter(Boolean).join(', ')}</div>
+                                        <div className="text-[10px] text-gray-400 group-hover:text-gray-500 transition-colors italic font-normal mt-0.5 truncate">{getLocationSubtitle(loc.city)}</div>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                            </>
                           ) : (
                             <div className="px-4 py-3 text-sm text-gray-500">No locations found</div>
                           )
@@ -1479,12 +1655,15 @@ const Navbar = () => {
                                     setShowHeaderToSuggestions(false);
                                     setTimeout(() => setHeaderDateOpen(true), 100);
                                   }}
-                                  className="w-full text-left px-4 py-3 hover:bg-pink-50 active:bg-pink-50 transition-colors flex items-start gap-3"
+                                  className="w-full text-left px-5 py-3 hover:bg-gray-50 active:bg-gray-100 transition-all flex items-center gap-3.5 group border-b border-gray-50/50"
                                 >
-                                  <FiMapPin className="w-5 h-5 text-[#E41D57] mt-0.5" />
-                                  <div className="flex flex-col">
-                                    <span className="text-sm font-semibold text-gray-900">{loc.city}</span>
-                                    <span className="text-xs text-gray-500">{[loc.state, loc.country].filter(Boolean).join(', ')}</span>
+                                  <div className="w-9 h-9 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 text-gray-500 group-hover:bg-pink-100 group-hover:text-[#E41D57] transition-all duration-300">
+                                    <FiMapPin className="w-5 h-5" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-bold text-gray-900 group-hover:text-black transition-colors truncate">{loc.city}</div>
+                                    <div className="text-xs text-gray-400 group-hover:text-gray-500 transition-colors truncate mt-0.5">{[loc.state, loc.country].filter(Boolean).join(', ')}</div>
+                                    <div className="text-[10px] text-gray-400 group-hover:text-gray-500 transition-colors italic font-normal mt-0.5 truncate">{getLocationSubtitle(loc.city)}</div>
                                   </div>
                                 </button>
                               )) || <div className="px-4 py-3 text-sm text-gray-500">No locations found</div>

@@ -4,6 +4,7 @@ import useAuthStore from '../../store/authStore';
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import useToast from '../../hooks/useToast';
+import { getImageUrl } from '../../utils/imageUrl';
 
 const GuestFavorites = () => {
   const navigate = useNavigate();
@@ -80,7 +81,7 @@ const GuestFavorites = () => {
                 <div className="relative">
                   {favorite.main_image ? (
                     <img
-                      src={favorite.main_image}
+                      src={getImageUrl(favorite.main_image)}
                       alt={favorite.title}
                       className="w-full h-48 object-cover"
                     />

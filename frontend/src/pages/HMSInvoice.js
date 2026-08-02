@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { FiPrinter, FiDownload, FiMapPin, FiPhone, FiMail, FiGlobe } from 'react-icons/fi';
+import { FiPrinter, FiDownload, FiMapPin, FiPhone, FiMail, FiGlobe, FiMessageCircle } from 'react-icons/fi';
 import api from '../utils/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import { format } from 'date-fns';
@@ -15,12 +15,8 @@ const HMSInvoice = () => {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                // If ID is a long token (non-numeric), use public endpoint
-                const isToken = isNaN(id);
-                const endpoint = isToken 
-                    ? `/sslcommerz/hms/invoice-info/${id}` 
-                    : `/property-owner/hms/reservations/${id}/invoice-data`;
-                
+                // Fetch using public endpoint supporting both token and numeric reservation ID
+                const endpoint = `/sslcommerz/hms/invoice-info/${id}`;
                 const response = await api.get(endpoint);
                 setData(response.data?.data?.invoice);
             } catch (err) {
@@ -34,6 +30,20 @@ const HMSInvoice = () => {
 
     const handlePrint = () => {
         window.print();
+    };
+
+    const handleSendEmail = () => {
+        if (!data) return;
+        const subject = encodeURIComponent(`Invoice - ${data.booking_reference}`);
+        const body = encodeURIComponent(`Dear ${data.guest_name},\n\nPlease find your invoice here: ${window.location.origin}/hms/invoice/${id}\n\nThank you,\n${data.property_title || 'Management'}`);
+        window.open(`mailto:${data.guest_email || ''}?subject=${subject}&body=${body}`, '_blank');
+    };
+
+    const handleSendWhatsApp = () => {
+        if (!data) return;
+        const phone = data.guest_phone ? data.guest_phone.replace(/[+\s-]/g, '') : '';
+        const text = encodeURIComponent(`Hello *${data.guest_name}*,\nHere is your invoice for booking REF: *${data.booking_reference}*.\n\nView online at: ${window.location.origin}/hms/invoice/${id}\n\nThank you!`);
+        window.open(`https://api.whatsapp.com/send?phone=${phone}&text=${text}`, '_blank');
     };
 
     if (loading) return <LoadingSpinner />;
@@ -64,12 +74,24 @@ const HMSInvoice = () => {
                 >
                     &larr; Back to Dashboard
                 </button>
-                <div className="flex gap-3">
+                <div className="flex gap-2">
+                    <button 
+                        onClick={handleSendEmail}
+                        className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg font-bold shadow hover:bg-purple-700 transition-all text-xs"
+                    >
+                        <FiMail size={14} /> Send Email
+                    </button>
+                    <button 
+                        onClick={handleSendWhatsApp}
+                        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold shadow hover:bg-emerald-700 transition-all text-xs"
+                    >
+                        <FiMessageCircle size={14} /> Send WhatsApp
+                    </button>
                     <button 
                         onClick={handlePrint}
-                        className="flex items-center gap-2 px-6 py-2.5 bg-[#004e59] text-white rounded-lg font-bold shadow-lg hover:bg-[#003d46] transition-all"
+                        className="flex items-center gap-2 px-5 py-2.5 bg-[#004e59] text-white rounded-lg font-bold shadow hover:bg-[#003d46] transition-all text-xs"
                     >
-                        <FiPrinter /> Print Invoice
+                        <FiPrinter size={14} /> Print Invoice
                     </button>
                 </div>
             </div>
@@ -84,9 +106,11 @@ const HMSInvoice = () => {
                         <p className="text-gray-500 font-bold mt-1">Ref: {data.booking_reference}</p>
                     </div>
                     <div className="text-right">
-                        <h2 className="text-xl font-black text-[#004e59] uppercase">{data.company_name || 'Keyhost Property'}</h2>
+                        <h2 className="text-xl font-black text-[#004e59] uppercase">
+                            {data.property_type === 'hotels' ? (data.company_name || data.property_title) : data.property_title}
+                        </h2>
                         <div className="text-sm text-gray-500 mt-2 space-y-1">
-                            <p className="flex items-center justify-end gap-2"><FiMapPin size={12}/> {data.business_address || data.property_address}</p>
+                            <p className="flex items-center justify-end gap-2"><FiMapPin size={12}/> {data.property_address || data.business_address}</p>
                             <p className="flex items-center justify-end gap-2"><FiMail size={12}/> support@keyhost.com</p>
                             <p className="flex items-center justify-end gap-2"><FiGlobe size={12}/> www.keyhost.com</p>
                         </div>

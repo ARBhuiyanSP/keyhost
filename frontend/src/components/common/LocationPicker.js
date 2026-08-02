@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { GoogleMap, useJsApiLoader, MarkerF } from '@react-google-maps/api';
-
+import { GoogleMap, MarkerF } from '@react-google-maps/api';
 import useSettingsStore from '../../store/settingsStore';
+import useGoogleMapsLoader from '../../hooks/useGoogleMapsLoader';
 
 const LocationPicker = ({ initialLat, initialLng, onLocationSelect, searchAddress }) => {
     const { settings } = useSettingsStore();
@@ -16,11 +16,7 @@ const LocationPicker = ({ initialLat, initialLng, onLocationSelect, searchAddres
     );
     const [map, setMap] = useState(null);
 
-    const { isLoaded } = useJsApiLoader({
-        id: 'google-map-script',
-        googleMapsApiKey: settings?.google_maps_api_key || '',
-        libraries: ['places'] // Needed for advanced geocoding tasks possibly in future
-    });
+    const { isLoaded } = useGoogleMapsLoader();
 
     // Update internal state if props change significantly
     useEffect(() => {

@@ -10,6 +10,7 @@ import api from '../../utils/api';
 import useToast from '../../hooks/useToast';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import Select from 'react-select';
+import { getImageUrl } from '../../utils/imageUrl';
 
 const CATEGORIES = ['Breakfast', 'Lunch', 'Dinner', 'Drinks', 'Snacks', 'Dessert', 'Other'];
 
@@ -250,7 +251,9 @@ const HMSFoodBeverage = () => {
                                 className="w-full bg-white border border-slate-100 rounded-xl pl-12 pr-10 py-3 text-xs md:text-sm font-bold focus:ring-4 focus:ring-rose-500/10 outline-none transition-all shadow-sm appearance-none cursor-pointer md:min-w-[200px] tracking-widest text-slate-700 uppercase"
                             >
                                 {properties?.map(p => (
-                                    <option key={p.id} value={p.id}>{p.title}</option>
+                                    <option key={p.id} value={p.id}>
+                                        {p.title.length > 40 ? p.title.substring(0, 40) + '...' : p.title}
+                                    </option>
                                 ))}
                             </select>
                         </div>
@@ -390,7 +393,7 @@ const HMSFoodBeverage = () => {
                                             <div className="h-48 rounded-2xl bg-slate-50 relative overflow-hidden group/img shrink-0">
                                                 {item.image_url ? (
                                                     <img 
-                                                        src={item.image_url.startsWith('data:') ? item.image_url : `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${item.image_url}`} 
+                                                        src={getImageUrl(item.image_url)} 
                                                         alt={item.name} 
                                                         className="w-full h-full object-cover group-hover/img:scale-110 transition-transform duration-700" 
                                                     />
@@ -460,7 +463,7 @@ const HMSFoodBeverage = () => {
                                                             <div className="flex items-center gap-4">
                                                                 <div className="w-12 h-12 rounded-2xl bg-gray-50 overflow-hidden shrink-0 border-2 border-white shadow-sm">
                                                                     {item.image_url ? (
-                                                                        <img src={item.image_url.startsWith('data:') ? item.image_url : `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${item.image_url}`} alt="" className="w-full h-full object-cover" />
+                                                                        <img src={getImageUrl(item.image_url)} alt="" className="w-full h-full object-cover" />
                                                                     ) : <FiCoffee className="w-full h-full p-3 text-gray-200" />}
                                                                 </div>
                                                                 <div>
@@ -737,7 +740,7 @@ const HMSFoodBeverage = () => {
                                 <div className="flex items-center gap-6 md:gap-8 p-6 md:p-8 bg-white rounded-[40px] shadow-xl shadow-slate-200/40 border-2 border-white group">
                                     <div className="w-32 h-32 md:w-40 md:h-40 bg-slate-50 rounded-[32px] overflow-hidden border-4 border-white shadow-2xl flex items-center justify-center relative group/avatar">
                                         {itemFormData.image_url ? (
-                                            <img src={itemFormData.image_url.startsWith('data:') ? itemFormData.image_url : `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${itemFormData.image_url}`} alt="Preview" className="w-full h-full object-cover group-hover/avatar:scale-110 transition-transform duration-700" />
+                                            <img src={getImageUrl(itemFormData.image_url)} alt="Preview" className="w-full h-full object-cover group-hover/avatar:scale-110 transition-transform duration-700" />
                                         ) : (
                                             <FiCamera className="w-12 h-12 text-slate-200" />
                                         )}
@@ -907,7 +910,7 @@ const HMSFoodBeverage = () => {
                                             >
                                                 <div className="relative w-20 h-20 lg:w-full lg:aspect-square overflow-hidden rounded-lg bg-slate-50 shrink-0">
                                                     <img
-                                                        src={item.image_url ? (item.image_url.startsWith('data:') ? item.image_url : `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${item.image_url}`) : 'https://via.placeholder.com/300x300?text=Food'}
+                                                        src={item.image_url ? getImageUrl(item.image_url) : 'https://via.placeholder.com/300x300?text=Food'}
                                                         alt={item.name}
                                                         className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                                                     />

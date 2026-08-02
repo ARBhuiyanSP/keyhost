@@ -1,9 +1,9 @@
 const { pool } = require('../config/database.js');
 
-async function checkSchema() {
+async function checkPaymentsSchema() {
     try {
         const [rows] = await pool.query('DESCRIBE payments');
-        console.table(rows);
+        console.log('Payments Table Columns:', JSON.stringify(rows, null, 2));
         process.exit(0);
     } catch (error) {
         console.error('Error:', error);
@@ -11,4 +11,4 @@ async function checkSchema() {
     }
 }
 
-checkSchema();
+checkPaymentsSchema();

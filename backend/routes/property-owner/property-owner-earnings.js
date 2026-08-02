@@ -71,14 +71,28 @@ router.get('/dashboard', async (req, res) => {
         -- Available for payout (paid bookings not yet in payout requests)
         COALESCE(SUM(
           CASE WHEN b.payment_status = 'paid' AND b.status IN ('confirmed', 'checked_in', 'checked_out')
-            AND (b.booking_source = 'website' OR b.source = 'Internal' OR b.payment_method = 'sslcommerz')
+            AND (
+              b.booking_source = 'website' 
+              OR b.source = 'Internal' 
+              OR b.payment_method = 'sslcommerz'
+              OR EXISTS (
+                SELECT 1 FROM payments 
+                WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online')
+              )
+            )
             AND b.id NOT IN (
               SELECT opi.booking_id 
               FROM owner_payout_items opi
               JOIN owner_payouts op ON opi.payout_id = op.id
               WHERE op.property_owner_id = ? AND op.payment_status IN ('pending', 'processing', 'completed')
             )
-          THEN b.property_owner_earnings ELSE 0 END
+          THEN CASE 
+            WHEN b.booking_source = 'website' THEN b.property_owner_earnings
+            ELSE COALESCE((
+              SELECT SUM(cr_amount) FROM payments 
+              WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online')
+            ), 0) - COALESCE(b.admin_commission_amount, 0)
+          END ELSE 0 END
         ), 0) as available_for_payout
       FROM bookings b
       JOIN properties p ON b.property_id = p.id
@@ -130,14 +144,28 @@ router.get('/dashboard', async (req, res) => {
         -- Available for payout (paid bookings not yet in payout requests)
         COALESCE(SUM(
           CASE WHEN b.payment_status = 'paid' AND b.status IN ('confirmed', 'checked_in', 'checked_out')
-            AND (b.booking_source = 'website' OR b.source = 'Internal' OR b.payment_method = 'sslcommerz')
+            AND (
+              b.booking_source = 'website' 
+              OR b.source = 'Internal' 
+              OR b.payment_method = 'sslcommerz'
+              OR EXISTS (
+                SELECT 1 FROM payments 
+                WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online')
+              )
+            )
             AND b.id NOT IN (
               SELECT opi.booking_id 
               FROM owner_payout_items opi
               JOIN owner_payouts op ON opi.payout_id = op.id
               WHERE op.property_owner_id = ? AND op.payment_status IN ('pending', 'processing', 'completed')
             )
-          THEN b.property_owner_earnings ELSE 0 END
+          THEN CASE 
+            WHEN b.booking_source = 'website' THEN b.property_owner_earnings
+            ELSE COALESCE((
+              SELECT SUM(cr_amount) FROM payments 
+              WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online')
+            ), 0) - COALESCE(b.admin_commission_amount, 0)
+          END ELSE 0 END
         ), 0) as available_for_payout
       FROM bookings b
       JOIN properties p ON b.property_id = p.id
@@ -533,90 +561,152 @@ router.get('/analytics', async (req, res) => {
 // CREATE PAYOUT REQUEST
 // =============================================
 router.post('/payout-request', async (req, res) => {
+  const connection = await pool.getConnection();
   try {
     if (!req.user?.id) {
-      return res.status(401).json(
-        formatResponse(false, 'Authentication required')
-      );
+      return res.status(401).json(formatResponse(false, 'Authentication required'));
     }
-    // Resolve property owner id from authenticated user
+
+    // Resolve property owner id
     let propertyOwnerId = req.user?.property_owner_id;
     if (!propertyOwnerId) {
-      const [ownerRows] = await pool.execute(
+      const [ownerRows] = await connection.execute(
         'SELECT id FROM property_owners WHERE user_id = ? LIMIT 1',
         [req.user.id]
       );
       if (ownerRows.length === 0) {
-        return res.status(404).json(
-          formatResponse(false, 'Property owner profile not found')
-        );
+        return res.status(404).json(formatResponse(false, 'Property owner profile not found'));
       }
       propertyOwnerId = ownerRows[0].id;
     }
-    const { amount, payment_method = 'bank_transfer', notes } = req.body;
 
-    // Validate amount
-    if (!amount || amount <= 0) {
-      return res.status(400).json(
-        formatResponse(false, 'Invalid payout amount')
-      );
+    const { payment_method = 'bank_transfer', notes } = req.body;
+
+    // Block duplicate pending/processing requests
+    const [existingPending] = await connection.execute(`
+      SELECT id, payout_reference FROM owner_payouts
+      WHERE property_owner_id = ? AND payment_status IN ('pending', 'processing')
+      LIMIT 1
+    `, [propertyOwnerId]);
+
+    if (existingPending.length > 0) {
+      return res.status(400).json(formatResponse(
+        false,
+        `You already have an active payout request (${existingPending[0].payout_reference}). Please wait for it to be processed before requesting another.`
+      ));
     }
 
-    // Check available balance (for confirmed, checked_in, or checked_out bookings with paid status)
-    const [availableBalance] = await pool.execute(`
-      SELECT COALESCE(SUM(b.property_owner_earnings), 0) as available_amount
+    // Fetch all eligible bookings not already claimed by a completed/pending payout
+    const [eligibleBookings] = await connection.execute(`
+      SELECT
+        b.id AS booking_id,
+        b.booking_reference,
+        b.total_amount,
+        CASE 
+          WHEN b.booking_source = 'website' THEN b.property_owner_earnings
+          ELSE COALESCE((
+            SELECT SUM(cr_amount) FROM payments 
+            WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online')
+          ), 0) - COALESCE(b.admin_commission_amount, 0)
+        END AS property_owner_earnings,
+        COALESCE(ae.commission_amount, 0) AS commission_amount,
+        CASE WHEN ae.payment_status = 'paid' THEN 1 ELSE 0 END AS commission_paid
       FROM bookings b
       JOIN properties p ON b.property_id = p.id
-      WHERE p.owner_id = ? 
-      AND b.payment_status = 'paid' 
-      AND b.status IN ('confirmed', 'checked_in', 'checked_out')
-      AND (b.booking_source = 'website' OR b.source = 'Internal' OR b.payment_method = 'sslcommerz')
-      AND b.status != 'cancelled'
-      AND b.id NOT IN (
-        SELECT opi.booking_id 
-        FROM owner_payout_items opi
-        JOIN owner_payouts op ON opi.payout_id = op.id
-        WHERE op.property_owner_id = ?
-          AND op.payment_status IN ('pending', 'processing', 'completed')
-      )
+      LEFT JOIN admin_earnings ae ON b.id = ae.booking_id
+      WHERE p.owner_id = ?
+        AND b.payment_status = 'paid'
+        AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+        AND b.status != 'cancelled'
+        AND (
+          b.booking_source = 'website' 
+          OR b.source = 'Internal' 
+          OR b.payment_method = 'sslcommerz'
+          OR EXISTS (
+            SELECT 1 FROM payments 
+            WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online')
+          )
+        )
+        AND (
+          CASE 
+            WHEN b.booking_source = 'website' THEN b.property_owner_earnings
+            ELSE COALESCE((
+              SELECT SUM(cr_amount) FROM payments 
+              WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online')
+            ), 0) - COALESCE(b.admin_commission_amount, 0)
+          END
+        ) > 0
+        AND b.id NOT IN (
+          SELECT opi.booking_id
+          FROM owner_payout_items opi
+          JOIN owner_payouts op ON opi.payout_id = op.id
+          WHERE op.property_owner_id = ? AND op.payment_status IN ('pending', 'processing', 'completed')
+        )
+      ORDER BY b.created_at ASC
     `, [propertyOwnerId, propertyOwnerId]);
 
-    const availableAmount = parseFloat(availableBalance[0].available_amount);
-
-    if (amount > availableAmount) {
-      return res.status(400).json(
-        formatResponse(false, `Insufficient balance. Available: ${availableAmount}`)
-      );
+    if (eligibleBookings.length === 0) {
+      return res.status(400).json(formatResponse(
+        false,
+        'No eligible bookings available for payout. All bookings may already be claimed or not yet settled.'
+      ));
     }
 
-    // Create owner payout record (pending) for admin to process
+    // Auto-calculate amount from actual bookings
+    const totalEarnings = eligibleBookings.reduce((sum, b) => sum + parseFloat(b.property_owner_earnings), 0);
+    const totalCommissionPaid = eligibleBookings.reduce((sum, b) =>
+      sum + (b.commission_paid ? parseFloat(b.commission_amount) : 0), 0);
+    const netPayout = totalEarnings;
+
+    if (netPayout <= 0) {
+      return res.status(400).json(formatResponse(
+        false,
+        'No positive payout amount available after deducting admin commission.'
+      ));
+    }
+
+    await connection.beginTransaction();
+
     const payoutReference = `OWNER-PAYOUT-REQ-${Date.now()}-${propertyOwnerId}`;
 
-    console.log('=== CREATE PAYOUT REQUEST ===');
-    console.log('Property Owner ID:', propertyOwnerId);
-    console.log('Amount:', amount);
-    console.log('Payment Method:', payment_method);
-    console.log('Payout Reference:', payoutReference);
-
-    const [result] = await pool.execute(`
+    const [result] = await connection.execute(`
       INSERT INTO owner_payouts (
         property_owner_id, payout_reference, start_date, end_date,
         total_earnings, total_commission_paid, net_payout,
         payment_method, notes
-      ) VALUES (?, ?, CURDATE(), CURDATE(), ?, 0, ?, ?, ?)
+      ) VALUES (?, ?, CURDATE(), CURDATE(), ?, ?, ?, ?, ?)
     `, [
-      propertyOwnerId, payoutReference, amount, amount, payment_method, notes || null
+      propertyOwnerId, payoutReference,
+      totalEarnings, totalCommissionPaid, netPayout,
+      payment_method, notes || null
     ]);
 
     const payoutId = result.insertId;
-    console.log('Payout created with ID:', payoutId);
-    console.log('===========================');
+
+    // Link all eligible bookings as payout items immediately
+    for (const booking of eligibleBookings) {
+      await connection.execute(`
+        INSERT INTO owner_payout_items (
+          payout_id, booking_id, booking_total, admin_commission, owner_earnings, commission_paid_to_admin
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `, [
+        payoutId, booking.booking_id, booking.total_amount,
+        booking.commission_amount, booking.property_owner_earnings, booking.commission_paid
+      ]);
+    }
+
+    await connection.commit();
+
+    console.log(`Payout request created: ID=${payoutId}, ref=${payoutReference}, bookings=${eligibleBookings.length}, net=BDT${netPayout}`);
 
     res.status(201).json(
       formatResponse(true, 'Payout request submitted successfully', {
         payout_id: payoutId,
         payout_reference: payoutReference,
-        amount,
+        items_count: eligibleBookings.length,
+        total_earnings: totalEarnings,
+        total_commission_paid: totalCommissionPaid,
+        net_payout: netPayout,
         payment_method,
         payment_status: 'pending',
         status: 'pending'
@@ -624,12 +714,16 @@ router.post('/payout-request', async (req, res) => {
     );
 
   } catch (error) {
+    await connection.rollback().catch(() => {});
     console.error('Create payout request error:', error);
-    res.status(500).json(
-      formatResponse(false, 'Failed to create payout request', null, error.message)
-    );
+    res.status(500).json(formatResponse(false, 'Failed to create payout request', null, error.message));
+  } finally {
+    connection.release();
   }
 });
+
+
+
 
 // =============================================
 // GET PAYOUT REQUESTS
@@ -720,6 +814,116 @@ router.get('/payouts', validatePagination, async (req, res) => {
     console.error('Get payout requests error:', error);
     res.status(500).json(
       formatResponse(false, 'Failed to retrieve payout requests', null, error.message)
+    );
+  }
+});
+
+// =============================================
+// GET PROPERTY OWNER FINANCIAL REPORTS
+// =============================================
+router.get('/financial-reports', async (req, res) => {
+  try {
+    if (!req.user?.id) {
+      return res.status(401).json(
+        formatResponse(false, 'Authentication required')
+      );
+    }
+    // Resolve property owner id from authenticated user
+    let propertyOwnerId = req.user?.property_owner_id;
+    if (!propertyOwnerId) {
+      const [ownerRows] = await pool.execute(
+        'SELECT id FROM property_owners WHERE user_id = ? LIMIT 1',
+        [req.user.id]
+      );
+      if (ownerRows.length === 0) {
+        return res.status(404).json(
+          formatResponse(false, 'Property owner profile not found')
+        );
+      }
+      propertyOwnerId = ownerRows[0].id;
+    }
+
+    const { dateRange = 'this_month', startDate, endDate } = req.query;
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth() + 1;
+
+    // Build date filter based on dateRange parameter
+    let dateWhere = '';
+    const dateParams = [propertyOwnerId];
+
+    if (dateRange === 'this_month') {
+      dateWhere = 'AND YEAR(b.created_at) = ? AND MONTH(b.created_at) = ?';
+      dateParams.push(currentYear, currentMonth);
+    } else if (dateRange === 'last_month') {
+      const lastMonth = currentMonth === 1 ? 12 : currentMonth - 1;
+      const lastMonthYear = currentMonth === 1 ? currentYear - 1 : currentYear;
+      dateWhere = 'AND YEAR(b.created_at) = ? AND MONTH(b.created_at) = ?';
+      dateParams.push(lastMonthYear, lastMonth);
+    } else if (dateRange === 'this_year') {
+      dateWhere = 'AND YEAR(b.created_at) = ?';
+      dateParams.push(currentYear);
+    } else if (dateRange === 'last_year') {
+      dateWhere = 'AND YEAR(b.created_at) = ?';
+      dateParams.push(currentYear - 1);
+    } else if (dateRange === 'custom') {
+      if (startDate && endDate) {
+        dateWhere = 'AND DATE(b.created_at) BETWEEN ? AND ?';
+        dateParams.push(startDate, endDate);
+      }
+    }
+
+    // Main financial summary for property owner
+    const [summaryRows] = await pool.execute(`
+      SELECT
+        COALESCE(COUNT(DISTINCT b.id), 0) as total_bookings,
+        COALESCE(SUM(b.total_amount), 0) as gross_revenue,
+        COALESCE(SUM(b.admin_commission_amount), 0) as total_commission,
+        COALESCE(SUM(b.property_owner_earnings), 0) as net_earnings
+      FROM bookings b
+      JOIN properties p ON b.property_id = p.id
+      WHERE p.owner_id = ?
+        AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+        AND b.status != 'cancelled'
+        ${dateWhere}
+    `, dateParams);
+
+    const summary = summaryRows[0] || {
+      total_bookings: 0,
+      gross_revenue: 0,
+      total_commission: 0,
+      net_earnings: 0
+    };
+
+    // Fetch detailed transactions for the property owner
+    const [bookings] = await pool.execute(`
+      SELECT
+        b.booking_reference,
+        p.title as property_title,
+        b.total_amount as gross_revenue,
+        b.admin_commission_amount as commission,
+        b.property_owner_earnings as net_earnings,
+        DATE_FORMAT(b.created_at, '%Y-%m-%d') as date
+      FROM bookings b
+      JOIN properties p ON b.property_id = p.id
+      WHERE p.owner_id = ?
+        AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+        AND b.status != 'cancelled'
+        ${dateWhere}
+      ORDER BY b.created_at DESC
+      LIMIT 150
+    `, dateParams);
+
+    res.json(formatResponse(true, 'Financial reports retrieved successfully', {
+      summary,
+      bookings,
+      dateRange
+    }));
+
+  } catch (error) {
+    console.error('Property owner financial reports error:', error);
+    res.status(500).json(
+      formatResponse(false, 'Failed to retrieve financial reports', null, error.message)
     );
   }
 });

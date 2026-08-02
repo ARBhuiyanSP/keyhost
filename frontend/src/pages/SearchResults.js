@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery } from 'react-query';
 import { FiSearch, FiMapPin, FiFilter, FiGrid, FiList, FiStar, FiHeart, FiHome, FiBriefcase, FiArrowLeft, FiX, FiMinus, FiPlus, FiChevronDown } from 'react-icons/fi';
@@ -8,10 +8,11 @@ import api from '../utils/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import StickySearchHeader from '../components/layout/StickySearchHeader';
 import PropertyImageSlider from '../components/property/PropertyImageSlider';
-import PropertyMap from '../components/property/PropertyMap';
+import LazyPropertyCard from '../components/property/LazyPropertyCard';
 import FlightSearchResults from '../components/search/FlightSearchResults';
 import MobileSearchModal from '../components/search/MobileSearchModal';
 import { sanitizeText, formatPrice } from '../utils/textUtils';
+const PropertyMap = lazy(() => import('../components/property/PropertyMap'));
 
 const SearchResults = () => {
   const navigate = useNavigate();
@@ -46,11 +47,47 @@ const SearchResults = () => {
     depart: searchParams.get('depart') || '',
     return: searchParams.get('return') || '',
     travelers: searchParams.get('travelers') || '',
-    class: searchParams.get('class') || ''
+    class: searchParams.get('class') || '',
+    // Monthly specific
+    booking_type: searchParams.get('booking_type') || '',
+    move_in_date: searchParams.get('move_in_date') || '',
+    duration_months: searchParams.get('duration_months') || '',
+    latitude: searchParams.get('latitude') || '',
+    longitude: searchParams.get('longitude') || '',
   });
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [showSortDropdown, setShowSortDropdown] = useState(false);
   const [selectedSortLabel, setSelectedSortLabel] = useState('Recommended');
+
+  const [localMinPrice, setLocalMinPrice] = useState(filters.min_price || '');
+  const [localMaxPrice, setLocalMaxPrice] = useState(filters.max_price || '');
+  const debounceTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    setLocalMinPrice(filters.min_price || '');
+    setLocalMaxPrice(filters.max_price || '');
+  }, [filters.min_price, filters.max_price]);
+
+  const handlePriceChange = (key, value) => {
+    if (key === 'min_price') setLocalMinPrice(value);
+    if (key === 'max_price') setLocalMaxPrice(value);
+
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+
+    debounceTimeoutRef.current = setTimeout(() => {
+      handleFilterChange(key, value);
+    }, 500);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Sort option definitions
   const SORT_OPTIONS = [
@@ -104,7 +141,13 @@ const SearchResults = () => {
       depart: searchParams.get('depart') || '',
       return: searchParams.get('return') || '',
       travelers: searchParams.get('travelers') || '',
-      class: searchParams.get('class') || ''
+      class: searchParams.get('class') || '',
+      // Monthly specific
+      booking_type: searchParams.get('booking_type') || '',
+      move_in_date: searchParams.get('move_in_date') || '',
+      duration_months: searchParams.get('duration_months') || '',
+      latitude: searchParams.get('latitude') || '',
+      longitude: searchParams.get('longitude') || '',
     });
   }, [searchParams]);
 
@@ -308,6 +351,7 @@ const SearchResults = () => {
   };
 
   const currentPropertyType = (filters.property_type || '').toLowerCase();
+  const isMonthly = filters.booking_type === 'monthly';
   // Special layout for Flight
   if (currentPropertyType === 'flight') {
     return (
@@ -339,14 +383,14 @@ const SearchResults = () => {
           </div>
 
           {/* Bottom Row: Property Type Tabs */}
-          <div className="flex items-center justify-center gap-2 overflow-x-auto scrollbar-hide pb-2">
+          <div className="flex items-center justify-start md:justify-center gap-4 md:gap-6 overflow-x-auto scrollbar-hide pb-2 px-2 w-full">
             {/* All Property Tab */}
             <button
               onClick={() => {
                 setActivePropertyType('');
                 handleFilterChange('property_type', '');
               }}
-              className={`flex flex-col items-center justify-center py-1.5 transition-colors ${!filters.property_type ? 'text-gray-900 font-bold' : 'text-gray-500 hover:text-gray-800'}`}
+              className={`flex flex-col items-center justify-center py-1.5 transition-colors flex-shrink-0 ${!filters.property_type ? 'text-gray-900 font-bold' : 'text-gray-500 hover:text-gray-800'}`}
             >
               <div className="flex flex-col items-center px-2">
                 <FiGrid className={`w-5 h-5 transition-all duration-300 ${!filters.property_type ? 'opacity-100 grayscale-0' : 'opacity-70 grayscale'}`} />
@@ -367,7 +411,7 @@ const SearchResults = () => {
               <button
                 key={type.id}
                 onClick={() => navigate(`/search?property_type=${normalizedName}`)}
-                className={`flex flex-col items-center justify-center py-1.5 transition-colors ${isTabActive(normalizedName) ? 'text-gray-900' : 'text-gray-500 hover:text-gray-800'}`}
+                className={`flex flex-col items-center justify-center py-1.5 transition-colors flex-shrink-0 ${isTabActive(normalizedName) ? 'text-gray-900' : 'text-gray-500 hover:text-gray-800'}`}
               >
                 <div className="flex flex-col items-center px-2">
                   <img src={imgSrc} alt={type.name} className={`w-5 h-5 object-contain transition-all duration-300 ${isTabActive(normalizedName) ? 'opacity-100 grayscale-0' : 'opacity-70 grayscale'}`} onError={(e) => { e.target.src = '/images/nav-icon-room.png'; }} />
@@ -402,9 +446,9 @@ const SearchResults = () => {
           {/* Search Pill */}
           <button
             onClick={() => setShowSearchModal(true)}
-            className="flex-1 flex items-center justify-center bg-white rounded-full px-4 py-2 border border-gray-200 shadow-sm text-center hover:bg-gray-50 transition-all active:scale-[0.98]"
+            className="flex-1 min-w-0 flex items-center justify-center bg-white rounded-full px-4 py-2 border border-gray-200 shadow-sm text-center hover:bg-gray-50 transition-all active:scale-[0.98]"
           >
-            <div className="flex flex-col items-center leading-tight overflow-hidden w-full">
+            <div className="flex flex-col items-center leading-tight overflow-hidden w-full min-w-0">
               <span className="text-sm font-semibold text-gray-900 truncate w-full">
                 {sanitizeText(filters.city) || 'Anywhere'}
               </span>
@@ -425,14 +469,14 @@ const SearchResults = () => {
         </div>
 
         {/* Bottom Row: Property Type Tabs */}
-        <div className="flex items-center justify-center gap-2 overflow-x-auto scrollbar-hide pb-2">
+        <div className="flex items-center justify-start md:justify-center gap-4 md:gap-6 overflow-x-auto scrollbar-hide pb-2 px-2 w-full">
           {/* All Property Tab */}
           <button
             onClick={() => {
               setActivePropertyType('');
               handleFilterChange('property_type', '');
             }}
-            className={`flex flex-col items-center justify-center py-1.5 transition-colors ${!filters.property_type ? 'text-gray-900 font-bold' : 'text-gray-500 hover:text-gray-800'}`}
+            className={`flex flex-col items-center justify-center py-1.5 transition-colors flex-shrink-0 ${!filters.property_type ? 'text-gray-900 font-bold' : 'text-gray-500 hover:text-gray-800'}`}
           >
             <div className="flex flex-col items-center px-2">
               <FiGrid className={`w-5 h-5 transition-all duration-300 ${!filters.property_type ? 'opacity-100 grayscale-0' : 'opacity-70 grayscale'}`} />
@@ -453,7 +497,7 @@ const SearchResults = () => {
               <button
                 key={type.id}
                 onClick={() => navigate(`/search?property_type=${normalizedName}`)}
-                className={`flex flex-col items-center justify-center py-1.5 transition-colors ${isTabActive(normalizedName) ? 'text-gray-900' : 'text-gray-500 hover:text-gray-800'}`}
+                className={`flex flex-col items-center justify-center py-1.5 transition-colors flex-shrink-0 ${isTabActive(normalizedName) ? 'text-gray-900' : 'text-gray-500 hover:text-gray-800'}`}
               >
                 <div className="flex flex-col items-center px-2">
                   <img src={imgSrc} alt={type.name} className={`w-5 h-5 object-contain transition-all duration-300 ${isTabActive(normalizedName) ? 'opacity-100 grayscale-0' : 'opacity-70 grayscale'}`} onError={(e) => { e.target.src = '/images/nav-icon-room.png'; }} />
@@ -562,110 +606,175 @@ const SearchResults = () => {
             ) : searchData?.properties?.length > 0 ? (
               <div className={`grid gap-3 sm:gap-6 ${viewMode === 'grid' ? (showMap ? 'grid-cols-2 md:grid-cols-2 lg:grid-cols-3' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-5') : 'grid-cols-1'}`}>
                 {searchData.properties.map((property) => (
-                  <div
+                  <LazyPropertyCard
                     key={property.id}
-                    id={`property-${property.id}`}
-                    onMouseEnter={() => setHoveredPropertyId(property.id)}
-                    onMouseLeave={() => setHoveredPropertyId(null)}
-                    className={`group cursor-pointer ${hoveredPropertyId === property.id ? '' : ''}`}
-                    onClick={() => {
-                      // Pass search params to property detail page
-                      const params = new URLSearchParams();
-                      if (filters.check_in_date) params.set('check_in_date', filters.check_in_date);
-                      if (filters.check_out_date) params.set('check_out_date', filters.check_out_date);
-                      if (filters.min_guests) params.set('guests', filters.min_guests);
-                      const queryString = params.toString();
-                      navigate(`/property/${property.slug || property.id}${queryString ? `?${queryString}` : ''}`);
-                    }}
+                    aspectClass="aspect-[20/19]"
+                    heightClass=""
+                    viewMode={viewMode}
                   >
-                    <div className="relative aspect-[20/19] rounded-xl overflow-hidden mb-3 bg-gray-200">
-                      <PropertyImageSlider
-                        property={property}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      />
-                      {property.is_non_refundable && (
-                        <div className="absolute bottom-3 left-3 bg-rose-600 text-white px-2 py-0.5 rounded-md text-[8px] font-bold z-20 shadow-sm uppercase tracking-wider">
-                          Non-Refundable
-                        </div>
-                      )}
-                      {/* Top Badges */}
-                      <div className="absolute top-3 left-3 z-10">
-                        {property.is_superhost && (
-                          <div className="bg-white/95 backdrop-blur-sm px-2 py-1 rounded shadow-sm text-xs font-bold text-gray-900 border border-black/5">
-                            Superhost
+                    <div
+                      id={`property-${property.id}`}
+                      onMouseEnter={() => setHoveredPropertyId(property.id)}
+                      onMouseLeave={() => setHoveredPropertyId(null)}
+                      className="group cursor-pointer"
+                      onClick={() => {
+                        const params = new URLSearchParams();
+                        if (filters.check_in_date) params.set('check_in_date', filters.check_in_date);
+                        if (filters.check_out_date) params.set('check_out_date', filters.check_out_date);
+                        if (filters.min_guests) params.set('guests', filters.min_guests);
+                        if (isMonthly) {
+                          params.set('booking_type', 'monthly');
+                          if (filters.move_in_date) params.set('move_in_date', filters.move_in_date);
+                          if (filters.duration_months) params.set('duration_months', filters.duration_months);
+                        }
+                        const queryString = params.toString();
+                        navigate(`/property/${property.slug || property.id}${queryString ? `?${queryString}` : ''}`);
+                      }}
+                    >
+                      <div className="relative aspect-[20/19] rounded-xl overflow-hidden mb-3 bg-gray-200">
+                        <PropertyImageSlider
+                          property={property}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        />
+                        {isMonthly ? (
+                          <div className="absolute bottom-3 left-3 bg-violet-600 text-white px-2 py-0.5 rounded-md text-[8px] font-bold z-20 shadow-sm uppercase tracking-wider">
+                            Monthly Rent
                           </div>
-                        ) || property.average_rating >= 4.8 && (
-                          <div className="bg-white/95 backdrop-blur-sm px-2 py-1 rounded-full shadow-sm text-xs font-bold text-gray-900 border border-black/5">
-                            Guest favorite
+                        ) : property.is_non_refundable && (
+                          <div className="absolute bottom-3 left-3 bg-rose-600 text-white px-2 py-0.5 rounded-md text-[8px] font-bold z-20 shadow-sm uppercase tracking-wider">
+                            Non-Refundable
                           </div>
                         )}
-                      </div>
-
-                      {/* Heart Icon */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleFavorite(property.id);
-                        }}
-                        className="absolute top-3 right-3 p-2 z-10 transition-transform active:scale-90 opacity-70 hover:opacity-100 hover:scale-110"
-                      >
-                        <svg
-                          viewBox="0 0 32 32"
-                          className={`w-6 h-6 stroke-white stroke-[2px] ${favorites.has(property.id) ? 'fill-[#FF385C] stroke-[#FF385C]' : 'fill-black/50'}`}
-                          aria-hidden="true"
-                          focusable="false"
-                        >
-                          <path d="M16 28c7-4.73 14-10 14-17a6.98 6.98 0 0 0-7-7c-1.8 0-3.58.68-4.95 2.05L16 8.1l-2.05-2.05a6.98 6.98 0 0 0-9.9 0A6.98 6.98 0 0 0 2 11c0 7 7 12.27 14 17z"></path>
-                        </svg>
-                      </button>
-
-                      {/* Owner Avatar (Optional, visually appealing) */}
-                      {property.owner_image && (
-                        <div className="absolute bottom-3 left-3 w-10 h-10 rounded-full border-2 border-white overflow-hidden shadow-md z-10">
-                          <img src={property.owner_image} alt="Owner" className="w-full h-full object-cover" />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="space-y-0.5">
-                      <div className="flex justify-between items-start">
-                        <h3 className="font-semibold text-gray-900 text-[15px] truncate pr-2 capitalize">
-                          {property.city ? `${property.property_type || 'Property'} in ${sanitizeText(property.city)}` : sanitizeText(property.title)}
-                        </h3>
-                        <div className="flex items-center gap-1 text-[14px]">
-                          {property.total_reviews > 0 ? (
-                            <>
-                              <FiStar className="w-3 h-3 fill-current text-black" />
-                              <span className="font-semibold">{parseFloat(property.average_rating).toFixed(1)}</span>
-                              <span className="text-gray-500 text-xs">({property.total_reviews})</span>
-                            </>
-                          ) : (
-                            <span className="text-gray-400 text-xs">No reviews</span>
+                        {/* Top Badges */}
+                        <div className="absolute top-3 left-3 z-10">
+                          {property.is_superhost && (
+                            <div className="bg-white/95 backdrop-blur-sm px-2 py-1 rounded shadow-sm text-xs font-bold text-gray-900 border border-black/5">
+                              Superhost
+                            </div>
+                          ) || property.average_rating >= 4.8 && (
+                            <div className="bg-white/95 backdrop-blur-sm px-2 py-1 rounded-full shadow-sm text-xs font-bold text-gray-900 border border-black/5">
+                              Guest favorite
+                            </div>
                           )}
                         </div>
+
+                        {/* Heart Icon */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite(property.id);
+                          }}
+                          className="absolute top-3 right-3 p-2 z-10 transition-transform active:scale-90 opacity-70 hover:opacity-100 hover:scale-110"
+                        >
+                          <svg
+                            viewBox="0 0 32 32"
+                            className={`w-6 h-6 stroke-white stroke-[2px] ${favorites.has(property.id) ? 'fill-[#FF385C] stroke-[#FF385C]' : 'fill-black/50'}`}
+                            aria-hidden="true"
+                            focusable="false"
+                          >
+                            <path d="M16 28c7-4.73 14-10 14-17a6.98 6.98 0 0 0-7-7c-1.8 0-3.58.68-4.95 2.05L16 8.1l-2.05-2.05a6.98 6.98 0 0 0-9.9 0A6.98 6.98 0 0 0 2 11c0 7 7 12.27 14 17z"></path>
+                          </svg>
+                        </button>
+
+                        {/* Owner Avatar (Optional, visually appealing) */}
+                        {property.owner_image && (
+                          <div className="absolute bottom-3 left-3 w-10 h-10 rounded-full border-2 border-white overflow-hidden shadow-md z-10">
+                            <img src={property.owner_image} alt="Owner" className="w-full h-full object-cover" />
+                          </div>
+                        )}
                       </div>
 
-                      <p className="text-gray-500 text-[15px] line-clamp-1 capitalize">{sanitizeText(property.title)}</p>
-                      <p className="text-gray-500 text-[15px]">
-                        {property.bedrooms} bedrooms · {property.max_guests} guests
-                      </p>
-                      <p className="text-gray-500 text-[15px] mt-1">
-                        {filters.check_in_date ? formatDisplayDates() : 'Availability varies'}
-                      </p>
+                      <div className="space-y-0.5">
+                        <div className="flex justify-between items-start">
+                          <h3 className="font-semibold text-gray-900 text-[15px] truncate pr-2 capitalize">
+                            {property.city ? `${property.property_type || 'Property'} in ${sanitizeText(property.city)}` : sanitizeText(property.title)}
+                          </h3>
+                          <div className="flex items-center gap-1 text-[14px]">
+                            {property.total_reviews > 0 ? (
+                              <>
+                                <FiStar className="w-3 h-3 fill-current text-black" />
+                                <span className="font-semibold">{parseFloat(property.average_rating).toFixed(1)}</span>
+                                <span className="text-gray-500 text-xs">({property.total_reviews})</span>
+                              </>
+                            ) : (
+                              <span className="text-gray-400 text-xs">No reviews</span>
+                            )}
+                          </div>
+                        </div>
 
-                      <div className="flex items-baseline gap-1 mt-1.5 pt-0.5">
-                        {property.discounted_price ? (
-                          <>
-                            <span className="text-gray-500 line-through text-[15px]">BDT {formatPrice(property.original_price)}</span>
+                        <p className="text-gray-500 text-[15px] line-clamp-1 capitalize">{sanitizeText(property.title)}</p>
+                        <p className="text-gray-500 text-[15px]">
+                          {property.bedrooms} bedrooms · {property.max_guests} guests
+                        </p>
+                        <p className="text-gray-500 text-[15px] mt-1">
+                          {isMonthly
+                            ? (filters.move_in_date
+                                ? `From ${new Date(filters.move_in_date + 'T00:00:00').toLocaleDateString('en-US', {month: 'short', day: 'numeric'})} · ${filters.duration_months || 1} mo`
+                                : 'Monthly stay')
+                            : (filters.check_in_date ? formatDisplayDates() : 'Availability varies')}
+                        </p>
+
+                        <div className="flex items-baseline gap-1 mt-1.5 pt-0.5">
+                          {isMonthly ? (
+                            <>
+                              <span className="font-semibold text-gray-900 text-[15px]">BDT {formatPrice(property.monthly_rent_amount || property.base_price)}</span>
+                              <span className="text-gray-500 text-[15px]">/ month</span>
+                            </>
+                          ) : property.discounted_price ? (
+                            <>
+                              <span className="text-gray-500 line-through text-[15px]">BDT {formatPrice(property.original_price)}</span>
+                              <span className="font-semibold text-gray-900 text-[15px]">BDT {formatPrice(property.base_price)}</span>
+                            </>
+                          ) : (
                             <span className="font-semibold text-gray-900 text-[15px]">BDT {formatPrice(property.base_price)}</span>
+                          )}
+                          {!isMonthly && <span className="text-gray-900 text-[15px]">total</span>}
+                        </div>
+                        {isMonthly && (
+                          <>
+                            <p className="text-gray-400 text-[12px] mt-0.5">Min. {property.monthly_min_stay_nights || 30} nights</p>
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                              {Number(property.monthly_furnished) === 1 && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-800">
+                                  🛋️ Furnished
+                                </span>
+                              )}
+                              {Number(property.monthly_wifi_included) === 1 && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-800">
+                                  📶 WiFi
+                                </span>
+                              )}
+                              {Number(property.monthly_electricity_included) === 1 && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-800">
+                                  ⚡ Electricity
+                                </span>
+                              )}
+                              {Number(property.monthly_gas_included) === 1 && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-800">
+                                  💨 Gas
+                                </span>
+                              )}
+                              {Number(property.monthly_water_included) === 1 && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-800">
+                                  💧 Water
+                                </span>
+                              )}
+                              {Number(property.monthly_cleaning_included) === 1 && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-800">
+                                  🧹 Cleaning
+                                </span>
+                              )}
+                              {Number(property.monthly_service_charge_included) === 1 && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-800">
+                                  💼 Service Charge
+                                </span>
+                              )}
+                            </div>
                           </>
-                        ) : (
-                          <span className="font-semibold text-gray-900 text-[15px]">BDT {formatPrice(property.base_price)}</span>
                         )}
-                        <span className="text-gray-900 text-[15px]">total</span>
                       </div>
                     </div>
-                  </div>
+                  </LazyPropertyCard>
                 ))}
               </div>
             ) : (
@@ -711,18 +820,20 @@ const SearchResults = () => {
         {/* Map Column */}
         {showMap && (
           <div className="hidden lg:block lg:w-1/2 h-full relative z-0 rounded-xl overflow-hidden">
-            <PropertyMap
-              properties={searchData?.properties || []}
-              hoveredPropertyId={hoveredPropertyId}
-              onMarkerHover={setHoveredPropertyId}
-              onMarkerClick={(id) => {
-                const element = document.getElementById(`property-${id}`);
-                if (element) {
-                  element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  setHoveredPropertyId(id);
-                }
-              }}
-            />
+            <Suspense fallback={<div className="w-full h-full bg-gray-100 animate-pulse flex items-center justify-center text-gray-400">Loading Map...</div>}>
+              <PropertyMap
+                properties={searchData?.properties || []}
+                hoveredPropertyId={hoveredPropertyId}
+                onMarkerHover={setHoveredPropertyId}
+                onMarkerClick={(id) => {
+                  const element = document.getElementById(`property-${id}`);
+                  if (element) {
+                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    setHoveredPropertyId(id);
+                  }
+                }}
+              />
+            </Suspense>
           </div>
         )}
       </div>
@@ -732,7 +843,7 @@ const SearchResults = () => {
         isOpen={showSearchModal}
         onClose={() => setShowSearchModal(false)}
         filters={filters}
-        onApply={applyModalSearch}
+        onSearch={applyModalSearch}
       />
 
       {/* Airbnb Style Filter Modal */}
@@ -795,8 +906,8 @@ const SearchResults = () => {
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">৳</span>
                       <input
                         type="number"
-                        value={filters.min_price}
-                        onChange={(e) => handleFilterChange('min_price', e.target.value)}
+                        value={localMinPrice}
+                        onChange={(e) => handlePriceChange('min_price', e.target.value)}
                         className="w-full pl-7 pr-3 py-3 border border-gray-400 rounded-lg focus:border-black focus:ring-1 focus:ring-black outline-none"
                         placeholder="0"
                       />
@@ -809,8 +920,8 @@ const SearchResults = () => {
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">৳</span>
                       <input
                         type="number"
-                        value={filters.max_price}
-                        onChange={(e) => handleFilterChange('max_price', e.target.value)}
+                        value={localMaxPrice}
+                        onChange={(e) => handlePriceChange('max_price', e.target.value)}
                         className="w-full pl-7 pr-3 py-3 border border-gray-400 rounded-lg focus:border-black focus:ring-1 focus:ring-black outline-none"
                         placeholder="100000+"
                       />

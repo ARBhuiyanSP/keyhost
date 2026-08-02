@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from 'react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { FiCalendar, FiSearch, FiFilter, FiEye, FiUser, FiHome, FiDollarSign, FiMapPin, FiCheck, FiX, FiCreditCard, FiAlertTriangle, FiLogIn, FiLogOut, FiChevronRight } from 'react-icons/fi';
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
@@ -32,11 +32,15 @@ const ExpandablePropertyTitle = ({ title, maxLength = 25 }) => {
 };
 const PropertyOwnerBookings = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const initialSearch = searchParams.get('search') || '';
+  const initialStatus = searchParams.get('status') || '';
+
   const { showSuccess, showError } = useToast();
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState({
-    status: '',
-    search: '',
+    status: initialStatus,
+    search: initialSearch,
     page: 1,
     limit: 10
   });
@@ -50,6 +54,7 @@ const PropertyOwnerBookings = () => {
   const [showDeductionModal, setShowDeductionModal] = useState(false);
   const [deductionData, setDeductionData] = useState({ amount: '', reason: '' });
   const [isSubmittingDeduction, setIsSubmittingDeduction] = useState(false);
+  const [hasAutoOpened, setHasAutoOpened] = useState(false);
 
   // Fetch property owner's bookings
   const { data: bookingsData, isLoading, refetch } = useQuery(
@@ -98,6 +103,16 @@ const PropertyOwnerBookings = () => {
       setShowDetailsModal(true);
     }
   };
+
+  useEffect(() => {
+    if (initialSearch && bookingsData?.bookings?.length === 1 && !hasAutoOpened) {
+      const booking = bookingsData.bookings[0];
+      if (booking.booking_reference === initialSearch) {
+        setHasAutoOpened(true);
+        handleViewBooking(booking);
+      }
+    }
+  }, [bookingsData, initialSearch, hasAutoOpened]);
 
   const handleBookingAction = async (bookingId, action) => {
     const actionText = action === 'checkin' ? 'check in' : action === 'checkout' ? 'check out' : action;
@@ -479,13 +494,13 @@ const PropertyOwnerBookings = () => {
               <FiSearch className="absolute left-3.5 top-3.5 h-4.5 w-4.5 text-gray-400" />
             </div>
 
-            <div className="flex items-center space-x-3 w-full sm:w-auto justify-end">
-              <div className="flex items-center space-x-2">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+              <div className="flex items-center justify-between sm:justify-start gap-2">
                 <span className="text-xs font-semibold text-gray-500 whitespace-nowrap">Page size:</span>
                 <select
                   value={filters.limit}
                   onChange={(e) => handleFilterChange('limit', parseInt(e.target.value))}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white w-full sm:w-auto"
                 >
                   <option value={10}>10</option>
                   <option value={25}>25</option>
@@ -494,21 +509,23 @@ const PropertyOwnerBookings = () => {
                 </select>
               </div>
 
-              <button
-                onClick={() => setFilters({ status: '', search: '', page: 1, limit: 10 })}
-                type="button"
-                className="px-4 py-2 border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 focus:outline-none"
-              >
-                Clear
-              </button>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  onClick={() => setFilters({ status: '', search: '', page: 1, limit: 10 })}
+                  type="button"
+                  className="flex-1 sm:flex-none px-4 py-2 border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 focus:outline-none"
+                >
+                  Clear
+                </button>
 
-              <button
-                onClick={() => refetch()}
-                type="button"
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-semibold transition-colors flex items-center gap-1.5"
-              >
-                Refresh
-              </button>
+                <button
+                  onClick={() => refetch()}
+                  type="button"
+                  className="flex-1 sm:flex-none bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-semibold transition-colors flex items-center justify-center gap-1.5"
+                >
+                  Refresh
+                </button>
+              </div>
             </div>
           </div>
         </div>

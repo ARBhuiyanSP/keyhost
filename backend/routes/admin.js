@@ -196,7 +196,7 @@ router.get('/properties', validatePagination, async (req, res) => {
 // Get all bookings
 router.get('/bookings', validatePagination, async (req, res) => {
   try {
-    const { page = 1, limit = 10, status, search } = req.query;
+    const { page = 1, limit = 10, status, search, startDate, endDate } = req.query;
     const offset = (page - 1) * limit;
 
     let whereConditions = [];
@@ -210,6 +210,16 @@ router.get('/bookings', validatePagination, async (req, res) => {
     if (search) {
       whereConditions.push('(b.booking_reference LIKE ? OR u.first_name LIKE ? OR p.title LIKE ?)');
       queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    if (startDate) {
+      whereConditions.push('b.check_in_date >= ?');
+      queryParams.push(startDate);
+    }
+
+    if (endDate) {
+      whereConditions.push('b.check_in_date <= ?');
+      queryParams.push(endDate);
     }
 
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';

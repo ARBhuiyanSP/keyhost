@@ -122,13 +122,14 @@ api.interceptors.response.use(
 
     // Handle network errors (backend down, no internet)
     if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
-      const now = Date.now();
-      if (now - lastNetworkErrorTime > ERROR_DEBOUNCE_TIME) {
-        lastNetworkErrorTime = now;
-        toast.error('Server is unreachable. Please check your internet connection or try later.', {
-          toastId: 'global-network-error'
-        });
+      // Trigger global full-page offline/error state
+      try {
+        const connectionStore = require('../store/connectionStore').default;
+        connectionStore.getState().setServerUnreachable(true);
+      } catch (e) {
+        console.error('Failed to trigger connectionStore offline state:', e);
       }
+
       return Promise.reject(error);
     }
 

@@ -13,9 +13,25 @@ const PaymentManagementModal = ({ isOpen, onClose, reservation, propertyId }) =>
     const [activeTab, setActiveTab] = useState('manual'); // 'manual', 'link', 'qr'
     const [manualData, setManualData] = useState({
         method: 'cash',
-        amount: (parseFloat(reservation?.total_amount || 0) + parseFloat(reservation?.extra_billing_amount || 0)),
+        amount: '',
         notes: ''
     });
+
+    React.useEffect(() => {
+        if (reservation) {
+            const roomAmount = parseFloat(reservation.total_amount || 0);
+            const extraBills = parseFloat(reservation.extra_billing_amount || 0);
+            const totalBilled = roomAmount + extraBills;
+            const paidAmount = parseFloat(reservation.paid_amount || 0);
+            const dueAmount = Math.max(0, totalBilled - paidAmount);
+
+            setManualData({
+                method: 'cash',
+                amount: dueAmount > 0 ? dueAmount : totalBilled,
+                notes: ''
+            });
+        }
+    }, [reservation]);
     const [paymentLink, setPaymentLink] = useState('');
     const [isGeneratingLink, setIsGeneratingLink] = useState(false);
 
@@ -228,10 +244,22 @@ const PaymentManagementModal = ({ isOpen, onClose, reservation, propertyId }) =>
                         <FiPrinter /> Print Invoice
                     </button>
                     <div className="text-right">
-                        <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
-                            Room: {parseFloat(reservation.total_amount).toLocaleString()} + Services: {parseFloat(reservation.extra_billing_amount || 0).toLocaleString()}
-                        </div>
-                        <p className="text-sm font-black text-[#004e59]">Total Due: BDT {(parseFloat(reservation.total_amount) + parseFloat(reservation.extra_billing_amount || 0)).toLocaleString()}</p>
+                        {(() => {
+                            const roomAmt = parseFloat(reservation.total_amount || 0);
+                            const extraAmt = parseFloat(reservation.extra_billing_amount || 0);
+                            const totalBilled = roomAmt + extraAmt;
+                            const paidAmt = parseFloat(reservation.paid_amount || 0);
+                            const netDue = Math.max(0, totalBilled - paidAmt);
+
+                            return (
+                                <>
+                                    <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                                        Billed: BDT {totalBilled.toLocaleString()} (Room: {roomAmt.toLocaleString()} + Services: {extraAmt.toLocaleString()}) | Paid: BDT {paidAmt.toLocaleString()}
+                                    </div>
+                                    <p className="text-sm font-black text-[#004e59]">Net Due: BDT {netDue.toLocaleString()}</p>
+                                </>
+                            );
+                        })()}
                     </div>
                 </div>
             </div>

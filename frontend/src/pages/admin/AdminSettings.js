@@ -73,6 +73,11 @@ const AdminSettings = () => {
         'linkedin_url', 'youtube_url', 'tiktok_url', 'google_analytics_id',
         'seo_meta_title', 'seo_meta_description', 'seo_keywords', 'seo_og_image',
         'google_client_id', 'google_maps_api_key',
+        'google_places_enabled', 'google_api_associated_email',
+        'enable_bkash', 'bkash_is_live', 'bkash_merchant_id', 'bkash_merchant_key', 'bkash_merchant_secret',
+        'bkash_username', 'bkash_password', 'bkash_api_url', 'bkash_api_associated_email',
+        'enable_nagad', 'nagad_is_live', 'nagad_merchant_id', 'nagad_merchant_private_key',
+        'nagad_public_key', 'nagad_api_url',
         'terms_of_service', 'privacy_policy', 'refund_policy'
       ];
 
@@ -122,6 +127,57 @@ const AdminSettings = () => {
       }
     }
   );
+
+  const [whatsappStatus, setWhatsappStatus] = useState({ status: 'DISCONNECTED', qr: null, phone: null });
+  const [connectingWhatsapp, setConnectingWhatsapp] = useState(false);
+
+  const fetchWhatsAppStatus = async () => {
+    try {
+      const response = await api.get('/admin/whatsapp/status');
+      if (response.data.success) {
+        setWhatsappStatus(response.data.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch WhatsApp status:', error);
+    }
+  };
+
+  const handleConnectWhatsApp = async () => {
+    try {
+      setConnectingWhatsapp(true);
+      const response = await api.post('/admin/whatsapp/connect');
+      if (response.data.success) {
+        fetchWhatsAppStatus();
+      }
+    } catch (error) {
+      showError('Failed to initiate WhatsApp connection');
+    } finally {
+      setConnectingWhatsapp(false);
+    }
+  };
+
+  const handleDisconnectWhatsApp = async () => {
+    try {
+      const response = await api.post('/admin/whatsapp/disconnect');
+      if (response.data.success) {
+        showSuccess('WhatsApp disconnected successfully');
+        fetchWhatsAppStatus();
+      }
+    } catch (error) {
+      showError('Failed to disconnect WhatsApp');
+    }
+  };
+
+  useEffect(() => {
+    let interval;
+    if (activeTab === 'sms' && settings.sms_gateway_type === 'whatsapp') {
+      fetchWhatsAppStatus();
+      interval = setInterval(fetchWhatsAppStatus, 3000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [activeTab, settings.sms_gateway_type]);
 
   const handleInputChange = (key, value) => {
     setSettings(prev => ({
@@ -883,65 +939,300 @@ const AdminSettings = () => {
 
                       <div>
                         <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
-                          SMS API URL
+                          Notification Channel
                         </label>
-                        <input
-                          type="text"
-                          value={settings.sms_api_url || 'http://217.172.190.215/sendtext'}
-                          onChange={(e) => handleInputChange('sms_api_url', e.target.value)}
+                        <select
+                          value={settings.sms_gateway_type || 'bulk_sms'}
+                          onChange={(e) => handleInputChange('sms_gateway_type', e.target.value)}
                           className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
-                          placeholder="http://217.172.190.215/sendtext"
-                        />
-                        <p className="mt-1 text-xs text-gray-500">
-                          Base API endpoint for sending SMS messages.
-                        </p>
+                        >
+                          <option value="bulk_sms">Traditional Bulk SMS (via API URL)</option>
+                          <option value="whatsapp">WhatsApp (Built-in Free Integration)</option>
+                        </select>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                          <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
-                            API Key
-                          </label>
-                          <input
-                            type="text"
-                            value={settings.sms_api_key || ''}
-                            onChange={(e) => handleInputChange('sms_api_key', e.target.value)}
-                            className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
-                            placeholder="Enter SMS API key"
-                          />
+                      {settings.sms_gateway_type === 'whatsapp' ? (
+                        <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6 space-y-6">
+                          <div>
+                            <h4 className="text-sm font-bold text-gray-800 uppercase tracking-wider mb-2">WhatsApp Session Status</h4>
+                            <div className="flex items-center space-x-3 mt-3">
+                              {whatsappStatus.status === 'CONNECTED' ? (
+                                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                  ● Connected
+                                </span>
+                              ) : whatsappStatus.status === 'CONNECTING' ? (
+                                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200 animate-pulse">
+                                  ● Connecting...
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-200">
+                                  ● Disconnected
+                                </span>
+                              )}
+                              {whatsappStatus.phone && (
+                                <span className="text-sm font-semibold text-gray-600">
+                                  Linked Number: +{whatsappStatus.phone}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Action Buttons & QR Code Display */}
+                          {whatsappStatus.status === 'CONNECTED' ? (
+                            <div>
+                              <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+                                The system is connected to your WhatsApp number. All notifications will be delivered instantly for free.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={handleDisconnectWhatsApp}
+                                className="px-5 py-2.5 bg-red-50 text-red-600 hover:bg-red-100 font-bold text-xs rounded-xl border border-red-200 transition-all active:scale-[0.98]"
+                              >
+                                Disconnect WhatsApp
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="space-y-4">
+                              {whatsappStatus.qr ? (
+                                <div className="flex flex-col md:flex-row items-center md:items-start gap-6 bg-white p-5 rounded-xl border border-gray-100 shadow-[2px_2px_0px_rgba(0,0,0,0.02)]">
+                                  <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 flex items-center justify-center flex-shrink-0">
+                                    <img 
+                                      src={whatsappStatus.qr} 
+                                      alt="WhatsApp Scan QR" 
+                                      className="w-48 h-48 select-none"
+                                    />
+                                  </div>
+                                  <div className="space-y-3 mt-2">
+                                    <h5 className="text-xs font-bold text-gray-900 uppercase tracking-wider">Instructions to link:</h5>
+                                    <ol className="list-decimal list-inside text-xs text-gray-500 space-y-2 leading-relaxed">
+                                      <li>Open <span className="font-semibold text-gray-700">WhatsApp</span> on your phone.</li>
+                                      <li>Tap <span className="font-semibold text-gray-700">Menu</span> (Android) or <span className="font-semibold text-gray-700">Settings</span> (iPhone).</li>
+                                      <li>Select <span className="font-semibold text-gray-700">Linked Devices</span> and then <span className="font-semibold text-gray-700">Link a Device</span>.</li>
+                                      <li>Point your phone's camera at this screen to scan the QR code.</li>
+                                    </ol>
+                                    <p className="text-[10px] text-gray-400 font-medium pt-2">
+                                      * The QR code updates automatically. Scanning is one-time only.
+                                    </p>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div>
+                                  <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+                                    Link your WhatsApp account to start sending automated notification messages directly to users for free.
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={handleConnectWhatsApp}
+                                    disabled={connectingWhatsapp}
+                                    className="px-5 py-2.5 bg-[#004e59] hover:bg-[#003d46] text-white hover:shadow-md font-bold text-xs rounded-xl transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    {connectingWhatsapp ? 'Generating...' : 'Link WhatsApp (Scan QR)'}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
+                      ) : (
+                        <>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                              SMS API URL
+                            </label>
+                            <input
+                              type="text"
+                              value={settings.sms_api_url || 'http://217.172.190.215/sendtext'}
+                              onChange={(e) => handleInputChange('sms_api_url', e.target.value)}
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="http://217.172.190.215/sendtext"
+                            />
+                            <p className="mt-1 text-xs text-gray-500">
+                              Base API endpoint for sending SMS messages.
+                            </p>
+                          </div>
 
-                        <div>
-                          <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
-                            Secret Key
-                          </label>
-                          <input
-                            type="text"
-                            value={settings.sms_secret_key || ''}
-                            onChange={(e) => handleInputChange('sms_secret_key', e.target.value)}
-                            className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
-                            placeholder="Enter SMS secret key"
-                          />
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                              <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                                API Key
+                              </label>
+                              <input
+                                type="text"
+                                value={settings.sms_api_key || ''}
+                                onChange={(e) => handleInputChange('sms_api_key', e.target.value)}
+                                className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                                placeholder="Enter SMS API key"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                                Secret Key
+                              </label>
+                              <input
+                                type="text"
+                                value={settings.sms_secret_key || ''}
+                                onChange={(e) => handleInputChange('sms_secret_key', e.target.value)}
+                                className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                                placeholder="Enter SMS secret key"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                              Sender ID / Caller ID
+                            </label>
+                            <input
+                              type="text"
+                              value={settings.sms_sender_id || ''}
+                              onChange={(e) => handleInputChange('sms_sender_id', e.target.value)}
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="+8801844015754"
+                            />
+                            <p className="mt-1 text-xs text-gray-500">
+                              The number or alphanumeric ID that recipients will see as the sender.
+                            </p>
+                          </div>
+                        </>
+                      )}
+
+                      <div className="border-t pt-6 mt-6">
+                        <h4 className="text-sm font-bold text-gray-900 mb-4 uppercase tracking-wider">SMS Notification Templates</h4>
+                        <p className="text-xs text-gray-500 mb-6 font-medium">
+                          Customize the messages sent for different events. Use dynamic placeholders like <code>{"{booking_ref}"}</code>, <code>{"{guest_name}"}</code>, etc. which will be replaced with real booking data when the message is sent.
+                        </p>
+
+                        <div className="space-y-6">
+                          {/* Booking Request To Host */}
+                          <div>
+                            <div className="flex justify-between items-center mb-2">
+                              <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider">
+                                Booking Request (To Host)
+                              </label>
+                              <span className="text-[10px] text-gray-400 font-mono">Placeholders: {'{host_name}'}, {'{guest_name}'}, {'{property_name}'}, {'{booking_ref}'}, {'{check_in_date}'}, {'{booking_url}'}</span>
+                            </div>
+                            <textarea
+                              value={settings.sms_template_booking_request_host || ''}
+                              onChange={(e) => handleInputChange('sms_template_booking_request_host', e.target.value)}
+                              rows="3"
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="[Keyhost] New booking request {booking_ref} for {property_name}. Guest: {guest_name}. Check-in: {check_in_date}. Review & accept here: {booking_url}"
+                            />
+                            <p className="mt-1 text-xs text-gray-400">Trigger: Sent to the property owner when a guest submits a new booking request.</p>
+                          </div>
+
+                          {/* Booking Accepted To Guest */}
+                          <div>
+                            <div className="flex justify-between items-center mb-2">
+                              <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider">
+                                Booking Request Accepted (To Guest)
+                              </label>
+                              <span className="text-[10px] text-gray-400 font-mono">Placeholders: {'{guest_name}'}, {'{property_name}'}, {'{booking_ref}'}, {'{amount}'}, {'{payment_limit}'}, {'{deadline}'}</span>
+                            </div>
+                            <textarea
+                              value={settings.sms_template_booking_accepted_guest || ''}
+                              onChange={(e) => handleInputChange('sms_template_booking_accepted_guest', e.target.value)}
+                              rows="3"
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="[Keyhost] Hello {guest_name}, your booking request {booking_ref} for {property_name} has been accepted! Please pay {amount} within {payment_limit} mins (before {deadline}) to confirm your stay."
+                            />
+                            <p className="mt-1 text-xs text-gray-400">Trigger: Sent to the guest when the property owner accepts their booking request.</p>
+                          </div>
+
+                          {/* Booking Paid To Host */}
+                          <div>
+                            <div className="flex justify-between items-center mb-2">
+                              <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider">
+                                Booking Paid & Confirmed (To Host)
+                              </label>
+                              <span className="text-[10px] text-gray-400 font-mono">Placeholders: {'{host_name}'}, {'{guest_name}'}, {'{property_name}'}, {'{booking_ref}'}, {'{check_in_date}'}, {'{amount}'}</span>
+                            </div>
+                            <textarea
+                              value={settings.sms_template_booking_paid_host || ''}
+                              onChange={(e) => handleInputChange('sms_template_booking_paid_host', e.target.value)}
+                              rows="3"
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="[Keyhost] Payment Confirmed! Booking {booking_ref} for {property_name} has been paid successfully. Guest: {guest_name}. Check-in: {check_in_date}."
+                            />
+                            <p className="mt-1 text-xs text-gray-400">Trigger: Sent to the property owner when a guest successfully pays for the booking.</p>
+                          </div>
+
+                          {/* Booking Paid To Guest */}
+                          <div>
+                            <div className="flex justify-between items-center mb-2">
+                              <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider">
+                                Booking Paid & Confirmed (To Guest)
+                              </label>
+                              <span className="text-[10px] text-gray-400 font-mono">Placeholders: {'{guest_name}'}, {'{property_name}'}, {'{booking_ref}'}, {'{check_in_date}'}, {'{amount}'}</span>
+                            </div>
+                            <textarea
+                              value={settings.sms_template_booking_paid_guest || ''}
+                              onChange={(e) => handleInputChange('sms_template_booking_paid_guest', e.target.value)}
+                              rows="3"
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="[Keyhost] Thank you {guest_name}! Payment of {amount} for booking {booking_ref} ({property_name}) was successful. Your stay is confirmed. Check-in: {check_in_date}."
+                            />
+                            <p className="mt-1 text-xs text-gray-400">Trigger: Sent to the guest when their payment is completed successfully.</p>
+                          </div>
+
+                          {/* Checkout To Guest */}
+                          <div>
+                            <div className="flex justify-between items-center mb-2">
+                              <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider">
+                                Checkout Completed (To Guest)
+                              </label>
+                              <span className="text-[10px] text-gray-400 font-mono">Placeholders: {'{guest_name}'}, {'{property_name}'}, {'{booking_ref}'}</span>
+                            </div>
+                            <textarea
+                              value={settings.sms_template_checkout_guest || ''}
+                              onChange={(e) => handleInputChange('sms_template_checkout_guest', e.target.value)}
+                              rows="3"
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="[Keyhost] Hi {guest_name}, thank you for choosing {property_name}. Your checkout for booking {booking_ref} is complete. We hope you had a wonderful stay!"
+                            />
+                            <p className="mt-1 text-xs text-gray-400">Trigger: Sent to the guest when checkout is processed (either manually or via HMS folio settlement).</p>
+                          </div>
+
+                          {/* Refund To Guest */}
+                          <div>
+                            <div className="flex justify-between items-center mb-2">
+                              <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider">
+                                Refund Issued (To Guest)
+                              </label>
+                              <span className="text-[10px] text-gray-400 font-mono">Placeholders: {'{guest_name}'}, {'{property_name}'}, {'{booking_ref}'}, {'{amount}'}, {'{reason}'}</span>
+                            </div>
+                            <textarea
+                              value={settings.sms_template_refund_guest || ''}
+                              onChange={(e) => handleInputChange('sms_template_refund_guest', e.target.value)}
+                              rows="3"
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="[Keyhost] Refund processed! Hi {guest_name}, a refund of {amount} for booking {booking_ref} at {property_name} has been credited. Reason: {reason}."
+                            />
+                            <p className="mt-1 text-xs text-gray-400">Trigger: Sent to the guest when a refund request is approved/completed by Admin or Host.</p>
+                          </div>
+
+                          {/* Refund To Host */}
+                          <div>
+                            <div className="flex justify-between items-center mb-2">
+                              <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider">
+                                Refund Issued (To Host)
+                              </label>
+                              <span className="text-[10px] text-gray-400 font-mono">Placeholders: {'{host_name}'}, {'{guest_name}'}, {'{property_name}'}, {'{booking_ref}'}, {'{amount}'}, {'{reason}'}</span>
+                            </div>
+                            <textarea
+                              value={settings.sms_template_refund_host || ''}
+                              onChange={(e) => handleInputChange('sms_template_refund_host', e.target.value)}
+                              rows="3"
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="[Keyhost] Refund Notification: A refund of {amount} for booking {booking_ref} at {property_name} has been processed. Reason: {reason}."
+                            />
+                            <p className="mt-1 text-xs text-gray-400">Trigger: Sent to the host when a refund is completed for their booking.</p>
+                          </div>
                         </div>
                       </div>
 
-                      <div>
-                        <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
-                          Sender ID / Caller ID
-                        </label>
-                        <input
-                          type="text"
-                          value={settings.sms_sender_id || ''}
-                          onChange={(e) => handleInputChange('sms_sender_id', e.target.value)}
-                          className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
-                          placeholder="+8801844015754"
-                        />
-                        <p className="mt-1 text-xs text-gray-500">
-                          The number or alphanumeric ID that recipients will see as the sender.
-                        </p>
-                      </div>
-
-                      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 text-sm text-gray-600">
+                      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 text-sm text-gray-600 mt-6">
                         <p className="font-semibold text-gray-800 mb-2">SMS Endpoint Examples</p>
                         <p><span className="font-semibold">Send:</span> http://217.172.190.215/sendtext?apikey=API_KEY&amp;secretkey=SECRET_KEY&amp;callerID=SENDER_ID&amp;toUser=MOBILE_NUMBER&amp;messageContent=MESSAGE</p>
                         <p className="mt-2"><span className="font-semibold">Status:</span> http://217.172.190.215/getstatus?apikey=API_KEY&amp;secretkey=SECRET_KEY&amp;messageid=MESSAGE_ID</p>
@@ -1116,6 +1407,194 @@ const AdminSettings = () => {
                               onChange={(e) => handleInputChange('sslcommerz_store_password', e.target.value)}
                               className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
                               placeholder="e.g. qwerty"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ================= BKASH SETTINGS ================= */}
+                    <div className="border-t pt-6 mt-6">
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={settings.enable_bkash || false}
+                          onChange={(e) => handleInputChange('enable_bkash', e.target.checked)}
+                          className="h-5 w-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 transition-colors cursor-pointer"
+                        />
+                        <label className="ml-3 text-sm font-semibold text-gray-800 cursor-pointer">
+                          Enable bKash Payment
+                        </label>
+                      </div>
+                    </div>
+
+                    {settings.enable_bkash && (
+                      <div className="border-t pt-6 mt-4">
+                        <h3 className="text-lg font-medium text-gray-900 mb-4">bKash Credentials</h3>
+                        <div className="space-y-4">
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={settings.bkash_is_live || false}
+                              onChange={(e) => handleInputChange('bkash_is_live', e.target.checked)}
+                              className="h-5 w-5 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500 focus:ring-2 transition-colors cursor-pointer"
+                            />
+                            <label className="ml-3 text-sm font-semibold text-gray-800 cursor-pointer">
+                              Live Mode (Uncheck for Sandbox)
+                            </label>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                              API URL Base
+                            </label>
+                            <input
+                              type="text"
+                              value={settings.bkash_api_url || ''}
+                              onChange={(e) => handleInputChange('bkash_api_url', e.target.value)}
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="Sandbox: https://tokenized.sandbox.bka.sh/v1.2.0-beta"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                              Merchant ID
+                            </label>
+                            <input
+                              type="text"
+                              value={settings.bkash_merchant_id || ''}
+                              onChange={(e) => handleInputChange('bkash_merchant_id', e.target.value)}
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="bKash Merchant ID"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                              Username
+                            </label>
+                            <input
+                              type="text"
+                              value={settings.bkash_username || ''}
+                              onChange={(e) => handleInputChange('bkash_username', e.target.value)}
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="bKash API Username"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                              Password
+                            </label>
+                            <input
+                              type="password"
+                              value={settings.bkash_password || ''}
+                              onChange={(e) => handleInputChange('bkash_password', e.target.value)}
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="bKash API Password"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                              App Key (Merchant Key)
+                            </label>
+                            <input
+                              type="text"
+                              value={settings.bkash_merchant_key || ''}
+                              onChange={(e) => handleInputChange('bkash_merchant_key', e.target.value)}
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="bKash App Key"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                              App Secret (Merchant Secret)
+                            </label>
+                            <input
+                              type="password"
+                              value={settings.bkash_merchant_secret || ''}
+                              onChange={(e) => handleInputChange('bkash_merchant_secret', e.target.value)}
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="bKash App Secret"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ================= NAGAD SETTINGS ================= */}
+                    <div className="border-t pt-6 mt-6">
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={settings.enable_nagad || false}
+                          onChange={(e) => handleInputChange('enable_nagad', e.target.checked)}
+                          className="h-5 w-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 transition-colors cursor-pointer"
+                        />
+                        <label className="ml-3 text-sm font-semibold text-gray-800 cursor-pointer">
+                          Enable Nagad Payment
+                        </label>
+                      </div>
+                    </div>
+
+                    {settings.enable_nagad && (
+                      <div className="border-t pt-6 mt-4">
+                        <h3 className="text-lg font-medium text-gray-900 mb-4">Nagad Credentials</h3>
+                        <div className="space-y-4">
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={settings.nagad_is_live || false}
+                              onChange={(e) => handleInputChange('nagad_is_live', e.target.checked)}
+                              className="h-5 w-5 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500 focus:ring-2 transition-colors cursor-pointer"
+                            />
+                            <label className="ml-3 text-sm font-semibold text-gray-800 cursor-pointer">
+                              Live Mode (Uncheck for Sandbox)
+                            </label>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                              API URL Base
+                            </label>
+                            <input
+                              type="text"
+                              value={settings.nagad_api_url || ''}
+                              onChange={(e) => handleInputChange('nagad_api_url', e.target.value)}
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="Sandbox: http://sandbox.mymoid.com:9090"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                              Merchant ID
+                            </label>
+                            <input
+                              type="text"
+                              value={settings.nagad_merchant_id || ''}
+                              onChange={(e) => handleInputChange('nagad_merchant_id', e.target.value)}
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="Nagad Merchant ID"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                              Merchant Private Key (base64, no headers)
+                            </label>
+                            <textarea
+                              rows="4"
+                              value={settings.nagad_merchant_private_key || settings.nagad_private_key || ''}
+                              onChange={(e) => handleInputChange('nagad_merchant_private_key', e.target.value)}
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="Base64-encoded RSA private key (without PEM headers)"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                              Nagad Public Key (PEM format)
+                            </label>
+                            <textarea
+                              rows="4"
+                              value={settings.nagad_public_key || ''}
+                              onChange={(e) => handleInputChange('nagad_public_key', e.target.value)}
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="-----BEGIN PUBLIC KEY-----&#10;...&#10;-----END PUBLIC KEY-----"
                             />
                           </div>
                         </div>
@@ -1331,8 +1810,65 @@ const AdminSettings = () => {
                             placeholder="AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXX"
                           />
                           <p className="mt-1.5 text-xs text-gray-500 font-medium">
-                            Required to render maps instead of OpenStreetMap. Make sure to enable Maps JavaScript API and Geocoding API.
+                            Required for map rendering and location search. Enable <strong>Maps JavaScript API</strong>, <strong>Places API</strong> and <strong>Geocoding API</strong> in Google Cloud Console.
                           </p>
+                        </div>
+
+                        {/* Google Cloud Account Email */}
+                        <div>
+                          <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                            Google Cloud Account (Reference)
+                          </label>
+                          <input
+                            type="email"
+                            value={settings.google_api_associated_email || ''}
+                            onChange={(e) => handleInputChange('google_api_associated_email', e.target.value)}
+                            className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                            placeholder="yourname@gmail.com"
+                          />
+                          <p className="mt-1.5 text-xs text-gray-500 font-medium">
+                            Reference only — which Gmail account owns the Google Cloud project above. Helps track who to contact if the API key needs to be changed.
+                          </p>
+                        </div>
+
+                        {/* Google Places Search Toggle */}
+                        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-5">
+                          <div className="flex items-center justify-between mb-3">
+                            <div>
+                              <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider">
+                                Enable Google Places Search
+                              </label>
+                              <p className="mt-1 text-xs text-gray-500 font-medium">
+                                When ON — location search suggestions come from Google Places API (shows neighborhoods like Dhanmondi, Mirpur-10, etc.).<br />
+                                When OFF — suggestions come from the property database only (cities where listings exist).
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleInputChange('google_places_enabled', !settings.google_places_enabled)}
+                              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                settings.google_places_enabled ? 'bg-blue-600' : 'bg-gray-300'
+                              }`}
+                            >
+                              <span
+                                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                  settings.google_places_enabled ? 'translate-x-5' : 'translate-x-0'
+                                }`}
+                              />
+                            </button>
+                          </div>
+                          {settings.google_places_enabled && (
+                            <div className="mt-3 flex items-start gap-2 text-xs text-blue-700 bg-blue-100/60 rounded-xl px-3 py-2">
+                              <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                              <span>Google Places API is <strong>active</strong>. Each search query consumes API quota (~$2.83 per 1,000 requests after the free $200/month credit).</span>
+                            </div>
+                          )}
+                          {!settings.google_places_enabled && (
+                            <div className="mt-3 flex items-start gap-2 text-xs text-gray-600 bg-gray-100/60 rounded-xl px-3 py-2">
+                              <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                              <span>Google Places API is <strong>disabled</strong>. Search suggestions will only show cities from your property database.</span>
+                            </div>
+                          )}
                         </div>
 
                         <div>

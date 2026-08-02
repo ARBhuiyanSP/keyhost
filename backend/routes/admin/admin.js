@@ -12,6 +12,11 @@ const { verifyToken, requireAdmin } = require('../../middleware/auth');
 const { cache } = require('../../middleware/cache');
 const { syncRefundToHMSAccounts } = require('../../utils/hms-sync');
 const { syncHmsAccessForHost } = require('../../utils/hms-helper');
+const { sendRefundSms } = require('../../utils/sms');
+const whatsapp = require('../../utils/whatsapp');
+const BkashPaymentGateway = require('../../utils/bkash-gateway');
+const bkashGateway = new BkashPaymentGateway();
+bkashGateway.initialize().catch(e => console.error('[Admin] bKash gateway init error:', e));
 
 // Helper: instantly clear all property-types cache entries
 const clearPropertyTypesCache = () => {
@@ -60,6 +65,36 @@ router.post('/clear-cache', (req, res) => {
     res.json(formatResponse(true, 'All cache cleared successfully'));
   } catch (error) {
     res.status(500).json(formatResponse(false, 'Failed to clear cache', null, error.message));
+  }
+});
+
+// Get WhatsApp connection status
+router.get('/whatsapp/status', (req, res) => {
+  try {
+    const statusData = whatsapp.getStatus();
+    res.json(formatResponse(true, 'WhatsApp status retrieved successfully', statusData));
+  } catch (error) {
+    res.status(500).json(formatResponse(false, 'Failed to get WhatsApp status', null, error.message));
+  }
+});
+
+// Connect WhatsApp (generates QR code)
+router.post('/whatsapp/connect', async (req, res) => {
+  try {
+    const result = await whatsapp.connectWhatsApp();
+    res.json(formatResponse(true, 'WhatsApp connection initiated', result));
+  } catch (error) {
+    res.status(500).json(formatResponse(false, 'Failed to initiate WhatsApp connection', null, error.message));
+  }
+});
+
+// Disconnect WhatsApp (logs out and clears files)
+router.post('/whatsapp/disconnect', async (req, res) => {
+  try {
+    const result = await whatsapp.disconnectWhatsApp();
+    res.json(formatResponse(true, 'WhatsApp disconnected successfully', result));
+  } catch (error) {
+    res.status(500).json(formatResponse(false, 'Failed to disconnect WhatsApp', null, error.message));
   }
 });
 
@@ -135,6 +170,241 @@ router.get('/dashboard', async (req, res) => {
   }
 });
 
+// Get User Reports list with filters (type-wise, location-wise, search, date-range)
+router.get('/reports/users', async (req, res) => {
+  try {
+    const { user_type, city, country, search, startDate, endDate } = req.query;
+
+    let whereConditions = [];
+    let queryParams = [];
+
+    if (user_type) {
+      whereConditions.push('u.user_type = ?');
+      queryParams.push(user_type);
+    }
+
+    if (city) {
+      whereConditions.push('u.city = ?');
+      queryParams.push(city);
+    }
+
+    if (country) {
+      whereConditions.push('u.country = ?');
+      queryParams.push(country);
+    }
+
+    if (search) {
+      whereConditions.push('(u.first_name LIKE ? OR u.last_name LIKE ? OR u.email LIKE ? OR u.phone LIKE ?)');
+      const term = `%${search}%`;
+      queryParams.push(term, term, term, term);
+    }
+
+    if (startDate) {
+      whereConditions.push('u.created_at >= ?');
+      queryParams.push(startDate + ' 00:00:00');
+    }
+
+    if (endDate) {
+      whereConditions.push('u.created_at <= ?');
+      queryParams.push(endDate + ' 23:59:59');
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    const query = `
+      SELECT 
+        u.id, 
+        u.first_name, 
+        u.last_name, 
+        u.email, 
+        u.phone, 
+        u.user_type, 
+        u.is_active, 
+        u.city, 
+        u.state, 
+        u.country, 
+        u.created_at
+      FROM users u
+      ${whereClause}
+      ORDER BY u.created_at DESC
+      LIMIT 1000
+    `;
+
+    const [users] = await pool.execute(query, queryParams);
+
+    // Get lists of unique cities and countries for the dropdown filters
+    const [cities] = await pool.execute(`
+      SELECT DISTINCT city 
+      FROM users 
+      WHERE city IS NOT NULL AND TRIM(city) != '' 
+      ORDER BY city ASC
+    `);
+
+    const [countries] = await pool.execute(`
+      SELECT DISTINCT country 
+      FROM users 
+      WHERE country IS NOT NULL AND TRIM(country) != '' 
+      ORDER BY country ASC
+    `);
+
+    res.json(formatResponse(true, 'User reports data retrieved successfully', {
+      users,
+      cities: cities.map(c => c.city),
+      countries: countries.map(c => c.country)
+    }));
+  } catch (error) {
+    console.error('[AdminReports] User reports list error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to fetch user reports data', null, error.message));
+  }
+});
+
+// Get User Analytics (Demographics, Age groups, Gender, Repeated guests)
+router.get('/reports/users/analytics', async (req, res) => {
+  try {
+    // 1. Total & Type-wise counts
+    const [typeCounts] = await pool.execute(`
+      SELECT user_type, COUNT(*) as count 
+      FROM users 
+      GROUP BY user_type
+    `);
+
+    // 2. Gender-wise distribution
+    const [genderCounts] = await pool.execute(`
+      SELECT COALESCE(gender, 'unspecified') as gender, COUNT(*) as count 
+      FROM users 
+      GROUP BY gender
+    `);
+
+    // 3. Age-wise distribution (using date_of_birth)
+    const [ageCounts] = await pool.execute(`
+      SELECT 
+        CASE 
+          WHEN date_of_birth IS NULL THEN 'Unspecified'
+          WHEN TIMESTAMPDIFF(YEAR, date_of_birth, CURDATE()) < 18 THEN 'Under 18'
+          WHEN TIMESTAMPDIFF(YEAR, date_of_birth, CURDATE()) BETWEEN 18 AND 25 THEN '18-25'
+          WHEN TIMESTAMPDIFF(YEAR, date_of_birth, CURDATE()) BETWEEN 26 AND 35 THEN '26-35'
+          WHEN TIMESTAMPDIFF(YEAR, date_of_birth, CURDATE()) BETWEEN 36 AND 50 THEN '36-50'
+          ELSE '51+'
+        END as age_group,
+        COUNT(*) as count
+      FROM users
+      GROUP BY age_group
+    `);
+
+    // 4. Top Repeated Guests (guests with > 1 confirmed/completed bookings)
+    const [repeatedGuests] = await pool.execute(`
+      SELECT 
+        u.id, u.first_name, u.last_name, u.email, u.phone, u.city, u.country,
+        COUNT(b.id) as bookings_count, 
+        SUM(b.total_amount) as total_spent,
+        GROUP_CONCAT(DISTINCT CONCAT(p.title, ' (', pb.cnt, ' bookings)') SEPARATOR ', ') as repeated_properties
+      FROM users u
+      JOIN bookings b ON u.id = b.guest_id
+      JOIN properties p ON b.property_id = p.id
+      JOIN (
+        SELECT guest_id, property_id, COUNT(*) as cnt
+        FROM bookings
+        WHERE status IN ('confirmed', 'checked_in', 'checked_out')
+        GROUP BY guest_id, property_id
+      ) pb ON u.id = pb.guest_id AND b.property_id = pb.property_id
+      WHERE b.status IN ('confirmed', 'checked_in', 'checked_out')
+      GROUP BY u.id
+      HAVING bookings_count > 1
+      ORDER BY bookings_count DESC
+      LIMIT 500
+    `);
+
+    // 5. Detailed stays history of all repeated guests (Stay dates grouped by property in frontend)
+    const [repeatedGuestsBookings] = await pool.execute(`
+      SELECT 
+        b.id as booking_id,
+        b.guest_id,
+        b.property_id,
+        p.title as property_title,
+        b.check_in_date,
+        b.check_out_date,
+        b.status,
+        b.total_amount
+      FROM bookings b
+      JOIN properties p ON b.property_id = p.id
+      WHERE b.guest_id IN (
+        SELECT guest_id
+        FROM bookings
+        WHERE status IN ('confirmed', 'checked_in', 'checked_out')
+        GROUP BY guest_id
+        HAVING COUNT(*) > 1
+      )
+      AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+      ORDER BY b.guest_id, p.title, b.check_in_date DESC
+    `);
+
+    // 6. Complete list of users for detailed listing of genders/ages
+    const [users] = await pool.execute(`
+      SELECT 
+        id, first_name, last_name, email, phone, user_type, gender, date_of_birth, city, country, created_at
+      FROM users
+      ORDER BY created_at DESC
+    `);
+
+    res.json(formatResponse(true, 'User analytics data retrieved successfully', {
+      typeCounts,
+      genderCounts,
+      ageCounts,
+      repeatedGuests,
+      repeatedGuestsBookings,
+      users
+    }));
+  } catch (error) {
+    console.error('[AdminReports] User analytics error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to fetch user analytics', null, error.message));
+  }
+});
+
+// Get Property Analytics (Top booked, top earning, top reviewed)
+router.get('/reports/properties/analytics', async (req, res) => {
+  try {
+    // 1. Top properties by booking count
+    const [topBooked] = await pool.execute(`
+      SELECT p.id, p.title, p.city, p.property_type, COUNT(b.id) as bookings_count
+      FROM properties p
+      LEFT JOIN bookings b ON p.id = b.property_id AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+      GROUP BY p.id
+      ORDER BY bookings_count DESC
+      LIMIT 500
+    `);
+
+    // 2. Top earning properties by total revenue
+    const [topEarning] = await pool.execute(`
+      SELECT p.id, p.title, p.city, p.property_type, COALESCE(SUM(b.total_amount), 0) as total_earnings
+      FROM properties p
+      LEFT JOIN bookings b ON p.id = b.property_id AND b.payment_status = 'paid'
+      GROUP BY p.id
+      ORDER BY total_earnings DESC
+      LIMIT 500
+    `);
+
+    // 3. Top reviewed properties by average rating
+    const [topReviewed] = await pool.execute(`
+      SELECT p.id, p.title, p.city, p.property_type, AVG(r.rating) as avg_rating, COUNT(r.id) as reviews_count
+      FROM properties p
+      LEFT JOIN reviews r ON p.id = r.property_id AND r.status = 'approved'
+      GROUP BY p.id
+      HAVING reviews_count > 0
+      ORDER BY avg_rating DESC, reviews_count DESC
+      LIMIT 500
+    `);
+
+    res.json(formatResponse(true, 'Property analytics data retrieved successfully', {
+      topBooked,
+      topEarning,
+      topReviewed
+    }));
+  } catch (error) {
+    console.error('[AdminReports] Property analytics error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to fetch property analytics', null, error.message));
+  }
+});
+
 // Get all users
 router.get('/users', validatePagination, async (req, res) => {
   try {
@@ -150,8 +420,8 @@ router.get('/users', validatePagination, async (req, res) => {
     }
 
     if (search) {
-      whereConditions.push('(u.first_name LIKE ? OR u.last_name LIKE ? OR u.email LIKE ?)');
-      queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
+      whereConditions.push('(u.first_name LIKE ? OR u.last_name LIKE ? OR u.email LIKE ? OR u.phone LIKE ?)');
+      queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
 
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
@@ -264,7 +534,7 @@ router.get('/properties/all', async (req, res) => {
 // Get all properties
 router.get('/properties', validatePagination, async (req, res) => {
   try {
-    const { page = 1, limit = 10, status, search, featured } = req.query;
+    const { page = 1, limit = 10, status, search, featured, monthly_status } = req.query;
     const offset = (page - 1) * limit;
 
     let whereConditions = [];
@@ -284,6 +554,12 @@ router.get('/properties', validatePagination, async (req, res) => {
       whereConditions.push('p.is_featured = 1');
     } else if (featured === 'false') {
       whereConditions.push('p.is_featured = 0');
+    }
+
+    if (monthly_status === 'pending') {
+      whereConditions.push('p.monthly_rent_enabled = 1 AND p.monthly_approved = 0');
+    } else if (monthly_status === 'approved') {
+      whereConditions.push('p.monthly_rent_enabled = 1 AND p.monthly_approved = 1');
     }
 
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
@@ -326,10 +602,23 @@ router.get('/properties', validatePagination, async (req, res) => {
 
     const pagination = generatePagination(parseInt(page), parseInt(limit), total);
 
+    // Get global property statistics for dashboard count cards
+    const [[statsResult]] = await pool.execute(`
+      SELECT 
+        COUNT(*) as \`all\`,
+        COALESCE(SUM(CASE WHEN status = 'pending_approval' THEN 1 ELSE 0 END), 0) as pending_approval,
+        COALESCE(SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END), 0) as active,
+        COALESCE(SUM(CASE WHEN status = 'suspended' THEN 1 ELSE 0 END), 0) as suspended,
+        COALESCE(SUM(CASE WHEN monthly_rent_enabled = 1 AND monthly_approved = 0 THEN 1 ELSE 0 END), 0) as monthly_pending,
+        COALESCE(SUM(CASE WHEN is_featured = 1 THEN 1 ELSE 0 END), 0) as featured
+      FROM properties
+    `);
+
     res.json(
       formatResponse(true, 'Properties retrieved successfully', {
         properties,
-        pagination
+        pagination,
+        stats: statsResult
       })
     );
 
@@ -344,7 +633,7 @@ router.get('/properties', validatePagination, async (req, res) => {
 // Get all bookings
 router.get('/bookings', validatePagination, async (req, res) => {
   try {
-    const { page = 1, limit = 10, status, search } = req.query;
+    const { page = 1, limit = 10, status, search, startDate, endDate, property_id } = req.query;
     const offset = (page - 1) * limit;
 
     let whereConditions = [];
@@ -355,9 +644,24 @@ router.get('/bookings', validatePagination, async (req, res) => {
       queryParams.push(status);
     }
 
+    if (property_id) {
+      whereConditions.push('b.property_id = ?');
+      queryParams.push(property_id);
+    }
+
     if (search) {
       whereConditions.push('(b.booking_reference LIKE ? OR u.first_name LIKE ? OR p.title LIKE ?)');
       queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    if (startDate) {
+      whereConditions.push('b.check_in_date >= ?');
+      queryParams.push(startDate);
+    }
+
+    if (endDate) {
+      whereConditions.push('b.check_in_date <= ?');
+      queryParams.push(endDate);
     }
 
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
@@ -678,6 +982,19 @@ router.patch('/users/:id/block', validateId, async (req, res) => {
   }
 });
 
+// Get list of all properties (id, title) for dropdowns
+router.get('/properties/list', async (req, res) => {
+  try {
+    const [properties] = await pool.execute(
+      'SELECT id, title, city FROM properties ORDER BY title ASC'
+    );
+    res.json(formatResponse(true, 'Properties list retrieved successfully', { properties }));
+  } catch (error) {
+    console.error('Get properties list error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to retrieve properties list', null, error.message));
+  }
+});
+
 // Update property details
 router.put('/properties/:id', validateId, async (req, res) => {
   try {
@@ -814,6 +1131,64 @@ router.patch('/properties/:id/status', validateId, async (req, res) => {
     console.error('Update property status error:', error);
     res.status(500).json(
       formatResponse(false, 'Failed to update property status', null, error.message)
+    );
+  }
+});
+
+// Approve monthly stay option
+router.put('/properties/:id/approve-monthly', validateId, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [result] = await pool.execute(
+      'UPDATE properties SET monthly_approved = 1, updated_at = NOW() WHERE id = ?',
+      [id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json(
+        formatResponse(false, 'Property not found')
+      );
+    }
+
+    clearPropertiesCache();
+
+    res.json(
+      formatResponse(true, 'Monthly rent stay approved successfully')
+    );
+  } catch (error) {
+    console.error('Approve monthly stay error:', error);
+    res.status(500).json(
+      formatResponse(false, 'Failed to approve monthly stay', null, error.message)
+    );
+  }
+});
+
+// Revoke monthly stay option
+router.put('/properties/:id/revoke-monthly', validateId, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [result] = await pool.execute(
+      'UPDATE properties SET monthly_approved = 0, updated_at = NOW() WHERE id = ?',
+      [id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json(
+        formatResponse(false, 'Property not found')
+      );
+    }
+
+    clearPropertiesCache();
+
+    res.json(
+      formatResponse(true, 'Monthly rent stay revoked successfully')
+    );
+  } catch (error) {
+    console.error('Revoke monthly stay error:', error);
+    res.status(500).json(
+      formatResponse(false, 'Failed to revoke monthly stay', null, error.message)
     );
   }
 });
@@ -1568,19 +1943,8 @@ router.get('/property-types', async (req, res) => {
       await pool.execute(`ALTER TABLE property_types ADD COLUMN IF NOT EXISTS icon_url VARCHAR(500) NULL`);
     } catch (e) { /* ignore */ }
 
-    // Auto-seed: ensure Flight exists in DB so admin can control it
-    const [flightExists] = await pool.execute(
-      "SELECT id FROM property_types WHERE LOWER(name) = 'flight'"
-    );
-    if (flightExists.length === 0) {
-      try {
-        await pool.execute(
-          'INSERT INTO property_types (name, icon_url, sort_order, is_active, created_at) VALUES (?, ?, 99, 1, NOW())',
-          ['Flight', '/images/flight.png']
-        );
-      } catch (e) { /* ignore */ }
-    }
-
+    // Auto-seed is only done in the public list endpoint when the table is completely empty.
+    // Do NOT re-seed here — admin may have renamed or deleted types intentionally.
     const [propertyTypes] = await pool.execute(`
       SELECT 
         pt.id, 
@@ -2012,8 +2376,19 @@ router.get('/settings/public', async (req, res) => {
 // Get admin analytics
 router.get('/analytics', async (req, res) => {
   try {
-    const { period = '30' } = req.query;
-    const days = parseInt(period);
+    const { period = '30', startDate, endDate } = req.query;
+    const days = parseInt(period) || 30;
+
+    let dateWhere = '';
+    const topPropsParams = [];
+
+    if (startDate && endDate) {
+      dateWhere = 'AND DATE(b.created_at) BETWEEN ? AND ?';
+      topPropsParams.push(startDate, endDate);
+    } else {
+      dateWhere = 'AND b.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)';
+      topPropsParams.push(days);
+    }
 
     // Get basic statistics
     const [userStats] = await pool.execute(`
@@ -2062,10 +2437,11 @@ router.get('/analytics', async (req, res) => {
         COALESCE(SUM(b.total_amount), 0) as total_revenue
       FROM properties p
       LEFT JOIN bookings b ON p.id = b.property_id AND b.status != 'cancelled'
+        ${dateWhere}
       GROUP BY p.id, p.title, p.city
       ORDER BY total_revenue DESC
       LIMIT 5
-    `);
+    `, topPropsParams);
 
     // Get Recent Activity
     const [recentActivity] = await pool.execute(`
@@ -2221,8 +2597,8 @@ router.get('/accounting/ledger', async (req, res) => {
 
     // Entity filter
     if (view === 'owner' && entity_id) {
-      whereConditions.push('po.user_id = ?');
-      queryParams.push(entity_id);
+      whereConditions.push('(po.user_id = ? OR po.id = ?)');
+      queryParams.push(entity_id, entity_id);
     } else if (view === 'guest' && entity_id) {
       whereConditions.push('b.guest_id = ?');
       queryParams.push(entity_id);
@@ -2268,7 +2644,7 @@ router.get('/accounting/ledger', async (req, res) => {
     const totalDR = transactions.reduce((sum, txn) => sum + parseFloat(txn.dr_amount || 0), 0);
     const totalCR = transactions.reduce((sum, txn) => sum + parseFloat(txn.cr_amount || 0), 0);
     const totalGuestPayments = transactions
-      .filter(txn => txn.transaction_type === 'guest_payment')
+      .filter(txn => ['guest_payment', 'payment', 'security_deposit_claim'].includes(txn.transaction_type))
       .reduce((sum, txn) => sum + parseFloat(txn.cr_amount || 0), 0);
     const pendingGuestPayments = totalDR - totalGuestPayments;
     const outstanding = totalDR - totalCR;
@@ -2289,6 +2665,16 @@ router.get('/accounting/ledger', async (req, res) => {
       commissionQueryParams.push(end_date + ' 23:59:59');
     }
 
+    let commissionJoin = '';
+    if (view === 'owner' && entity_id) {
+      commissionJoin = 'JOIN properties pr ON b.property_id = pr.id JOIN property_owners po ON pr.owner_id = po.id';
+      commissionWhereClause.push('(po.user_id = ? OR po.id = ?)');
+      commissionQueryParams.push(entity_id, entity_id);
+    } else if (view === 'guest' && entity_id) {
+      commissionWhereClause.push('b.guest_id = ?');
+      commissionQueryParams.push(entity_id);
+    }
+
     const [commissionSummary] = await pool.execute(`
       SELECT 
         COALESCE(SUM(ae.commission_amount), 0) as total_commission_earned,
@@ -2296,30 +2682,41 @@ router.get('/accounting/ledger', async (req, res) => {
         COALESCE(SUM(CASE WHEN ae.payment_status = 'pending' THEN ae.net_commission ELSE 0 END), 0) as commission_pending
       FROM admin_earnings ae
       JOIN bookings b ON ae.booking_id = b.id
+      ${commissionJoin}
       WHERE ${commissionWhereClause.join(' AND ')}
         AND b.status != 'cancelled' AND b.payment_status = 'paid'
     `, commissionQueryParams);
 
-    // Get owner earnings summary
-    const ownerEarningsQueryParams = [];
-    const ownerEarningsWhereClause = ['b.status IN (?, ?, ?)'];
-    ownerEarningsQueryParams.push('confirmed', 'checked_in', 'checked_out');
+    // Get owner earnings summary from admin_earnings (consistent with earnings dashboard)
+    const ownerEarningsQueryParams = ['active'];
+    const ownerEarningsWhereClause = ['ae.status = ?'];
 
     if (start_date) {
-      ownerEarningsWhereClause.push('b.created_at >= ?');
+      ownerEarningsWhereClause.push('ae.created_at >= ?');
       ownerEarningsQueryParams.push(start_date);
     }
     if (end_date) {
-      ownerEarningsWhereClause.push('b.created_at <= ?');
+      ownerEarningsWhereClause.push('ae.created_at <= ?');
       ownerEarningsQueryParams.push(end_date + ' 23:59:59');
+    }
+
+    let ownerEarningsJoin = '';
+    if (view === 'owner' && entity_id) {
+      ownerEarningsJoin = 'JOIN properties pr ON b.property_id = pr.id JOIN property_owners po ON pr.owner_id = po.id';
+      ownerEarningsWhereClause.push('(po.user_id = ? OR po.id = ?)');
+      ownerEarningsQueryParams.push(entity_id, entity_id);
+    } else if (view === 'guest' && entity_id) {
+      ownerEarningsWhereClause.push('b.guest_id = ?');
+      ownerEarningsQueryParams.push(entity_id);
     }
 
     const [ownerEarningsSummary] = await pool.execute(`
       SELECT 
-        COALESCE(SUM(b.property_owner_earnings), 0) as total_owner_earnings,
-        COUNT(DISTINCT b.id) as total_bookings
-      FROM bookings b
-      JOIN properties pr ON b.property_id = pr.id
+        COALESCE(SUM(ae.booking_total - ae.commission_amount), 0) as total_owner_earnings,
+        COUNT(DISTINCT ae.booking_id) as total_bookings
+      FROM admin_earnings ae
+      JOIN bookings b ON ae.booking_id = b.id
+      ${ownerEarningsJoin}
       WHERE ${ownerEarningsWhereClause.join(' AND ')}
         AND b.status != 'cancelled' AND b.payment_status = 'paid'
     `, ownerEarningsQueryParams);
@@ -2329,34 +2726,43 @@ router.get('/accounting/ledger', async (req, res) => {
     const payoutWhereClause = [];
 
     if (start_date) {
-      payoutWhereClause.push('created_at >= ?');
+      payoutWhereClause.push('op.created_at >= ?');
       payoutQueryParams.push(start_date);
     }
     if (end_date) {
-      payoutWhereClause.push('created_at <= ?');
+      payoutWhereClause.push('op.created_at <= ?');
       payoutQueryParams.push(end_date + ' 23:59:59');
+    }
+
+    let payoutJoin = '';
+    if (view === 'owner' && entity_id) {
+      payoutJoin = 'JOIN property_owners po ON op.property_owner_id = po.id';
+      payoutWhereClause.push('(po.user_id = ? OR po.id = ?)');
+      payoutQueryParams.push(entity_id, entity_id);
+    } else if (view === 'guest' && entity_id) {
+      payoutWhereClause.push('1=0');
     }
 
     const payoutWhereClauseStr = payoutWhereClause.length > 0 ? `WHERE ${payoutWhereClause.join(' AND ')}` : '';
 
     const [ownerPayoutsSummary] = await pool.execute(`
       SELECT 
-        COALESCE(SUM(net_payout), 0) as total_payouts,
-        COALESCE(SUM(CASE WHEN payment_status = 'completed' THEN net_payout ELSE 0 END), 0) as completed_payouts,
-        COALESCE(SUM(CASE WHEN payment_status IN ('pending', 'processing') THEN net_payout ELSE 0 END), 0) as pending_payouts
-      FROM owner_payouts
+        COALESCE(SUM(op.net_payout), 0) as total_payouts,
+        COALESCE(SUM(CASE WHEN op.payment_status = 'completed' THEN op.net_payout ELSE 0 END), 0) as completed_payouts,
+        COALESCE(SUM(CASE WHEN op.payment_status IN ('pending', 'processing') THEN op.net_payout ELSE 0 END), 0) as pending_payouts
+      FROM owner_payouts op
+      ${payoutJoin}
       ${payoutWhereClauseStr}
     `, payoutQueryParams);
 
-    // Get owner outstanding balances
-    const [ownerOutstandingSummary] = await pool.execute(`
-      SELECT 
-        COALESCE(SUM(current_balance), 0) as total_outstanding,
-        COALESCE(SUM(commission_pending), 0) as total_commission_pending,
-        COUNT(*) as total_owners
-      FROM owner_balances
-      WHERE current_balance > 0
-    `);
+    // Calculate owner outstanding = total owner share - what's already paid/in-progress
+    const totalOwnerEarnings = parseFloat(ownerEarningsSummary[0]?.total_owner_earnings || 0);
+    const totalPaidToOwners = parseFloat(ownerPayoutsSummary[0]?.completed_payouts || 0);
+    const totalPendingPayouts = parseFloat(ownerPayoutsSummary[0]?.pending_payouts || 0);
+    const computedOwnerOutstanding = Math.max(totalOwnerEarnings - totalPaidToOwners - totalPendingPayouts, 0);
+
+    // Dummy ownerOutstandingSummary for compatibility
+    const ownerOutstandingSummary = [{ total_outstanding: computedOwnerOutstanding, total_commission_pending: 0, total_owners: 0 }];
 
     res.json(
       formatResponse(true, 'Ledger retrieved successfully', {
@@ -2653,6 +3059,69 @@ router.patch('/refunds/:id/approve', validateId, async (req, res) => {
       }
     }
 
+    // Trigger actual refund via bKash gateway
+    if (refund.payment_method === 'bkash') {
+      try {
+        const bookingId = refund.booking_id;
+
+        // 1. Get bKash paymentID from payment_initiated row
+        const [initiatedRows] = await pool.execute(`
+          SELECT gateway_transaction_id FROM payments
+          WHERE booking_id = ? AND transaction_type = 'payment_initiated' AND payment_method = 'bkash'
+          ORDER BY id DESC LIMIT 1
+        `, [bookingId]);
+
+        // 2. Get bKash trxID from guest_payment row (stored in notes or gateway_transaction_id)
+        const [guestPayRows] = await pool.execute(`
+          SELECT gateway_transaction_id, notes FROM payments
+          WHERE booking_id = ? AND transaction_type = 'guest_payment' AND payment_method = 'bkash'
+          ORDER BY id DESC LIMIT 1
+        `, [bookingId]);
+
+        const bkashPaymentID = initiatedRows[0]?.gateway_transaction_id || null;
+
+        // trxID may be in gateway_transaction_id (new payments) or extracted from notes (old payments)
+        let bkashTrxID = guestPayRows[0]?.gateway_transaction_id || null;
+        if (!bkashTrxID && guestPayRows[0]?.notes) {
+          const match = guestPayRows[0].notes.match(/TXN:([A-Z0-9]+)/i);
+          if (match) bkashTrxID = match[1];
+        }
+
+        const refundAmount = parseFloat(refund.refund_amount);
+
+        console.log(`[ADMIN-REFUND] bKash — paymentID: ${bkashPaymentID}, trxID: ${bkashTrxID}, amount: ${refundAmount}`);
+
+        if (!bkashPaymentID || !bkashTrxID) {
+          console.warn('[ADMIN-REFUND] Missing bKash paymentID or trxID — marking as processing for manual follow-up');
+          newStatus = 'processing';
+          gatewayResponseStr = JSON.stringify({ error: `Missing bKash IDs — paymentID: ${bkashPaymentID}, trxID: ${bkashTrxID} — manual refund required` });
+        } else {
+          const bkashRefundResult = await bkashGateway.refundPayment(
+            bkashPaymentID,
+            refundAmount,
+            bkashTrxID,
+            refundRemarks
+          );
+
+          gatewayResponseStr = JSON.stringify(bkashRefundResult);
+          console.log('[ADMIN-REFUND] bKash refund result:', bkashRefundResult);
+
+          if (bkashRefundResult.success) {
+            newStatus = 'completed';
+          } else {
+            return res.status(400).json(formatResponse(
+              false,
+              `bKash Refund Failed: ${bkashRefundResult.error || 'Unknown error'}`,
+              { gatewayResponse: bkashRefundResult }
+            ));
+          }
+        }
+      } catch (bkashErr) {
+        console.error('[ADMIN-REFUND] bKash refund exception:', bkashErr);
+        return res.status(500).json(formatResponse(false, 'bKash refund connection error', null, bkashErr.message));
+      }
+    }
+
     // Update refund status in DB (ignoring 'notes' since it does not exist)
     await pool.execute(
       'UPDATE refunds SET status = ?, approved_at = NOW(), refund_reason = ?, gateway_response = ? WHERE id = ?',
@@ -2665,6 +3134,11 @@ router.patch('/refunds/:id/approve', validateId, async (req, res) => {
         await syncRefundToHMSAccounts(id);
       } catch (hmsErr) {
         console.error('[ADMIN-REFUND] HMS Sync failed on approval:', hmsErr);
+      }
+      try {
+        await sendRefundSms(refund.booking_id, refund.refund_amount, refundRemarks);
+      } catch (smsErr) {
+        console.error('[ADMIN-REFUND] Failed to send refund SMS on approval:', smsErr.message);
       }
     }
 
@@ -2700,6 +3174,12 @@ router.patch('/refunds/:id/complete', validateId, async (req, res) => {
       await syncRefundToHMSAccounts(id);
     } catch (hmsErr) {
       console.error('[ADMIN-REFUND] HMS Sync failed on manual completion:', hmsErr);
+    }
+
+    try {
+      await sendRefundSms(refund.booking_id, refund.refund_amount, notes || refund.notes || refund.refund_reason);
+    } catch (smsErr) {
+      console.error('[ADMIN-REFUND] Failed to send refund SMS on manual completion:', smsErr.message);
     }
 
     res.json(formatResponse(true, 'Refund marked as completed successfully'));
@@ -2771,7 +3251,7 @@ router.post('/bookings/:id/security-deposit-deduction', validateId, async (req, 
       INSERT INTO refunds (
         booking_id, payment_id, refund_reference, original_amount, refund_amount, net_refund,
         refund_reason, refund_type, cancellation_policy_applied, status, requested_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'partial', ?, 'pending', NOW())
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())
     `, [
         id, 
         paymentId, 
@@ -2779,8 +3259,9 @@ router.post('/bookings/:id/security-deposit-deduction', validateId, async (req, 
         securityDeposit, 
         refundAmount, 
         refundAmount, 
-        'Security Deposit Return', 
-        `Deduction: ৳${deduction}. Reason: ${reason}. ${notes || ''}`
+        deduction === 0 ? 'Security Deposit Release' : 'Security Deposit Return', 
+        deduction === 0 ? 'full' : 'partial',
+        deduction === 0 ? `Released. ${notes || ''}` : `Deduction: ৳${deduction}. Reason: ${reason || 'N/A'}. ${notes || ''}`
     ]);
 
     // Update booking to indicate security deposit processed and increase owner earnings
@@ -2795,44 +3276,46 @@ router.post('/bookings/:id/security-deposit-deduction', validateId, async (req, 
       [deduction, deduction, id]
     );
 
-    // Get owner_id for balance update
-    const [bookingDetails] = await pool.execute(`
-      SELECT p.owner_id 
-      FROM bookings b 
-      JOIN properties p ON b.property_id = p.id 
-      WHERE b.id = ?
-    `, [id]);
+    if (deduction > 0) {
+      // Get owner_id for balance update
+      const [bookingDetails] = await pool.execute(`
+        SELECT p.owner_id 
+        FROM bookings b 
+        JOIN properties p ON b.property_id = p.id 
+        WHERE b.id = ?
+      `, [id]);
 
-    if (bookingDetails.length > 0) {
-      const ownerId = bookingDetails[0].owner_id;
-      
-      // Update owner balance summary
-      await pool.execute(`
-        UPDATE owner_balances 
-        SET total_earnings = total_earnings + ?,
-            current_balance = current_balance + ?,
-            last_updated = NOW()
-        WHERE property_owner_id = ?
-      `, [deduction, deduction, ownerId]);
+      if (bookingDetails.length > 0) {
+        const ownerId = bookingDetails[0].owner_id;
+        
+        // Update owner balance summary
+        await pool.execute(`
+          UPDATE owner_balances 
+          SET total_earnings = total_earnings + ?,
+              current_balance = current_balance + ?,
+              last_updated = NOW()
+          WHERE property_owner_id = ?
+        `, [deduction, deduction, ownerId]);
 
-      // Record a payment transaction for transparency
-      await pool.execute(`
-        INSERT INTO payments (
-          booking_id, payment_reference, payment_method, payment_type,
-          amount, dr_amount, cr_amount, transaction_type, notes,
-          status, payment_date, created_at
-        ) VALUES (?, ?, 'adjustment', 'credit', ?, ?, ?, 'security_deposit_claim', ?, 'completed', NOW(), NOW())
-      `, [
-        id,
-        `CLAIM-${id}-${Date.now()}`,
-        deduction,
-        deduction, // dr_amount: add to guest's debt for the damage
-        deduction, // cr_amount: add to host's received amount from deposit
-        `Security deposit deduction credit to host: ${reason}`
-      ]);
+        // Record a payment transaction for transparency
+        await pool.execute(`
+          INSERT INTO payments (
+            booking_id, payment_reference, payment_method, payment_type,
+            amount, dr_amount, cr_amount, transaction_type, notes,
+            status, payment_date, created_at
+          ) VALUES (?, ?, 'adjustment', 'credit', ?, ?, ?, 'security_deposit_claim', ?, 'completed', NOW(), NOW())
+        `, [
+          id,
+          `CLAIM-${id}-${Date.now()}`,
+          deduction,
+          deduction, // dr_amount: add to guest's debt for the damage
+          deduction, // cr_amount: add to host's received amount from deposit
+          `Security deposit deduction credit to host: ${reason || 'N/A'}`
+        ]);
+      }
     }
 
-    res.json(formatResponse(true, 'Security deposit deduction processed and refund initiated', {
+    res.json(formatResponse(true, 'Security deposit processed successfully', {
       refundableAmount: refundAmount,
       deductionAmount: deduction
     }));
@@ -2840,6 +3323,101 @@ router.post('/bookings/:id/security-deposit-deduction', validateId, async (req, 
   } catch (error) {
     console.error('Security deposit deduction error:', error);
     res.status(500).json(formatResponse(false, 'Failed to process security deposit deduction', null, error.message));
+  }
+});
+
+// Get security deposits list
+router.get('/security-deposits', async (req, res) => {
+  try {
+    const { page = 1, limit = 10, status, search } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    let whereClause = 'WHERE b.security_deposit > 0 AND b.status = "checked_out"';
+    const queryParams = [];
+
+    if (status) {
+      whereClause += ' AND b.security_deposit_status = ?';
+      queryParams.push(status);
+    }
+
+    if (search) {
+      whereClause += ' AND (b.booking_reference LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ? OR p.title LIKE ?)';
+      const searchWildcard = `%${search}%`;
+      queryParams.push(searchWildcard, searchWildcard, searchWildcard, searchWildcard);
+    }
+
+    // Get stats
+    const [statsResult] = await pool.execute(`
+      SELECT 
+        COALESCE(SUM(CASE WHEN b.security_deposit_status IN ('pending', 'claim_requested') THEN b.security_deposit ELSE 0 END), 0) as total_held,
+        COALESCE(SUM(CASE WHEN b.security_deposit_status = 'claim_requested' THEN 1 ELSE 0 END), 0) as pending_claims,
+        COALESCE(SUM(CASE WHEN b.security_deposit_status = 'processed' THEN b.security_deposit_deduction_amount ELSE 0 END), 0) as total_claimed,
+        COALESCE(SUM(CASE WHEN b.security_deposit_status = 'processed' THEN b.security_deposit - b.security_deposit_deduction_amount ELSE 0 END), 0) as total_released
+      FROM bookings b
+      JOIN properties p ON b.property_id = p.id
+      JOIN users u ON b.guest_id = u.id
+    `);
+    const stats = statsResult[0];
+
+    // Get total count
+    const [countResult] = await pool.execute(`
+      SELECT COUNT(DISTINCT b.id) as total
+      FROM bookings b
+      JOIN properties p ON b.property_id = p.id
+      JOIN users u ON b.guest_id = u.id
+      ${whereClause}
+    `, queryParams);
+
+    const total = countResult[0].total;
+
+    // Get security deposits
+    const [deposits] = await pool.execute(`
+      SELECT 
+        b.id,
+        b.booking_reference,
+        b.status as booking_status,
+        b.payment_status,
+        DATE_FORMAT(b.check_in_date, '%Y-%m-%d') as check_in_date,
+        DATE_FORMAT(b.check_out_date, '%Y-%m-%d') as check_out_date,
+        b.total_amount,
+        b.security_deposit,
+        b.security_deposit_status,
+        b.security_deposit_claim_amount,
+        b.security_deposit_deduction_amount,
+        b.security_deposit_claim_reason,
+        b.security_deposit_claim_at,
+        p.id as property_id,
+        p.title as property_title,
+        u.first_name as guest_first_name,
+        u.last_name as guest_last_name,
+        u.email as guest_email,
+        u.phone as guest_phone,
+        u2.first_name as owner_first_name,
+        u2.last_name as owner_last_name,
+        u2.email as owner_email
+      FROM bookings b
+      JOIN properties p ON b.property_id = p.id
+      JOIN users u ON b.guest_id = u.id
+      JOIN property_owners po ON p.owner_id = po.id
+      JOIN users u2 ON po.user_id = u2.id
+      ${whereClause}
+      ORDER BY 
+        CASE WHEN b.security_deposit_status = 'claim_requested' THEN 1 ELSE 2 END,
+        b.security_deposit_claim_at DESC, 
+        b.check_out_date DESC
+      LIMIT ? OFFSET ?
+    `, [...queryParams, parseInt(limit), offset]);
+
+    res.json(
+      formatResponse(true, 'Security deposits retrieved successfully', {
+        deposits,
+        stats,
+        pagination: generatePagination(parseInt(page), parseInt(limit), total)
+      })
+    );
+  } catch (error) {
+    console.error('Get security deposits error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to retrieve security deposits', null, error.message));
   }
 });
 

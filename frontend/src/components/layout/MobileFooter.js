@@ -30,18 +30,18 @@ const MobileFooter = () => {
           active: location.pathname.startsWith('/properties')
         },
         {
+          id: 'become-host',
+          label: 'Become a Host',
+          icon: FiDollarSign,
+          path: '/become-host',
+          active: location.pathname.startsWith('/become-host')
+        },
+        {
           id: 'login',
           label: 'Login',
           icon: FiLogIn,
           path: '/login',
           active: location.pathname.startsWith('/login')
-        },
-        {
-          id: 'register',
-          label: 'Sign Up',
-          icon: FiUserPlus,
-          path: '/register',
-          active: location.pathname.startsWith('/register')
         }
       ];
     }

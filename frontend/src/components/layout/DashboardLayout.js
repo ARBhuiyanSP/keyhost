@@ -5,11 +5,18 @@ import {
     FiGrid, FiCalendar, FiHome, FiUsers, FiDollarSign,
     FiSettings, FiLogOut, FiMenu, FiX, FiSearch,
     FiChevronDown, FiChevronRight, FiUser,
-    FiTruck, FiActivity, FiSend, FiMessageSquare, FiPieChart, FiLifeBuoy, FiBook, FiHeart, FiCoffee, FiCheckCircle
+    FiTruck, FiActivity, FiSend, FiMessageSquare, FiPieChart, FiLifeBuoy, FiBook, FiHeart, FiCoffee, FiCheckCircle,
+    FiShield, FiTool
 } from 'react-icons/fi';
 import useAuthStore from '../../store/authStore';
 import useSettingsStore from '../../store/settingsStore';
 import api from '../../utils/api';
+
+const TakaIcon = ({ className = "w-4 h-4" }) => (
+  <span className={`${className} font-bold font-sans flex items-center justify-center select-none leading-none`} style={{ fontSize: '1.2em' }}>
+    ৳
+  </span>
+);
 
 const DashboardLayout = () => {
     const { user, logout, isAdmin, isPropertyOwner } = useAuthStore();
@@ -88,6 +95,9 @@ const DashboardLayout = () => {
         }
         if (name === 'refunds') {
             return notificationCounts.pendingRefunds || 0;
+        }
+        if (name === 'security deposits') {
+            return notificationCounts.pendingSecurityDeposits || 0;
         }
         if (name === 'properties' && isAdmin()) {
             return notificationCounts.pendingBookings || 0;
@@ -207,24 +217,27 @@ const DashboardLayout = () => {
                     icon: FiSend,
                     submenu: [
                         { name: 'All Flights', path: '/admin/flights' },
-                        { name: 'Bookings', path: '/admin/flight-bookings' },
+                        { name: 'Flight Bookings', path: '/admin/flight-bookings' },
                     ]
                 },
                 { name: 'Users', path: '/admin/users', icon: FiUsers },
                 { name: 'Contact Messages', path: '/admin/contact-messages', icon: FiMessageSquare },
                 { name: 'Reviews', path: '/admin/reviews', icon: FiActivity },
                 { name: 'Rewards Points', path: '/admin/rewards-points', icon: FiActivity },
-                { name: 'Earnings', path: '/admin/earnings', icon: FiDollarSign },
-                { name: 'Accounting', path: '/admin/accounting', icon: FiDollarSign },
-                { name: 'Refunds', path: '/admin/refunds', icon: FiDollarSign },
+                { name: 'Earnings', path: '/admin/earnings', icon: TakaIcon },
+                { name: 'Accounting', path: '/admin/accounting', icon: TakaIcon },
+                { name: 'Refunds', path: '/admin/refunds', icon: TakaIcon },
+                { name: 'Security Deposits', path: '/admin/security-deposits', icon: FiShield },
                 { name: 'Analytics', path: '/admin/analytics', icon: FiActivity },
                 {
                     name: 'Reports', icon: FiPieChart, submenu: [
+                        { name: 'User Analytics', path: '/admin/reports/user-analytics' },
+                        { name: 'Property Analytics', path: '/admin/reports/property-analytics' },
                         { name: 'Booking Reports', path: '/admin/reports/bookings' },
                         { name: 'Financial Reports', path: '/admin/reports/financials' },
-                        { name: 'Property Performance', path: '/admin/reports/performance' },
                         { name: 'Payout Reports', path: '/admin/reports/payouts' },
-                        { name: 'Cancellation Reports', path: '/admin/reports/cancellations' }
+                        { name: 'Cancellation Reports', path: '/admin/reports/cancellations' },
+                        { name: 'User Reports', path: '/admin/reports/users' }
                     ]
                 },
                 { name: 'Support', path: '/support', icon: FiLifeBuoy },
@@ -237,10 +250,10 @@ const DashboardLayout = () => {
                     { name: 'Dashboard', path: '/guest', icon: FiGrid },
                     { name: 'Find Property', path: '/properties', icon: FiSearch },
                     { name: 'My Bookings', path: '/guest/bookings', icon: FiCalendar },
-                    { name: 'My Refunds', path: '/guest/refunds', icon: FiDollarSign },
+                    { name: 'My Refunds', path: '/guest/refunds', icon: TakaIcon },
                     { name: 'Messages', path: '/messages', icon: FiMessageSquare },
                     { name: 'Favorites', path: '/guest/favorites', icon: FiHeart },
-                    { name: 'Rewards', path: '/guest/rewards-points', icon: FiDollarSign },
+                    { name: 'Rewards', path: '/guest/rewards-points', icon: TakaIcon },
                     { name: 'Reports', path: '/guest/reports', icon: FiPieChart },
                     { name: 'Support', path: '/support', icon: FiLifeBuoy },
                     { name: 'Exit Dashboard', path: '/', icon: FiLogOut }
@@ -315,9 +328,11 @@ const DashboardLayout = () => {
                 }
                 if (hasPermission('manage_reservations')) {
                     hmsItems.push({ name: terms.reservations, path: '/property-owner/hms/reservations', icon: FiCalendar });
+                    hmsItems.push({ name: terms.hmsLabel.includes('PMS') ? 'PMS Calendar' : 'HMS Calendar', path: '/property-owner/hms/calendar', icon: FiCalendar });
                 }
                 if (hasPermission('manage_housekeeping')) {
                     hmsItems.push({ name: terms.housekeeping, path: '/property-owner/hms/housekeeping', icon: FiCheckCircle });
+                    hmsItems.push({ name: 'Room Maintenance', path: '/property-owner/hms/maintenance', icon: FiTool });
                 }
                 if (hasPermission('manage_food_beverage')) {
                     hmsItems.push({ name: 'Food & Beverage', path: '/property-owner/hms/food-beverage', icon: FiCoffee });
@@ -348,12 +363,30 @@ const DashboardLayout = () => {
                             { name: 'Voucher Entry', path: '/property-owner/hms/accounts/vouchers' },
                         ]
                     });
+                }                if (hasPermission('manage_reservations') || hasPermission('manage_accounts')) {
+                    const reportSubmenu = [];
+                    if (hasPermission('manage_reservations')) {
+                        reportSubmenu.push({ name: 'Room Revenue Report', path: '/property-owner/hms/reports/room-revenue' });
+                    }
+                    if (hasPermission('manage_accounts')) {
+                        reportSubmenu.push({ name: 'Financial Statements', path: '/property-owner/hms/reports/financials' });
+                    }
+                    reportSubmenu.push({ name: 'User Analytics', path: '/property-owner/hms/reports/user-analytics' });
+                    reportSubmenu.push({ name: 'Property Analytics', path: '/property-owner/hms/reports/property-analytics' });
+
+                    if (reportSubmenu.length > 0) {
+                        hmsItems.push({
+                            name: 'Reports',
+                            icon: FiPieChart,
+                            submenu: reportSubmenu
+                        });
+                    }
                 }
                 if (hasPermission('manage_billing')) {
-                    hmsItems.push({ name: 'HMS Billing', path: '/property-owner/hms/billing', icon: FiDollarSign });
+                    hmsItems.push({ name: 'HMS Billing', path: '/property-owner/hms/billing', icon: TakaIcon });
                     hmsItems.push({ name: 'HMS Subscription', path: '/property-owner/hms/pricing', icon: FiActivity });
                 }
-
+ 
                 if (hmsItems.length > 0) {
                     menu.push({ divider: true, label: terms.hmsLabel });
                     menu.push(...hmsItems);
@@ -362,17 +395,18 @@ const DashboardLayout = () => {
                 menu.push({ divider: true, label: 'HMS Features' });
                 menu.push({ name: 'Unlock HMS', path: '/property-owner/hms/pricing', icon: FiActivity });
             }
-
+ 
             // Business & Analytics
             if (hasPermission('view_analytics')) {
                 menu.push({ divider: true, label: 'Business & Analytics' });
-                menu.push({ name: 'Earnings', path: '/property-owner/earnings', icon: FiDollarSign });
+                menu.push({ name: 'Earnings', path: '/property-owner/earnings', icon: TakaIcon });
                 menu.push({ name: 'Analytics', path: '/property-owner/analytics', icon: FiActivity });
                 menu.push({
                     name: 'Reports', icon: FiPieChart, submenu: [
+                        { name: 'User Analytics', path: '/property-owner/reports/user-analytics' },
+                        { name: 'Property Analytics', path: '/property-owner/reports/property-analytics' },
                         { name: 'Booking Reports', path: '/property-owner/reports/bookings' },
                         { name: 'Financial Reports', path: '/property-owner/reports/financials' },
-                        { name: 'Property Performance', path: '/property-owner/reports/performance' },
                         { name: 'Cancellation Reports', path: '/property-owner/reports/cancellations' }
                     ]
                 });
@@ -392,10 +426,10 @@ const DashboardLayout = () => {
                 { name: 'Dashboard', path: '/guest', icon: FiGrid },
                 { name: 'Find Property', path: '/properties', icon: FiSearch },
                 { name: 'My Bookings', path: '/guest/bookings', icon: FiCalendar },
-                { name: 'My Refunds', path: '/guest/refunds', icon: FiDollarSign },
+                { name: 'My Refunds', path: '/guest/refunds', icon: TakaIcon },
                 { name: 'Messages', path: '/messages', icon: FiMessageSquare },
                 { name: 'Favorites', path: '/guest/favorites', icon: FiHeart },
-                { name: 'Rewards', path: '/guest/rewards-points', icon: FiDollarSign },
+                { name: 'Rewards', path: '/guest/rewards-points', icon: TakaIcon },
                 { name: 'Reports', path: '/guest/reports', icon: FiPieChart },
                 { name: 'Support', path: '/support', icon: FiLifeBuoy },
                 // Added link to go back to Home for guest

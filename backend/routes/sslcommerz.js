@@ -5,6 +5,7 @@ const { formatResponse } = require('../utils/helpers');
 const { syncPaymentToHMSAccounts } = require('../utils/hms-sync');
 const { syncHmsAccessForHost } = require('../utils/hms-helper');
 const { verifyToken } = require('../middleware/auth');
+const { sendBookingPaidSms } = require('../utils/sms');
 const router = express.Router();
 
 // Utility function to get SSL config
@@ -193,7 +194,37 @@ router.post('/ssl-success', async (req, res) => {
                 const amount = orderInfo.amount;
                 const points_to_redeem = orderInfo.points_to_redeem;
 
-                await pool.execute(`UPDATE bookings SET payment_status = 'paid', payment_method = 'sslcommerz', status = 'confirmed', confirmed_at = NOW() WHERE id = ?`, [booking_id]);
+                // HMS checkout payment (tran_id starts with HMSPAY): calculate partial vs full
+                if (tran_id && tran_id.startsWith('HMSPAY')) {
+                    const [dueRows] = await pool.execute(`
+                        SELECT
+                            (b.total_amount + COALESCE((SELECT SUM(amount) FROM hms_bills WHERE booking_id = b.id), 0)) as grand_total,
+                            COALESCE((SELECT SUM(cr_amount) FROM payments WHERE booking_id = b.id AND status = 'completed'), 0) as already_paid
+                        FROM bookings b WHERE b.id = ?`, [booking_id]);
+                    const grandTotal = parseFloat(dueRows[0]?.grand_total || 0);
+                    const alreadyPaid = parseFloat(dueRows[0]?.already_paid || 0);
+                    const totalPaidAfter = alreadyPaid + parseFloat(amount);
+                    const newStatus = totalPaidAfter >= grandTotal ? 'paid' : 'partial';
+                    await pool.execute(
+                        `UPDATE bookings SET payment_status = ?, payment_method = 'sslcommerz', updated_at = NOW() WHERE id = ?`,
+                        [newStatus, booking_id]
+                    );
+                    if (totalPaidAfter >= grandTotal) {
+                        try {
+                            await pool.execute('UPDATE hms_food_orders SET payment_status = "paid", updated_at = NOW() WHERE booking_id = ?', [booking_id]);
+                        } catch (e) {
+                            console.error('Failed to update food orders status:', e.message);
+                        }
+                    }
+                } else {
+                    await pool.execute(`UPDATE bookings SET payment_status = 'paid', payment_method = 'sslcommerz', status = 'confirmed', confirmed_at = NOW() WHERE id = ?`, [booking_id]);
+                }
+
+                try {
+                    await sendBookingPaidSms(booking_id);
+                } catch (smsErr) {
+                    console.error(`Failed to send payment confirmation SMS for booking ${booking_id}:`, smsErr.message);
+                }
                 const crReference = `SSL-${tran_id}`;
                 const [exists] = await pool.execute("SELECT id FROM payments WHERE gateway_transaction_id = ?", [tran_id]);
                 if (exists.length === 0) {
@@ -309,6 +340,20 @@ router.post('/ssl-success', async (req, res) => {
     const frontendUrl = process.env.FRONTEND_URL;
     const [orders2] = await pool.execute(`SELECT booking_id FROM orders WHERE tran_id = ?`, [tran_id]);
     const bookingIdForRedirect = orders2?.[0]?.booking_id;
+
+    // For HMS checkout payments, redirect back to the public payment page with success flag
+    if (tran_id && tran_id.startsWith('HMSPAY') && bookingIdForRedirect) {
+        try {
+            const [tokenRow] = await pool.execute(`SELECT payment_link_token FROM bookings WHERE id = ?`, [bookingIdForRedirect]);
+            const linkToken = tokenRow?.[0]?.payment_link_token;
+            if (linkToken) {
+                return res.redirect(`${frontendUrl}/hms/pay/${linkToken}?payment=success`);
+            }
+        } catch (e) {
+            console.error('[HMS] Failed to fetch payment link token for redirect:', e);
+        }
+    }
+
     const redirectUrl = bookingIdForRedirect
         ? `${frontendUrl}/booking-confirmation/${bookingIdForRedirect}`
         : `${frontendUrl}/guest/bookings`;
@@ -321,6 +366,18 @@ router.post('/ssl-fail', async (req, res) => {
         await pool.execute(`UPDATE orders SET status = 'Failed' WHERE tran_id = ?`, [tran_id]);
     }
     const frontendUrl = process.env.FRONTEND_URL;
+    // For HMS payments, redirect back to the public payment page
+    if (tran_id && tran_id.startsWith('HMSPAY')) {
+        try {
+            const [ord] = await pool.execute(`SELECT booking_id FROM orders WHERE tran_id = ?`, [tran_id]);
+            if (ord[0]?.booking_id) {
+                const [tok] = await pool.execute(`SELECT payment_link_token FROM bookings WHERE id = ?`, [ord[0].booking_id]);
+                if (tok[0]?.payment_link_token) {
+                    return res.redirect(`${frontendUrl}/hms/pay/${tok[0].payment_link_token}?payment=fail`);
+                }
+            }
+        } catch(e) { console.error('[HMS] ssl-fail redirect error:', e); }
+    }
     return res.redirect(`${frontendUrl}/guest/bookings?payment=fail&tran_id=${tran_id}`);
 });
 
@@ -330,6 +387,18 @@ router.post('/ssl-cancel', async (req, res) => {
         await pool.execute(`UPDATE orders SET status = 'Cancelled' WHERE tran_id = ?`, [tran_id]);
     }
     const frontendUrl = process.env.FRONTEND_URL;
+    // For HMS payments, redirect back to the public payment page
+    if (tran_id && tran_id.startsWith('HMSPAY')) {
+        try {
+            const [ord] = await pool.execute(`SELECT booking_id FROM orders WHERE tran_id = ?`, [tran_id]);
+            if (ord[0]?.booking_id) {
+                const [tok] = await pool.execute(`SELECT payment_link_token FROM bookings WHERE id = ?`, [ord[0].booking_id]);
+                if (tok[0]?.payment_link_token) {
+                    return res.redirect(`${frontendUrl}/hms/pay/${tok[0].payment_link_token}?payment=cancel`);
+                }
+            }
+        } catch(e) { console.error('[HMS] ssl-cancel redirect error:', e); }
+    }
     return res.redirect(`${frontendUrl}/guest/bookings?payment=cancel&tran_id=${tran_id}`);
 });
 
@@ -366,6 +435,11 @@ router.post('/ssl-ipn', async (req, res) => {
                 const points_to_redeem = orderInfo.points_to_redeem;
 
                 await pool.execute(`UPDATE bookings SET payment_status = 'paid', payment_method = 'sslcommerz', status = 'confirmed', confirmed_at = NOW() WHERE id = ?`, [booking_id]);
+                try {
+                    await sendBookingPaidSms(booking_id);
+                } catch (smsErr) {
+                    console.error(`Failed to send payment confirmation SMS via SSL IPN for booking ${booking_id}:`, smsErr.message);
+                }
                 const crReference = `SSL-${tran_id}`;
                 const [exists] = await pool.execute("SELECT id FROM payments WHERE gateway_transaction_id = ?", [tran_id]);
                 if (exists.length === 0) {
@@ -493,7 +567,13 @@ router.get('/hms/payment-info/:token', async (req, res) => {
         const { token } = req.params;
         const [rows] = await pool.query(`
             SELECT 
-                b.id, b.total_amount, b.payment_status, b.guest_name, b.guest_email, b.guest_phone,
+                b.id, 
+                (
+                    b.total_amount 
+                    + COALESCE((SELECT SUM(amount) FROM hms_bills WHERE booking_id = b.id), 0)
+                    - COALESCE((SELECT SUM(cr_amount) FROM payments WHERE booking_id = b.id AND status = 'completed'), 0)
+                ) as net_due,
+                b.payment_status, b.guest_name, b.guest_email, b.guest_phone,
                 p.title as property_title, p.address as property_address,
                 r.room_number, r.room_type
             FROM bookings b
@@ -506,11 +586,13 @@ router.get('/hms/payment-info/:token', async (req, res) => {
             return res.status(404).json(formatResponse(false, 'Payment link invalid or expired'));
         }
 
-        if (rows[0].payment_status === 'paid') {
-            return res.json(formatResponse(true, 'Already paid', { ...rows[0], alreadyPaid: true }));
+        const netDue = Math.max(0, parseFloat(rows[0].net_due || 0));
+
+        if (netDue <= 0) {
+            return res.json(formatResponse(true, 'Already paid', { booking: { ...rows[0], total_amount: 0, alreadyPaid: true } }));
         }
 
-        res.json(formatResponse(true, 'Payment info retrieved', { booking: rows[0] }));
+        res.json(formatResponse(true, 'Payment info retrieved', { booking: { ...rows[0], total_amount: netDue } }));
     } catch (error) {
         res.status(500).json(formatResponse(false, 'Error fetching payment info'));
     }
@@ -523,7 +605,7 @@ router.get('/hms/invoice-info/:token', async (req, res) => {
         const [rows] = await pool.query(`
             SELECT 
                 b.*, 
-                p.title as property_title, p.address as property_address, p.city as property_city,
+                p.title as property_title, p.address as property_address, p.city as property_city, p.property_type as property_type,
                 r.room_number, r.room_type,
                 po.business_name as company_name,
                 DATEDIFF(b.check_out_date, b.check_in_date) as nights
@@ -531,15 +613,22 @@ router.get('/hms/invoice-info/:token', async (req, res) => {
             JOIN properties p ON b.property_id = p.id
             JOIN property_owners po ON p.owner_id = po.id
             LEFT JOIN hms_rooms r ON b.hms_room_id = r.id
-            WHERE b.payment_link_token = ?
-        `, [token]);
+            WHERE b.payment_link_token = ? OR b.id = ?
+        `, [token, token]);
 
         if (rows.length === 0) {
             return res.status(404).json(formatResponse(false, 'Invoice not found or link expired'));
         }
 
-        res.json(formatResponse(true, 'Invoice data retrieved', { invoice: rows[0] }));
+        const invoice = rows[0];
+        // Fetch extra bills
+        const [extraBills] = await pool.query('SELECT * FROM hms_bills WHERE booking_id = ? ORDER BY created_at DESC', [invoice.id]);
+        invoice.extra_bills = extraBills;
+        invoice.extra_total = extraBills.reduce((sum, item) => sum + parseFloat(item.amount), 0);
+
+        res.json(formatResponse(true, 'Invoice data retrieved', { invoice }));
     } catch (error) {
+        console.error('[HMS] Public invoice-info error:', error);
         res.status(500).json(formatResponse(false, 'Error fetching invoice data'));
     }
 });
@@ -549,14 +638,29 @@ router.post('/hms/public-request', async (req, res) => {
     try {
         const { token } = req.body;
         const [bookings] = await pool.query(`
-            SELECT b.*, p.title as property_title 
+            SELECT 
+                b.id, 
+                (
+                    b.total_amount 
+                    + COALESCE((SELECT SUM(amount) FROM hms_bills WHERE booking_id = b.id), 0)
+                    - COALESCE((SELECT SUM(cr_amount) FROM payments WHERE booking_id = b.id AND status = 'completed'), 0)
+                ) as net_due,
+                b.guest_name, b.guest_email, b.guest_phone,
+                p.title as property_title,
+                r.room_number
             FROM bookings b
             JOIN properties p ON b.property_id = p.id
+            LEFT JOIN hms_rooms r ON b.hms_room_id = r.id
             WHERE b.payment_link_token = ?
         `, [token]);
 
         if (bookings.length === 0) return res.status(404).json(formatResponse(false, 'Invalid token'));
         const booking = bookings[0];
+        const netDue = Math.max(0, parseFloat(booking.net_due || 0));
+
+        if (netDue <= 0) {
+            return res.status(400).json(formatResponse(false, 'This bill has already been fully paid.'));
+        }
 
         const { store_id, store_password, is_live } = await getSSLConfig();
         const tran_id = `HMSPAY${new Date().getTime()}`;
@@ -564,11 +668,11 @@ router.post('/hms/public-request', async (req, res) => {
 
         await pool.execute(
             `INSERT INTO orders (booking_id, tran_id, amount, status) VALUES (?, ?, ?, ?)`,
-            [booking.id, tran_id, booking.total_amount, 'PENDING']
+            [booking.id, tran_id, netDue, 'PENDING']
         );
 
         const data = {
-            total_amount: booking.total_amount,
+            total_amount: netDue,
             currency: 'BDT',
             tran_id: tran_id,
             success_url: `${baseUrl}/api/sslcommerz/ssl-success`,
@@ -597,6 +701,45 @@ router.post('/hms/public-request', async (req, res) => {
         });
     } catch (error) {
         res.status(500).json(formatResponse(false, error.message));
+    }
+});
+
+// Public GET route to fetch Receipt Info for printing/verification
+router.get('/hms/receipt-info/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const isNumeric = !isNaN(id);
+        const searchCondition = isNumeric ? 'p.id = ?' : 'p.payment_reference = ?';
+
+        const [rows] = await pool.query(`
+            SELECT 
+                p.id as payment_id, p.payment_reference, p.payment_method, p.payment_type, p.transaction_type,
+                p.amount as payment_amount, p.cr_amount, p.dr_amount, p.notes as payment_notes, p.payment_date, p.created_at as payment_created_at,
+                p.received_by, p.account_name,
+                b.id as booking_id, b.booking_reference, b.guest_name, b.guest_email, b.guest_phone, b.check_in_date, b.check_out_date,
+                b.base_price, b.security_deposit, b.cleaning_fee, b.extra_guest_fee, b.service_fee, b.tax_amount, b.discount_amount, b.total_amount, b.booking_type,
+                pr.title as property_title, pr.address as property_address, pr.city as property_city, pr.property_type,
+                r.room_number, r.room_type,
+                po.business_name as company_name,
+                u.phone as host_phone, u.email as host_email,
+                CONCAT(u.first_name, ' ', u.last_name) as host_fullname
+            FROM payments p
+            JOIN bookings b ON p.booking_id = b.id
+            JOIN properties pr ON b.property_id = pr.id
+            JOIN property_owners po ON pr.owner_id = po.id
+            JOIN users u ON po.user_id = u.id
+            LEFT JOIN hms_rooms r ON b.hms_room_id = r.id
+            WHERE ${searchCondition} AND p.status = 'completed'
+        `, [id]);
+
+        if (rows.length === 0) {
+            return res.status(404).json(formatResponse(false, 'Receipt not found.'));
+        }
+
+        res.json(formatResponse(true, 'Receipt data retrieved', { receipt: rows[0] }));
+    } catch (error) {
+        console.error('[HMS] Public receipt-info error:', error);
+        res.status(500).json(formatResponse(false, 'Error fetching receipt data'));
     }
 });
 

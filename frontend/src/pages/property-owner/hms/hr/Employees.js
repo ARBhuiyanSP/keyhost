@@ -7,6 +7,7 @@ import {
 import api from '../../../../utils/api';
 import useToast from '../../../../hooks/useToast';
 import LoadingSpinner from '../../../../components/common/LoadingSpinner';
+import { getImageUrl } from '../../../../utils/imageUrl';
 import SingleImageUpload from '../../../../components/common/SingleImageUpload';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -279,7 +280,7 @@ const Employees = () => {
                                             <div className="flex items-center gap-3">
                                                 <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden flex-shrink-0">
                                                     {emp.photo ? (
-                                                        <img src={emp.photo} alt={emp.name} className="w-full h-full object-cover" />
+                                                        <img src={getImageUrl(emp.photo)} alt={emp.name} className="w-full h-full object-cover" />
                                                     ) : (
                                                         <div className="w-full h-full flex items-center justify-center text-gray-400">
                                                             <FiUsers className="w-5 h-5" />

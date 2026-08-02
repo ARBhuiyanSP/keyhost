@@ -1,16 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { FiChevronLeft, FiChevronRight } from 'react-icons/fi';
+import { getImageUrl } from '../../utils/imageUrl';
 
 const PropertyImageSlider = ({ property, className = '' }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
 
-  // Removed getImageUrl hardcoding flag to use native proxy
-
   // Helper to ensure images load correctly on cPanel/shared hosting via the API URL
   const fixImageUrl = (url) => {
     if (!url || typeof url !== 'string') return null;
-    return url;
+    return getImageUrl(url);
   };
 
   // Get images array or fallback to main_image
@@ -96,21 +95,29 @@ const PropertyImageSlider = ({ property, className = '' }) => {
       }}
     >
       <div className="relative w-full h-full">
-        {images.map((imgSrc, index) => (
-          <img
-            key={index}
-            src={imgSrc}
-            alt={property?.title ? `${property.title} - Image ${index + 1}` : 'Property'}
-            className={`absolute top-0 left-0 w-full h-full object-cover rounded-t-lg transition-opacity duration-700 ease-in-out ${
-              index === currentImageIndex ? 'opacity-100 z-10' : 'opacity-0 z-0'
-            }`}
-            loading={index === 0 ? "eager" : "lazy"}
-            decoding="async"
-            onError={(e) => {
-              e.target.src = '/images/placeholder.svg';
-            }}
-          />
-        ))}
+        {images.map((imgSrc, index) => {
+          const isCurrent = index === currentImageIndex;
+          const isNext = index === (currentImageIndex + 1) % images.length;
+          const isPrev = index === (currentImageIndex - 1 + images.length) % images.length;
+
+          if (!isCurrent && !isNext && !isPrev) return null;
+
+          return (
+            <img
+              key={index}
+              src={imgSrc}
+              alt={property?.title ? `${property.title} - Image ${index + 1}` : 'Property'}
+              className={`absolute top-0 left-0 w-full h-full object-cover rounded-t-lg transition-opacity duration-700 ease-in-out ${
+                isCurrent ? 'opacity-100 z-10' : 'opacity-0 z-0'
+              }`}
+              loading={isCurrent ? "eager" : "lazy"}
+              decoding="async"
+              onError={(e) => {
+                e.target.src = '/images/placeholder.svg';
+              }}
+            />
+          );
+        })}
       </div>
 
       {/* Navigation buttons - only show if more than 1 image */}

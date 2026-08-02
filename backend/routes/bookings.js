@@ -34,7 +34,8 @@ router.post('/', verifyToken, requireGuest, validateBooking, async (req, res) =>
       special_requests,
       coupon_code,
       hms_room_id,
-      custom_price
+      custom_price,
+      booking_type = 'short_stay'  // 'short_stay' | 'monthly'
     } = req.body;
 
     // Validate dates
@@ -102,10 +103,32 @@ router.post('/', verifyToken, requireGuest, validateBooking, async (req, res) =>
 
     // Check minimum stay
     const nights = Math.ceil((new Date(check_out_date) - new Date(check_in_date)) / (1000 * 60 * 60 * 24));
-    if (nights < property.minimum_stay) {
-      return res.status(400).json(
-        formatResponse(false, `Minimum ${property.minimum_stay} nights required`)
-      );
+    const isMonthly = booking_type === 'monthly';
+
+    if (isMonthly) {
+      // Monthly booking validation
+      if (!property.monthly_rent_enabled || !property.monthly_approved) {
+        return res.status(400).json(
+          formatResponse(false, 'This property does not accept monthly bookings')
+        );
+      }
+      if (!property.monthly_rent_amount) {
+        return res.status(400).json(
+          formatResponse(false, 'Monthly rent amount not set for this property')
+        );
+      }
+      const minNights = property.monthly_min_stay_nights || 30;
+      if (nights < minNights) {
+        return res.status(400).json(
+          formatResponse(false, `Minimum ${minNights} nights required for monthly booking`)
+        );
+      }
+    } else {
+      if (nights < property.minimum_stay) {
+        return res.status(400).json(
+          formatResponse(false, `Minimum ${property.minimum_stay} nights required`)
+        );
+      }
     }
 
     // Check availability
@@ -133,68 +156,94 @@ router.post('/', verifyToken, requireGuest, validateBooking, async (req, res) =>
     }
 
     // Calculate pricing
-    const basePrice = hmsRoom ? parseFloat(hmsRoom.price) : (parseFloat(property.base_price) || 0);
-    const cleaningFee = parseFloat(property.cleaning_fee) || 0;
-    const securityDeposit = parseFloat(property.security_deposit) || 0;
-    const extraGuestFee = number_of_guests > 1 ? (number_of_guests - 1) * (parseFloat(property.extra_guest_fee) || 0) : 0;
+    let pricing, finalTotal, totalDiscount = 0, discountAmount = 0, hostDiscount = 0;
+    let monthsCount = null, extraDays = null, monthlyRateUsed = null, advanceAmount = null;
 
-    // Fetch live service fee and tax percentages from settings instead of hardcoding
-    const [settingsRows] = await pool.execute(`
-      SELECT setting_key, setting_value FROM system_settings 
-      WHERE setting_key IN ('service_fee_percentage', 'tax_percentage')
-    `);
-    
-    let serviceFeePercent = 0;
-    let taxPercent = 0;
-    
-    settingsRows.forEach(row => {
-      if (row.setting_key === 'service_fee_percentage') serviceFeePercent = parseFloat(row.setting_value) || 0;
-      if (row.setting_key === 'tax_percentage') taxPercent = parseFloat(row.setting_value) || 0;
-    });
+    if (isMonthly) {
+      // ── Monthly pro-rated pricing ─────────────────────────────────────────
+      const monthlyRate = parseFloat(property.monthly_rent_amount);
+      monthsCount   = Math.floor(nights / 30);
+      extraDays     = nights % 30;
+      monthlyRateUsed = monthlyRate;
 
-    const serviceFee = (basePrice * nights) * (serviceFeePercent / 100);
-    const taxAmount = (basePrice * nights) * (taxPercent / 100);
+      const monthlySubtotal = monthsCount * monthlyRate;
+      const proratedAmount  = extraDays * (monthlyRate / 30);
+      const monthlySecDep   = parseFloat(property.monthly_security_deposit) || 0;
+      advanceAmount         = parseFloat(property.monthly_advance_amount) || 0;
 
-    const pricing = calculateBookingTotal(
-      basePrice, nights, cleaningFee, securityDeposit,
-      extraGuestFee, serviceFee, taxAmount
-    );
+      finalTotal = monthlySubtotal + proratedAmount + monthlySecDep;
+      totalDiscount = 0;
 
-    // Calculate custom price discount (Host Discount) if provided
-    let hostDiscount = 0;
-    const parsedCustomPrice = parseFloat(custom_price);
-    if (!isNaN(parsedCustomPrice) && parsedCustomPrice > 0 && parsedCustomPrice <= pricing.total) {
-      hostDiscount = pricing.total - parsedCustomPrice;
-    }
+      // Build a pricing-compatible object for response
+      pricing = {
+        basePrice: monthlyRate,
+        nights,
+        monthsCount,
+        extraDays,
+        monthlySubtotal,
+        proratedAmount,
+        monthlySecurityDeposit: monthlySecDep,
+        total: finalTotal
+      };
+    } else {
+      // ── Standard nightly pricing ──────────────────────────────────────────
+      const basePrice = hmsRoom ? parseFloat(hmsRoom.price) : (parseFloat(property.base_price) || 0);
+      const cleaningFee = parseFloat(property.cleaning_fee) || 0;
+      const securityDeposit = parseFloat(property.security_deposit) || 0;
+      const extraGuestFee = number_of_guests > 1 ? (number_of_guests - 1) * (parseFloat(property.extra_guest_fee) || 0) : 0;
 
-    // Apply coupon if provided
-    let discountAmount = 0;
-    if (coupon_code) {
-      const [coupons] = await pool.execute(`
-        SELECT * FROM coupons 
-        WHERE code = ? AND is_active = 1 
-        AND valid_from <= CURDATE() AND valid_until >= CURDATE()
-        AND (usage_limit IS NULL OR used_count < usage_limit)
-      `, [coupon_code]);
+      // Fetch live service fee and tax percentages from settings
+      const [settingsRows] = await pool.execute(
+        `SELECT setting_key, setting_value FROM system_settings
+         WHERE setting_key IN ('service_fee_percentage', 'tax_percentage')`
+      );
+      let serviceFeePercent = 0;
+      let taxPercent = 0;
+      settingsRows.forEach(row => {
+        if (row.setting_key === 'service_fee_percentage') serviceFeePercent = parseFloat(row.setting_value) || 0;
+        if (row.setting_key === 'tax_percentage') taxPercent = parseFloat(row.setting_value) || 0;
+      });
 
-      if (coupons.length > 0) {
-        const coupon = coupons[0];
-        const totalForCoupon = pricing.total - hostDiscount;
-        if (totalForCoupon >= coupon.minimum_amount) {
-          if (coupon.discount_type === 'percentage') {
-            discountAmount = (totalForCoupon * coupon.discount_value) / 100;
-            if (coupon.maximum_discount) {
-              discountAmount = Math.min(discountAmount, coupon.maximum_discount);
+      const serviceFee = (basePrice * nights) * (serviceFeePercent / 100);
+      const taxAmount = (basePrice * nights) * (taxPercent / 100);
+
+      pricing = calculateBookingTotal(
+        basePrice, nights, cleaningFee, securityDeposit,
+        extraGuestFee, serviceFee, taxAmount
+      );
+
+      // Custom price discount
+      const parsedCustomPrice = parseFloat(custom_price);
+      if (!isNaN(parsedCustomPrice) && parsedCustomPrice > 0 && parsedCustomPrice <= pricing.total) {
+        hostDiscount = pricing.total - parsedCustomPrice;
+      }
+
+      // Apply coupon if provided
+      if (coupon_code) {
+        const [coupons] = await pool.execute(
+          `SELECT * FROM coupons
+           WHERE code = ? AND is_active = 1
+           AND valid_from <= CURDATE() AND valid_until >= CURDATE()
+           AND (usage_limit IS NULL OR used_count < usage_limit)`,
+          [coupon_code]
+        );
+        if (coupons.length > 0) {
+          const coupon = coupons[0];
+          const totalForCoupon = pricing.total - hostDiscount;
+          if (totalForCoupon >= coupon.minimum_amount) {
+            if (coupon.discount_type === 'percentage') {
+              discountAmount = (totalForCoupon * coupon.discount_value) / 100;
+              if (coupon.maximum_discount) discountAmount = Math.min(discountAmount, coupon.maximum_discount);
+            } else {
+              discountAmount = coupon.discount_value;
             }
-          } else {
-            discountAmount = coupon.discount_value;
           }
         }
       }
-    }
 
-    const finalTotal = Math.max(0, pricing.total - hostDiscount - discountAmount);
-    const totalDiscount = discountAmount + hostDiscount;
+      finalTotal = Math.max(0, pricing.total - hostDiscount - discountAmount);
+      totalDiscount = discountAmount + hostDiscount;
+    }
 
     // Generate booking reference
     const bookingReference = generateBookingReference();
@@ -209,16 +258,24 @@ router.post('/', verifyToken, requireGuest, validateBooking, async (req, res) =>
         service_fee, tax_amount, total_amount, currency,
         special_requests, coupon_code, discount_amount,
         guest_name, guest_email, guest_phone,
+        booking_type, months_count, extra_days, monthly_rate_used, advance_amount,
         booking_source, status, is_non_refundable, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'website', 'pending', ?, NOW())
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'website', 'pending', ?, NOW())
     `, [
       bookingReference, req.user.id, property_id, hms_room_id || null,
       check_in_date, check_out_date, check_in_time, check_out_time,
       number_of_guests, number_of_children, number_of_infants,
-      basePrice, cleaningFee, securityDeposit, extraGuestFee,
-      serviceFee, taxAmount, finalTotal, property.currency,
-      special_requests, coupon_code, totalDiscount,
+      isMonthly ? (property.monthly_rent_amount || 0) : (hmsRoom ? hmsRoom.price : property.base_price),
+      isMonthly ? 0 : (parseFloat(property.cleaning_fee) || 0),
+      isMonthly ? (property.monthly_security_deposit || 0) : (parseFloat(property.security_deposit) || 0),
+      isMonthly ? 0 : (number_of_guests > 1 ? (number_of_guests - 1) * (parseFloat(property.extra_guest_fee) || 0) : 0),
+      isMonthly ? 0 : (pricing.serviceFee || 0),
+      isMonthly ? 0 : (pricing.taxAmount || 0),
+      finalTotal, property.currency,
+      special_requests, isMonthly ? null : coupon_code, totalDiscount,
       `${req.user.first_name} ${req.user.last_name}`, req.user.email, req.user.phone,
+      booking_type,
+      monthsCount, extraDays, monthlyRateUsed, advanceAmount,
       property.is_non_refundable || false
     ]);
 

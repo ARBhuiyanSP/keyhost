@@ -4,6 +4,7 @@ import { FiSearch, FiFilter, FiEye, FiEdit, FiShield, FiShieldOff, FiX, FiSave, 
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import useToast from '../../hooks/useToast';
+import { getImageUrl } from '../../utils/imageUrl';
 
 const AdminUsers = () => {
   const { showSuccess, showError } = useToast();
@@ -14,6 +15,31 @@ const AdminUsers = () => {
     page: 1,
     limit: 10
   });
+
+  const [searchInput, setSearchInput] = useState(filters.search);
+  const searchTimeoutRef = React.useRef(null);
+
+  React.useEffect(() => {
+    setSearchInput(filters.search);
+  }, [filters.search]);
+
+  React.useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleSearchChange = (val) => {
+    setSearchInput(val);
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      handleFilterChange('search', val);
+    }, 300);
+  };
 
   const [selectedUser, setSelectedUser] = useState(null);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -30,10 +56,11 @@ const AdminUsers = () => {
   });
 
   // Fetch users
-  const { data: usersData, isLoading, refetch } = useQuery(
+  const { data: usersData, isLoading, isFetching, refetch } = useQuery(
     ['admin-users', filters],
     () => api.get(`/admin/users?${new URLSearchParams(filters).toString()}`),
     {
+      keepPreviousData: true,
       select: (response) => response.data?.data || { users: [], pagination: {} },
     }
   );
@@ -212,16 +239,25 @@ const AdminUsers = () => {
 
   const getUserTypeBadge = (userType) => {
     const colors = {
-      admin: 'bg-purple-100 text-purple-800',
-      property_owner: 'bg-blue-100 text-blue-800',
-      guest: 'bg-green-100 text-green-800'
+      admin: 'bg-purple-50 text-purple-700 border-purple-200',
+      property_owner: 'bg-blue-50 text-blue-700 border-blue-200',
+      guest: 'bg-emerald-50 text-emerald-700 border-emerald-200'
     };
 
     return (
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colors[userType] || 'bg-gray-100 text-gray-800'}`}>
-        {userType?.replace('_', ' ').toUpperCase()}
+      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold border uppercase tracking-wider ${colors[userType] || 'bg-gray-50 text-gray-700 border-gray-250'}`}>
+        {userType?.replace('_', ' ')}
       </span>
     );
+  };
+
+  const getCardAccentClass = (userType) => {
+    switch (userType) {
+      case 'admin': return 'border-l-4 border-l-purple-500';
+      case 'property_owner': return 'border-l-4 border-l-blue-500';
+      case 'guest': return 'border-l-4 border-l-green-500';
+      default: return 'border-l-4 border-l-gray-300';
+    }
   };
 
   if (isLoading) return <LoadingSpinner />;
@@ -232,18 +268,6 @@ const AdminUsers = () => {
     <div className="min-h-screen bg-gray-50/50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
-        {/* Premium Page Header */}
-        <div className="relative overflow-hidden rounded-2xl p-6 md:p-8 text-white shadow-lg mb-8" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)' }}>
-          <div className="absolute -right-10 -top-10 w-40 h-40 bg-white/5 rounded-full blur-xl pointer-events-none"></div>
-          <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-white/5 rounded-full blur-xl pointer-events-none"></div>
-          
-          <div className="relative z-10">
-            <h1 className="text-3xl font-extrabold tracking-tight">User Management</h1>
-            <p className="mt-2 text-indigo-200/90 text-sm max-w-xl">
-              Monitor platform signups, manage account verification statuses for property owners, configure HMS billing licenses, and moderate account activities.
-            </p>
-          </div>
-        </div>
 
         {/* Premium Metric Statistics Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -323,15 +347,15 @@ const AdminUsers = () => {
         {/* Filters Card */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6">
           <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-            <div className="relative w-full sm:max-w-md">
+            <div className="relative w-full sm:max-w-md group">
               <input
                 type="text"
-                value={filters.search}
-                onChange={(e) => handleFilterChange('search', e.target.value)}
+                value={searchInput}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 placeholder="Search users by name, email or phone..."
-                className="w-full px-3 py-2.5 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow text-sm"
+                className="w-full px-4 py-2.5 pl-10 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-all duration-200 text-sm hover:border-gray-300"
               />
-              <FiSearch className="absolute left-3.5 top-3.5 h-4.5 w-4.5 text-gray-400" />
+              <FiSearch className="absolute left-3.5 top-3.5 h-4.5 w-4.5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
             </div>
 
             <div className="flex items-center space-x-3 w-full sm:w-auto justify-end">
@@ -340,7 +364,7 @@ const AdminUsers = () => {
                 <select
                   value={filters.limit}
                   onChange={(e) => handleFilterChange('limit', parseInt(e.target.value))}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                  className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 text-sm bg-white transition-all duration-200 hover:border-gray-300"
                 >
                   <option value={10}>10</option>
                   <option value={25}>25</option>
@@ -351,34 +375,42 @@ const AdminUsers = () => {
 
               <button
                 onClick={() => refetch()}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-semibold transition-colors flex items-center gap-1.5"
+                disabled={isFetching}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-semibold transition-all duration-200 flex items-center gap-1.5 active:scale-95 disabled:bg-blue-400"
               >
-                <FiFilter className="h-4 w-4" />
-                Refresh
+                <FiFilter className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+                {isFetching ? 'Refreshing...' : 'Refresh'}
               </button>
             </div>
           </div>
         </div>
 
         {/* Desktop Users Table (hidden on mobile) */}
-        <div className="hidden md:block bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+        <div className="hidden md:block bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6 relative">
+          {/* Subtle loading line at the top of the table container */}
+          <div 
+            className={`absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 transition-all duration-300 ${
+              isFetching ? 'opacity-100 animate-pulse translate-y-0' : 'opacity-0 -translate-y-1'
+            }`}
+            style={{ zIndex: 10 }}
+          />
+
           <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
             <h2 className="text-base font-bold text-gray-900">
               Users List <span className="text-gray-500 font-normal text-xs ml-2">({pagination?.totalItems || 0} matching)</span>
             </h2>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className={`overflow-x-auto transition-all duration-300 ${isFetching ? 'opacity-65 pointer-events-none filter blur-[0.5px]' : 'opacity-100'}`}>
             <table className="min-w-full divide-y divide-gray-200 text-sm">
               <thead className="bg-gray-50">
                 <tr>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">User details</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Role</th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Phone</th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">HMS License</th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Status</th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Auto Accept</th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Last Login</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Joined</th>
                   <th scope="col" className="px-6 py-3 text-right text-xs font-bold text-gray-400 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
@@ -392,7 +424,7 @@ const AdminUsers = () => {
                             {user.profile_image ? (
                               <img
                                 className="h-10 w-10 rounded-full object-cover border border-gray-200"
-                                src={user.profile_image}
+                                src={getImageUrl(user.profile_image)}
                                 alt={`${user.first_name} ${user.last_name}`}
                               />
                             ) : (
@@ -406,6 +438,7 @@ const AdminUsers = () => {
                           <div className="ml-3">
                             <div className="text-sm font-bold text-gray-900 flex items-center gap-1.5 flex-wrap">
                               <span>{user.first_name} {user.last_name}</span>
+                              {getUserTypeBadge(user.user_type)}
                               {user.user_type === 'property_owner' && (
                                 user.owner_verified ? (
                                   <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-50 text-green-700 border border-green-200" title="Verified Host">
@@ -422,8 +455,8 @@ const AdminUsers = () => {
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {getUserTypeBadge(user.user_type)}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-700">
+                        {user.phone || <span className="text-gray-400 font-normal italic">N/A</span>}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         {user.user_type === 'property_owner' ? (
@@ -477,9 +510,6 @@ const AdminUsers = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 font-semibold">
                         {formatDate(user.last_login_at)}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 font-semibold">
-                        {formatDate(user.created_at)}
-                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end space-x-1">
                           <button
@@ -517,7 +547,7 @@ const AdminUsers = () => {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="8" className="px-6 py-16 text-center text-gray-500">
+                    <td colSpan="7" className="px-6 py-16 text-center text-gray-500">
                       <div className="flex flex-col items-center justify-center">
                         <FiSearch className="h-10 w-10 text-gray-300 mb-2" />
                         <p className="text-gray-900 font-bold">No users found</p>
@@ -532,10 +562,10 @@ const AdminUsers = () => {
         </div>
 
         {/* Mobile Cards List (hidden on desktop) */}
-        <div className="grid grid-cols-1 gap-4 md:hidden mb-6">
+        <div className={`grid grid-cols-1 gap-4 md:hidden mb-6 transition-all duration-300 ${isFetching ? 'opacity-65 pointer-events-none filter blur-[0.5px]' : 'opacity-100'}`}>
           {users.length > 0 ? (
             users.map((user) => (
-              <div key={user.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 space-y-4 hover:shadow-md transition-shadow">
+              <div key={user.id} className={`bg-white rounded-xl shadow-sm border border-gray-200 p-5 space-y-4 hover:shadow-md transition-all duration-200 ${getCardAccentClass(user.user_type)}`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
                     {user.profile_image ? (
@@ -556,6 +586,7 @@ const AdminUsers = () => {
                         {user.first_name} {user.last_name}
                       </h4>
                       <p className="text-xs text-gray-500 font-semibold">{user.email}</p>
+                      {user.phone && <p className="text-xs text-gray-600 font-semibold mt-0.5">{user.phone}</p>}
                     </div>
                   </div>
                   <div>

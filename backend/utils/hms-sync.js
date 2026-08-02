@@ -10,7 +10,7 @@ async function syncPaymentToHMSAccounts(paymentId) {
         
         // 1. Get payment and booking details
         const [rows] = await pool.query(`
-            SELECT p.*, b.property_id, b.id as booking_id, pr.owner_id as owner_id, u.id as host_user_id, pr.is_hms_enabled
+            SELECT p.*, b.property_id, b.id as booking_id, b.security_deposit, pr.owner_id as owner_id, u.id as host_user_id, pr.is_hms_enabled
             FROM payments p
             JOIN bookings b ON p.booking_id = b.id
             JOIN properties pr ON b.property_id = pr.id
@@ -49,19 +49,58 @@ async function syncPaymentToHMSAccounts(paymentId) {
             return;
         }
 
-        // 5. Get or create Account Head (Room Revenue)
+        // 5. Determine Head details and Net Amount to sync
+        let headId;
+        let amountToSync = parseFloat(payment.cr_amount) || 0;
+        let description = `Room Revenue - Booking #${payment.booking_id} (Ref: ${payment.payment_reference})`;
+        let headName = 'Room Revenue';
+        let headType = 'income';
+
+        if (payment.transaction_type === 'security_deposit_claim') {
+            headName = 'Security Deposit Claims Received';
+            description = `Security Deposit Claim - Booking #${payment.booking_id} (Ref: ${payment.payment_reference})`;
+        } else {
+            // Exclude security deposit from regular payment income credits
+            const [completedRegularPayments] = await pool.query(
+                `SELECT id, cr_amount FROM payments 
+                 WHERE booking_id = ? AND status = 'completed' AND transaction_type != 'security_deposit_claim' 
+                 ORDER BY id ASC`,
+                [payment.booking_id]
+            );
+
+            let remainingSecurityDeposit = parseFloat(payment.security_deposit) || 0;
+            let excludedForCurrentPayment = 0;
+
+            for (const pItem of completedRegularPayments) {
+                const pAmount = parseFloat(pItem.cr_amount) || 0;
+                const excluded = Math.min(pAmount, remainingSecurityDeposit);
+                remainingSecurityDeposit -= excluded;
+                if (pItem.id === paymentId) {
+                    excludedForCurrentPayment = excluded;
+                    break;
+                }
+            }
+
+            amountToSync = (parseFloat(payment.cr_amount) || 0) - excludedForCurrentPayment;
+        }
+
+        if (amountToSync <= 0) {
+            console.log(`[HMS-SYNC] Net amount for payment ${paymentId} is <= 0 after security deposit exclusion. Skipping sync.`);
+            return;
+        }
+
+        // Get or create Account Head
         let [heads] = await pool.query(
             'SELECT id FROM hms_accounts_heads WHERE (host_id = ? OR is_system = 1) AND name = ?',
-            [payment.host_user_id, 'Room Revenue']
+            [payment.host_user_id, headName]
         );
         
-        let headId;
         if (heads.length > 0) {
             headId = heads[0].id;
         } else {
             const [hResult] = await pool.query(
                 'INSERT INTO hms_accounts_heads (host_id, name, type) VALUES (?, ?, ?)',
-                [payment.host_user_id, 'Room Revenue', 'income']
+                [payment.host_user_id, headName, headType]
             );
             headId = hResult.insertId;
         }
@@ -74,9 +113,9 @@ async function syncPaymentToHMSAccounts(paymentId) {
                 payment.host_user_id, 
                 payment.property_id, 
                 headId, 
-                payment.cr_amount, 
+                amountToSync, 
                 'credit', 
-                `Room Revenue - Booking #${payment.booking_id} (Ref: ${payment.payment_reference})`, 
+                description, 
                 'payment', 
                 payment.id, 
                 payment.payment_date || payment.created_at
@@ -341,9 +380,15 @@ async function syncRefundToHMSAccounts(refundId) {
 
         const refund = rows[0];
 
-        // 2. Only sync completed refunds
-        if (refund.status !== 'completed' || refund.refund_amount <= 0) {
-            console.log(`[HMS-SYNC] Refund ${refundId} is not completed or amount is 0. Skipping sync.`);
+        // Skip security deposit refunds since the security deposit is already excluded from Room Revenue credits
+        if (refund.refund_reference && refund.refund_reference.startsWith('SEC-REF')) {
+            console.log(`[HMS-SYNC] Refund ${refundId} is a security deposit refund. Skipping sync to host ledger.`);
+            return;
+        }
+
+        // 2. Only sync completed or processing refunds
+        if (!['completed', 'processing'].includes(refund.status) || refund.refund_amount <= 0) {
+            console.log(`[HMS-SYNC] Refund ${refundId} is not completed/processing or amount is 0. Skipping sync.`);
             return;
         }
 
@@ -358,10 +403,10 @@ async function syncRefundToHMSAccounts(refundId) {
             return;
         }
 
-        // 4. Get or create Account Head (Room Revenue - to offset the income)
+        // 4. Get or create Account Head (Refunds/Cancellations - expense)
         let [heads] = await pool.query(
             'SELECT id FROM hms_accounts_heads WHERE (host_id = ? OR is_system = 1) AND name = ?',
-            [refund.host_user_id, 'Room Revenue']
+            [refund.host_user_id, 'Refunds/Cancellations']
         );
         
         let headId;
@@ -370,7 +415,7 @@ async function syncRefundToHMSAccounts(refundId) {
         } else {
             const [hResult] = await pool.query(
                 'INSERT INTO hms_accounts_heads (host_id, name, type) VALUES (?, ?, ?)',
-                [refund.host_user_id, 'Room Revenue', 'income']
+                [refund.host_user_id, 'Refunds/Cancellations', 'expense']
             );
             headId = hResult.insertId;
         }
@@ -388,7 +433,7 @@ async function syncRefundToHMSAccounts(refundId) {
                 `Refund for Booking #${refund.booking_id} - Ref: ${refund.refund_reference}`, 
                 'refund', 
                 refund.id, 
-                refund.completed_at || new Date()
+                refund.completed_at || refund.updated_at || new Date()
             ]
         );
 

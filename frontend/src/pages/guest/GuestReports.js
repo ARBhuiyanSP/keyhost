@@ -64,13 +64,13 @@ const GuestReports = () => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                    <div className="bg-gradient-to-br from-slate-900 to-slate-800 p-6 rounded-2xl shadow-lg border border-slate-700">
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm font-medium text-slate-400 uppercase tracking-widest">Total Expense</p>
-                                <h3 className="text-3xl font-black text-white mt-1 print-text-black">${totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+                                <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Total Expense</p>
+                                <h3 className="text-3xl font-black text-gray-900 mt-1">৳{totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
                             </div>
-                            <div className="w-12 h-12 bg-white/10 flex items-center justify-center rounded-xl text-white backdrop-blur-sm">
+                            <div className="w-12 h-12 bg-rose-50 flex items-center justify-center rounded-xl text-rose-600">
                                 <FiCreditCard className="w-6 h-6" />
                             </div>
                         </div>
@@ -141,7 +141,7 @@ const GuestReports = () => {
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <span className="font-black text-gray-900 print-text-black text-lg">
-                                                ${parseFloat(b.total_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                ৳{parseFloat(b.total_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                             </span>
                                         </td>
                                     </tr>

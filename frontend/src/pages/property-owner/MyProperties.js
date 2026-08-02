@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from 'react-query';
-import { FiHome, FiPlus, FiEdit, FiEye, FiTrash2, FiMapPin, FiStar, FiDollarSign, FiCalendar, FiUsers, FiLink, FiX, FiCopy, FiCheck, FiChevronDown, FiPackage } from 'react-icons/fi';
+import { FiHome, FiPlus, FiEdit, FiEye, FiTrash2, FiMapPin, FiStar, FiDollarSign, FiCalendar, FiUsers, FiLink, FiX, FiCopy, FiCheck, FiChevronDown, FiPackage, FiSearch } from 'react-icons/fi';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import { formatPrice } from '../../utils/textUtils';
 import useToast from '../../hooks/useToast';
+import { getImageUrl } from '../../utils/imageUrl';
 
 const BookingLinkModal = ({ property: initialProperty, onClose }) => {
   const [startDate, setStartDate] = useState(new Date());
@@ -60,17 +61,65 @@ const BookingLinkModal = ({ property: initialProperty, onClose }) => {
     return map;
   }, [property?.availability_data]);
 
+  const getLocalDateStr = (d) => {
+    if (!d) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
   const isDateBlocked = (date) => {
     if (!date) return false;
-    const dateStr = date.toISOString().split('T')[0];
+
+    const dateStr = getLocalDateStr(date);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    if (date < today) return true;
+
+    const checkDate = new Date(date);
+    checkDate.setHours(0, 0, 0, 0);
+    if (checkDate < today) return true;
+
+    // Check host availability blocks from availabilityMap (is_available == 0)
+    const hostData = availabilityMap[dateStr];
+    if (hostData && Number(hostData.is_available) === 0) {
+      return true;
+    }
+
+    const isSelectingCheckout = startDate && !endDate;
+    if (isSelectingCheckout) {
+      const start = new Date(startDate);
+      const end = new Date(date);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
+
+      // Checkout date must be after check-in date
+      if (end <= start) {
+        return true; 
+      }
+
+      // Check if there are any blocked dates between check-in (inclusive) and candidate checkout (exclusive)
+      let temp = new Date(start);
+      while (temp < end) {
+        const tempStr = getLocalDateStr(temp);
+        const hostDataTemp = availabilityMap[tempStr];
+        const isHostBlocked = hostDataTemp && Number(hostDataTemp.is_available) === 0;
+        const isPast = temp < today;
+
+        if (isPast || isHostBlocked || blockedDates.includes(tempStr)) {
+          return true; // Range crosses a blocked date
+        }
+        temp.setDate(temp.getDate() + 1);
+      }
+
+      return false; // Range is clear, checkout is allowed
+    }
+
     return blockedDates.includes(dateStr);
   };
 
   const renderDayContents = (day, date) => {
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = getLocalDateStr(date);
     const isBlocked = isDateBlocked(date);
     const match = availabilityMap[dateStr];
     const hasSpecialRate = match && Number(match.is_available) === 1 && match.price && parseFloat(match.price) !== activeBasePrice;
@@ -104,7 +153,7 @@ const BookingLinkModal = ({ property: initialProperty, onClose }) => {
   const baseUrl = window.location.origin;
   const effectiveCustomPrice = parseFloat(customPriceInput);
   const hasCustomPrice = !isNaN(effectiveCustomPrice) && effectiveCustomPrice > 0 && effectiveCustomPrice < totalAmount;
-  const bookingLink = `${baseUrl}/property/${property.slug || property.id}?checkIn=${startDate?.toISOString().split('T')[0]}&checkOut=${endDate?.toISOString().split('T')[0]}&guests=${guests}&direct=true${hasCustomPrice ? `&customPrice=${effectiveCustomPrice}` : ''}${selectedRoomId ? `&hms_room_id=${selectedRoomId}` : ''}`;
+  const bookingLink = `${baseUrl}/property/${property.slug || property.id}?checkIn=${startDate ? getLocalDateStr(startDate) : ''}&checkOut=${endDate ? getLocalDateStr(endDate) : ''}&guests=${guests}&direct=true${hasCustomPrice ? `&customPrice=${effectiveCustomPrice}` : ''}${selectedRoomId ? `&hms_room_id=${selectedRoomId}` : ''}`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(bookingLink);
@@ -185,6 +234,18 @@ const BookingLinkModal = ({ property: initialProperty, onClose }) => {
                       .custom-double-datepicker .react-datepicker__day:hover { background-color: #f3f4f6 !important; }
                       .custom-double-datepicker .react-datepicker__day--selected, .custom-double-datepicker .react-datepicker__day--in-range { background-color: #111 !important; color: white !important; border-radius: 10px !important; }
                       .custom-double-datepicker .react-datepicker__day--keyboard-selected { background-color: transparent !important; }
+                      .custom-double-datepicker .react-datepicker__day--blocked,
+                      .custom-double-datepicker .react-datepicker__day--disabled {
+                          background-color: #f3f4f6 !important;
+                          color: #9ca3af !important;
+                          text-decoration: line-through !important;
+                          pointer-events: none !important;
+                          opacity: 0.65;
+                      }
+                      .custom-double-datepicker .react-datepicker__day--blocked .day-cell-wrapper span,
+                      .custom-double-datepicker .react-datepicker__day--disabled .day-cell-wrapper span {
+                          color: #9ca3af !important;
+                      }
                     `}</style>
                     <div className="flex justify-between items-start mb-6 pr-10">
                       <div>
@@ -300,13 +361,49 @@ const BookingLinkModal = ({ property: initialProperty, onClose }) => {
 
 const MyProperties = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const searchParamVal = searchParams.get('search') || '';
   const { showSuccess, showError } = useToast();
   const [filters, setFilters] = useState({
     status: '',
+    search: searchParamVal,
     page: 1,
     limit: 6
   });
   const [selectedPropertyForLink, setSelectedPropertyForLink] = useState(null);
+
+  const [searchInput, setSearchInput] = useState(filters.search);
+  const searchTimeoutRef = React.useRef(null);
+
+  React.useEffect(() => {
+    setSearchInput(filters.search);
+  }, [filters.search]);
+
+  React.useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleFilterChange = (key, value) => {
+    setFilters(prev => ({
+      ...prev,
+      page: 1,
+      [key]: value
+    }));
+  };
+
+  const handleSearchChange = (val) => {
+    setSearchInput(val);
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      handleFilterChange('search', val);
+    }, 300);
+  };
 
   // Fetch property owner's properties
   const { data: propertiesData, isLoading, refetch } = useQuery(
@@ -316,14 +413,6 @@ const MyProperties = () => {
       select: (response) => response.data?.data || { properties: [], pagination: {} },
     }
   );
-
-  const handleFilterChange = (key, value) => {
-    setFilters(prev => ({
-      ...prev,
-      page: 1,
-      [key]: value
-    }));
-  };
 
   const handleDeleteProperty = async (propertyId) => {
     if (window.confirm('Are you sure you want to delete this property? This action cannot be undone.')) {
@@ -415,14 +504,14 @@ const MyProperties = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">My Properties</h1>
-              <p className="text-gray-600 mt-2">Manage your property listings</p>
+              <p className="text-gray-600 mt-1.5">Manage your property listings</p>
             </div>
             <button
               onClick={() => navigate('/property-owner/properties/new')}
-              className="btn-primary flex items-center"
+              className="btn-primary flex items-center justify-center self-start sm:self-auto"
             >
               <FiPlus className="mr-2" />
               Add Property
@@ -432,7 +521,22 @@ const MyProperties = () => {
 
         {/* Filters */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <div className="flex items-center space-x-4">
+          <div className="flex flex-col md:flex-row md:items-center gap-4">
+            <div className="flex-1 max-w-md">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Search Properties
+              </label>
+              <div className="relative">
+                <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search by title or city..."
+                  value={searchInput}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  className="input-field pl-10 w-full"
+                />
+              </div>
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Filter by Status
@@ -440,7 +544,7 @@ const MyProperties = () => {
               <select
                 value={filters.status}
                 onChange={(e) => handleFilterChange('status', e.target.value)}
-                className="input-field w-auto"
+                className="input-field w-48"
               >
                 <option value="">All Properties</option>
                 <option value="active">Active</option>
@@ -473,7 +577,7 @@ const MyProperties = () => {
                 {/* Property Image */}
                 <div className="relative">
                   <img
-                    src={property.main_image?.image_url || '/images/placeholder.svg'}
+                    src={getImageUrl(property.main_image?.image_url) || '/images/placeholder.svg'}
                     alt={property.title}
                     className="w-full h-48 object-cover"
                   />

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import useAuthStore from '../../store/authStore';
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
@@ -15,8 +15,14 @@ import {
   FiAlertTriangle, 
   FiPhone, 
   FiMail, 
-  FiCalendar 
+  FiCalendar,
+  FiGlobe,
+  FiUpload,
+  FiFileText,
+  FiTrash2,
+  FiEye
 } from 'react-icons/fi';
+import { getImageUrl } from '../../utils/imageUrl';
 
 const PropertyOwnerProfile = () => {
   const { user } = useAuthStore();
@@ -30,6 +36,15 @@ const PropertyOwnerProfile = () => {
   const [isSendingEmailVerify, setIsSendingEmailVerify] = useState(false);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+
+  // Identity & Documents state
+  const [nidPreview, setNidPreview] = useState('');
+  const [passportPreview, setPassportPreview] = useState('');
+  const nidInputRef = useRef(null);
+  const passportInputRef = useRef(null);
+  const natDropdownRef = useRef(null);
+  const [nationalitySearch, setNationalitySearch] = useState('');
+  const [natDropdownOpen, setNatDropdownOpen] = useState(false);
 
   const handleVerifyEmail = async () => {
     try {
@@ -94,9 +109,120 @@ const PropertyOwnerProfile = () => {
     bank_account_number: '',
     bank_name: '',
     bank_routing_number: '',
+    mfs_provider: '',
+    mfs_wallet_number: '',
+    mfs_account_name: '',
     commission_rate: 0,
-    auto_accept_bookings: false
+    auto_accept_bookings: false,
+    nationality: '',
+    nid_number: '',
+    passport_number: '',
+    nid_document_url: '',
+    passport_document_url: ''
   });
+
+  const NATIONALITIES = [
+    { flag: '🇧🇩', label: 'Bangladeshi' },
+    { flag: '🇮🇳', label: 'Indian' },
+    { flag: '🇵🇰', label: 'Pakistani' },
+    { flag: '🇱🇰', label: 'Sri Lankan' },
+    { flag: '🇳🇵', label: 'Nepali' },
+    { flag: '🇲🇻', label: 'Maldivian' },
+    { flag: '🇧🇹', label: 'Bhutanese' },
+    { flag: '🇲🇲', label: 'Burmese' },
+    { flag: '🇺🇸', label: 'American' },
+    { flag: '🇬🇧', label: 'British' },
+    { flag: '🇦🇺', label: 'Australian' },
+    { flag: '🇨🇦', label: 'Canadian' },
+    { flag: '🇨🇳', label: 'Chinese' },
+    { flag: '🇯🇵', label: 'Japanese' },
+    { flag: '🇰🇷', label: 'Korean' },
+    { flag: '🇩🇪', label: 'German' },
+    { flag: '🇫🇷', label: 'French' },
+    { flag: '🇮🇹', label: 'Italian' },
+    { flag: '🇸🇦', label: 'Saudi Arabian' },
+    { flag: '🇦🇪', label: 'Emirati' },
+    { flag: '🇲🇾', label: 'Malaysian' },
+    { flag: '🇸🇬', label: 'Singaporean' },
+    { flag: '🇹🇭', label: 'Thai' },
+    { flag: '🇮🇩', label: 'Indonesian' },
+    { flag: '🇵🇭', label: 'Filipino' },
+    { flag: '🇻🇳', label: 'Vietnamese' },
+    { flag: '🇰🇭', label: 'Cambodian' },
+    { flag: '🇱🇦', label: 'Laotian' },
+    { flag: '🇧🇳', label: 'Bruneian' },
+    { flag: '🇹🇷', label: 'Turkish' },
+    { flag: '🇮🇷', label: 'Iranian' },
+    { flag: '🇮🇶', label: 'Iraqi' },
+    { flag: '🇸🇾', label: 'Syrian' },
+    { flag: '🇯🇴', label: 'Jordanian' },
+    { flag: '🇱🇧', label: 'Lebanese' },
+    { flag: '🇶🇦', label: 'Qatari' },
+    { flag: '🇰🇼', label: 'Kuwaiti' },
+    { flag: '🇧🇭', label: 'Bahraini' },
+    { flag: '🇴🇲', label: 'Omani' },
+    { flag: '🇾🇪', label: 'Yemeni' },
+    { flag: '🇦🇫', label: 'Afghan' },
+    { flag: '🇪🇸', label: 'Spanish' },
+    { flag: '🇵🇹', label: 'Portuguese' },
+    { flag: '🇳🇱', label: 'Dutch' },
+    { flag: '🇧🇪', label: 'Belgian' },
+    { flag: '🇨🇭', label: 'Swiss' },
+    { flag: '🇦🇹', label: 'Austrian' },
+    { flag: '🇸🇪', label: 'Swedish' },
+    { flag: '🇳🇴', label: 'Norwegian' },
+    { flag: '🇩🇰', label: 'Danish' },
+    { flag: '🇫🇮', label: 'Finnish' },
+    { flag: '🇷🇺', label: 'Russian' },
+    { flag: '🇺🇦', label: 'Ukrainian' },
+    { flag: '🇵🇱', label: 'Polish' },
+    { flag: '🇨🇿', label: 'Czech' },
+    { flag: '🇭🇺', label: 'Hungarian' },
+    { flag: '🇷🇴', label: 'Romanian' },
+    { flag: '🇬🇷', label: 'Greek' },
+    { flag: '🇧🇬', label: 'Bulgarian' },
+    { flag: '🇸🇰', label: 'Slovak' },
+    { flag: '🇭🇷', label: 'Croatian' },
+    { flag: '🇷🇸', label: 'Serbian' },
+    { flag: '🇿🇦', label: 'South African' },
+    { flag: '🇳🇬', label: 'Nigerian' },
+    { flag: '🇬🇭', label: 'Ghanaian' },
+    { flag: '🇰🇪', label: 'Kenyan' },
+    { flag: '🇹🇿', label: 'Tanzanian' },
+    { flag: '🇺🇬', label: 'Ugandan' },
+    { flag: '🇪🇹', label: 'Ethiopian' },
+    { flag: '🇲🇦', label: 'Moroccan' },
+    { flag: '🇪🇬', label: 'Egyptian' },
+    { flag: '🇩🇿', label: 'Algerian' },
+    { flag: '🇹🇳', label: 'Tunisian' },
+    { flag: '🇧🇷', label: 'Brazilian' },
+    { flag: '🇦🇷', label: 'Argentine' },
+    { flag: '🇨🇴', label: 'Colombian' },
+    { flag: '🇨🇱', label: 'Chilean' },
+    { flag: '🇲🇽', label: 'Mexican' },
+    { flag: '🇵🇪', label: 'Peruvian' },
+    { flag: '🇻🇪', label: 'Venezuelan' },
+    { flag: '🇳🇿', label: 'New Zealander' },
+    { flag: '🌍', label: 'Other' },
+  ];
+
+  const filteredNationalities = NATIONALITIES.filter(n =>
+    n.label.toLowerCase().includes(nationalitySearch.toLowerCase())
+  );
+
+  const selectedNat = NATIONALITIES.find(n => n.label === formData.nationality);
+
+  // Close nationality dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (natDropdownRef.current && !natDropdownRef.current.contains(e.target)) {
+        setNatDropdownOpen(false);
+        if (!formData.nationality) setNationalitySearch('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [formData.nationality]);
 
   const scrollbarHideStyle = {
     msOverflowStyle: 'none',  /* IE and Edge */
@@ -134,9 +260,24 @@ const PropertyOwnerProfile = () => {
         bank_account_number: userData?.property_owner_info?.bank_account_number || '',
         bank_name: userData?.property_owner_info?.bank_name || '',
         bank_routing_number: userData?.property_owner_info?.bank_routing_number || '',
+        mfs_provider: userData?.property_owner_info?.mfs_provider || '',
+        mfs_wallet_number: userData?.property_owner_info?.mfs_wallet_number || '',
+        mfs_account_name: userData?.property_owner_info?.mfs_account_name || '',
         commission_rate: userData?.property_owner_info?.commission_rate || 0,
-        auto_accept_bookings: !!userData?.auto_accept_bookings
+        auto_accept_bookings: !!userData?.auto_accept_bookings,
+        nationality: userData?.nationality || '',
+        nid_number: userData?.nid_number || '',
+        passport_number: userData?.passport_number || '',
+        nid_document_url: userData?.nid_document_url || '',
+        passport_document_url: userData?.passport_document_url || ''
       });
+      // Set existing document previews
+      if (userData?.nid_document_url) {
+        setNidPreview(getImageUrl(userData.nid_document_url));
+      }
+      if (userData?.passport_document_url) {
+        setPassportPreview(getImageUrl(userData.passport_document_url));
+      }
     } catch (err) {
       showError('Failed to fetch profile');
     } finally {
@@ -152,11 +293,41 @@ const PropertyOwnerProfile = () => {
     }));
   };
 
+  const handleFileUpload = (field, setPreview) => (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) {
+      showError('Only image files (JPEG, PNG, GIF, WEBP) are allowed.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showError('File size must be less than 5MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const base64 = ev.target.result;
+      setPreview(base64);
+      setFormData(prev => ({ ...prev, [field]: base64 }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveDocument = (field, setPreview, inputRef) => {
+    setPreview('');
+    setFormData(prev => ({ ...prev, [field]: '' }));
+    if (inputRef.current) inputRef.current.value = '';
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       setSaving(true);
-      const response = await api.put('/property-owner/profile', formData);
+      const updateData = {
+        ...formData,
+        auto_accept_bookings: formData.auto_accept_bookings ? 1 : 0
+      };
+      const response = await api.put('/property-owner/profile', updateData);
       showSuccess('Profile updated successfully');
       
       if (response.data.data?.user) {
@@ -215,7 +386,9 @@ const PropertyOwnerProfile = () => {
       formData.tax_id,
       formData.bank_name,
       formData.bank_account_number,
-      formData.bank_routing_number
+      formData.bank_routing_number,
+      formData.nationality,
+      formData.nid_number || formData.passport_number
     ];
     
     const filledFields = fieldsToTrack.filter(field => {
@@ -353,6 +526,7 @@ const PropertyOwnerProfile = () => {
                 { id: 'address', name: 'Address & Contact', icon: FiMapPin },
                 { id: 'business', name: 'Business Settings', icon: FiBriefcase },
                 { id: 'payout', name: 'Payout & Banking', icon: FiCreditCard },
+                { id: 'identity', name: 'Identity & Docs', icon: FiFileText },
                 { id: 'preferences', name: 'Preferences', icon: FiSliders },
               ].map((tab) => {
                 const Icon = tab.icon;
@@ -674,45 +848,315 @@ const PropertyOwnerProfile = () => {
                         <FiCreditCard className="text-primary-500" />
                         Payout & Banking
                       </h3>
-                      <p className="text-xs text-gray-500 mt-1">Configure your bank account information to receive property earnings.</p>
+                    </div>
+
+                    <div className="space-y-6">
+                      {/* Bank Details section */}
+                      <div className="bg-slate-50/50 border border-gray-100 rounded-2xl p-5 space-y-4">
+                        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider border-b pb-2">Bank Transfer Details</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                          <div className="relative group md:col-span-2">
+                            <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Bank Name</label>
+                            <input
+                              type="text"
+                              name="bank_name"
+                              value={formData.bank_name}
+                              onChange={handleInputChange}
+                              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:outline-none transition-all duration-200"
+                              placeholder="e.g. Dutch-Bangla Bank PLC."
+                            />
+                          </div>
+
+                          <div className="relative group">
+                            <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Account Number</label>
+                            <input
+                              type="text"
+                              name="bank_account_number"
+                              value={formData.bank_account_number}
+                              onChange={handleInputChange}
+                              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:outline-none transition-all duration-200"
+                              placeholder="e.g. 123.456.7890"
+                            />
+                          </div>
+
+                          <div className="relative group">
+                            <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Routing Number</label>
+                            <input
+                              type="text"
+                              name="bank_routing_number"
+                              value={formData.bank_routing_number}
+                              onChange={handleInputChange}
+                              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:outline-none transition-all duration-200"
+                              placeholder="e.g. 090261947"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* MFS Details section */}
+                      <div className="bg-slate-50/50 border border-gray-100 rounded-2xl p-5 space-y-4">
+                        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider border-b pb-2">Mobile Financial Services (MFS)</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                          <div className="relative group">
+                            <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">MFS Provider</label>
+                            <select
+                              name="mfs_provider"
+                              value={formData.mfs_provider}
+                              onChange={handleInputChange}
+                              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:outline-none transition-all duration-200"
+                            >
+                              <option value="">Select Provider (None)</option>
+                              <option value="bkash">bKash</option>
+                              <option value="nagad">Nagad</option>
+                            </select>
+                          </div>
+
+                          <div className="relative group">
+                            <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Wallet / Mobile Number</label>
+                            <input
+                              type="text"
+                              name="mfs_wallet_number"
+                              value={formData.mfs_wallet_number}
+                              onChange={handleInputChange}
+                              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:outline-none transition-all duration-200"
+                              placeholder="e.g. 017XXXXXXXX"
+                            />
+                          </div>
+
+                          <div className="relative group md:col-span-2">
+                            <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Account Holder Name (Registered Name)</label>
+                            <input
+                              type="text"
+                              name="mfs_account_name"
+                              value={formData.mfs_account_name}
+                              onChange={handleInputChange}
+                              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:outline-none transition-all duration-200"
+                              placeholder="Registered owner full name"
+                            />
+                            <p className="text-[10px] text-gray-400 mt-1.5">Important: Payouts are made strictly to Personal MFS accounts matching the verified name.</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Identity & Documents Tab */}
+                {activeTab === 'identity' && (
+                  <div className="space-y-6 animate-slide-up">
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                        <FiFileText className="text-primary-500" />
+                        Identity &amp; Documents
+                      </h3>
+                      <p className="text-xs text-gray-500 mt-1">Provide your nationality and upload identity documents for verification.</p>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="relative group md:col-span-2">
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Bank Name</label>
+                      {/* Nationality — Searchable Combobox */}
+                      <div className="relative group md:col-span-2" ref={natDropdownRef}>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Nationality</label>
+                        <div className="relative">
+                          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-lg leading-none pointer-events-none select-none">
+                            {selectedNat ? selectedNat.flag : <FiGlobe className="text-gray-400 w-4 h-4" />}
+                          </span>
+                          <input
+                            type="text"
+                            autoComplete="off"
+                            placeholder={formData.nationality || 'Search nationality...'}
+                            value={natDropdownOpen ? nationalitySearch : (formData.nationality || '')}
+                            onChange={(e) => { setNationalitySearch(e.target.value); setNatDropdownOpen(true); }}
+                            onFocus={() => { setNatDropdownOpen(true); setNationalitySearch(''); }}
+                            className="w-full pl-10 pr-10 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:outline-none transition-all duration-200 hover:bg-gray-100/50 text-sm text-gray-800 font-medium cursor-pointer"
+                          />
+                          <button
+                            type="button"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                            onClick={() => {
+                              if (formData.nationality) {
+                                setFormData(prev => ({ ...prev, nationality: '' }));
+                                setNationalitySearch('');
+                                setNatDropdownOpen(false);
+                              } else {
+                                setNatDropdownOpen(o => !o);
+                              }
+                            }}
+                            tabIndex={-1}
+                          >
+                            {formData.nationality ? (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
+                            ) : (
+                              <svg className="w-4 h-4 transition-transform duration-200" style={{ transform: natDropdownOpen ? 'rotate(180deg)' : 'none' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" /></svg>
+                            )}
+                          </button>
+                          {natDropdownOpen && (
+                            <div className="absolute z-50 mt-2 w-full bg-white border border-gray-200 rounded-2xl shadow-2xl overflow-hidden" style={{ maxHeight: '280px', overflowY: 'auto', scrollbarWidth: 'thin' }}>
+                              {filteredNationalities.length === 0 ? (
+                                <div className="px-4 py-8 text-center text-sm text-gray-400">
+                                  <FiGlobe className="w-6 h-6 mx-auto mb-2 opacity-40" />
+                                  No results for &ldquo;{nationalitySearch}&rdquo;
+                                </div>
+                              ) : (
+                                filteredNationalities.map(n => (
+                                  <button
+                                    key={n.label}
+                                    type="button"
+                                    onClick={() => {
+                                      setFormData(prev => ({ ...prev, nationality: n.label }));
+                                      setNationalitySearch('');
+                                      setNatDropdownOpen(false);
+                                    }}
+                                    className={`w-full flex items-center gap-3 px-4 py-3 text-sm text-left transition-colors hover:bg-primary-50 ${
+                                      formData.nationality === n.label ? 'bg-primary-50 text-primary-700 font-semibold' : 'text-gray-700'
+                                    }`}
+                                  >
+                                    <span className="text-xl leading-none w-7 flex-shrink-0 text-center">{n.flag}</span>
+                                    <span className="font-medium">{n.label}</span>
+                                    {formData.nationality === n.label && (
+                                      <FiCheckCircle className="ml-auto w-4 h-4 text-primary-500 flex-shrink-0" />
+                                    )}
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* NID Number */}
+                      <div className="relative group">
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">NID Number</label>
                         <input
                           type="text"
-                          name="bank_name"
-                          value={formData.bank_name}
+                          name="nid_number"
+                          value={formData.nid_number}
                           onChange={handleInputChange}
                           className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:outline-none transition-all duration-200 hover:bg-gray-100/50"
-                          placeholder="e.g. Dutch-Bangla Bank PLC."
+                          placeholder="e.g. 1234567890123"
                         />
                       </div>
 
+                      {/* Passport Number */}
                       <div className="relative group">
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Account Number</label>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Passport Number</label>
                         <input
                           type="text"
-                          name="bank_account_number"
-                          value={formData.bank_account_number}
+                          name="passport_number"
+                          value={formData.passport_number}
                           onChange={handleInputChange}
                           className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:outline-none transition-all duration-200 hover:bg-gray-100/50"
-                          placeholder="e.g. 123.456.7890"
+                          placeholder="e.g. AB1234567"
                         />
                       </div>
 
+                      {/* NID Document Upload */}
                       <div className="relative group">
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Routing Number</label>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">NID Photo / Scan</label>
                         <input
-                          type="text"
-                          name="bank_routing_number"
-                          value={formData.bank_routing_number}
-                          onChange={handleInputChange}
-                          className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:outline-none transition-all duration-200 hover:bg-gray-100/50"
-                          placeholder="e.g. 090261947"
+                          ref={nidInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleFileUpload('nid_document_url', setNidPreview)}
+                          id="owner-nid-doc-upload"
                         />
+                        {nidPreview ? (
+                          <div className="relative group/img border border-gray-200 rounded-xl overflow-hidden">
+                            <img
+                              src={nidPreview}
+                              alt="NID Document"
+                              className="w-full h-40 object-cover rounded-xl"
+                            />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center gap-3 rounded-xl">
+                              <a
+                                href={nidPreview}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors"
+                                title="View full size"
+                              >
+                                <FiEye className="w-4 h-4" />
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveDocument('nid_document_url', setNidPreview, nidInputRef)}
+                                className="p-2 bg-red-500/80 hover:bg-red-500 rounded-full text-white transition-colors"
+                                title="Remove"
+                              >
+                                <FiTrash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <label
+                            htmlFor="owner-nid-doc-upload"
+                            className="flex flex-col items-center justify-center h-40 border-2 border-dashed border-gray-300 rounded-xl hover:border-primary-400 hover:bg-primary-50/30 cursor-pointer transition-all duration-200 group/upload"
+                          >
+                            <FiUpload className="w-7 h-7 text-gray-400 group-hover/upload:text-primary-500 mb-2 transition-colors" />
+                            <span className="text-xs font-semibold text-gray-500 group-hover/upload:text-primary-600 transition-colors">Upload NID Photo</span>
+                            <span className="text-[10px] text-gray-400 mt-1">JPEG, PNG, WEBP — max 5MB</span>
+                          </label>
+                        )}
                       </div>
+
+                      {/* Passport Document Upload */}
+                      <div className="relative group">
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Passport Photo / Scan</label>
+                        <input
+                          ref={passportInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleFileUpload('passport_document_url', setPassportPreview)}
+                          id="owner-passport-doc-upload"
+                        />
+                        {passportPreview ? (
+                          <div className="relative group/img border border-gray-200 rounded-xl overflow-hidden">
+                            <img
+                              src={passportPreview}
+                              alt="Passport Document"
+                              className="w-full h-40 object-cover rounded-xl"
+                            />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center gap-3 rounded-xl">
+                              <a
+                                href={passportPreview}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors"
+                                title="View full size"
+                              >
+                                <FiEye className="w-4 h-4" />
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveDocument('passport_document_url', setPassportPreview, passportInputRef)}
+                                className="p-2 bg-red-500/80 hover:bg-red-500 rounded-full text-white transition-colors"
+                                title="Remove"
+                              >
+                                <FiTrash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <label
+                            htmlFor="owner-passport-doc-upload"
+                            className="flex flex-col items-center justify-center h-40 border-2 border-dashed border-gray-300 rounded-xl hover:border-primary-400 hover:bg-primary-50/30 cursor-pointer transition-all duration-200 group/upload"
+                          >
+                            <FiUpload className="w-7 h-7 text-gray-400 group-hover/upload:text-primary-500 mb-2 transition-colors" />
+                            <span className="text-xs font-semibold text-gray-500 group-hover/upload:text-primary-600 transition-colors">Upload Passport Photo</span>
+                            <span className="text-[10px] text-gray-400 mt-1">JPEG, PNG, WEBP — max 5MB</span>
+                          </label>
+                        )}
+                      </div>
+
+                    </div>
+
+                    {/* Info Note */}
+                    <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                      <FiShield className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                      <p className="text-xs text-amber-700 leading-relaxed">
+                        <strong>Privacy Notice:</strong> Your identity documents are encrypted and stored securely. They are only used for verification purposes and will never be shared with third parties without your consent.
+                      </p>
                     </div>
                   </div>
                 )}

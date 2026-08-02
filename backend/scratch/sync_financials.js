@@ -12,7 +12,7 @@ async function syncAll() {
         // 2. Sync Payments (Room Revenue)
         console.log('Syncing Room Revenue...');
         const [payments] = await pool.query(`
-            SELECT p.*, b.property_id, pr.owner_id as host_id, u.id as owner_user_id
+            SELECT p.*, b.property_id, b.security_deposit, pr.owner_id as host_id, u.id as owner_user_id
             FROM payments p
             JOIN bookings b ON p.booking_id = b.id
             JOIN properties pr ON b.property_id = pr.id
@@ -21,17 +21,70 @@ async function syncAll() {
             WHERE p.status = 'completed' AND p.cr_amount > 0
         `);
 
+        // Group regular payments by booking_id
+        const paymentsByBooking = {};
+        for (const p of payments) {
+            if (p.transaction_type !== 'security_deposit_claim') {
+                if (!paymentsByBooking[p.booking_id]) {
+                    paymentsByBooking[p.booking_id] = [];
+                }
+                paymentsByBooking[p.booking_id].push(p);
+            }
+        }
+
+        // Sort each booking's payments by id asc to be deterministic
+        for (const bookingId in paymentsByBooking) {
+            paymentsByBooking[bookingId].sort((a, b) => a.id - b.id);
+        }
+
         const syncedCommissions = new Set();
 
         for (const p of payments) {
-            // Get or create Room Revenue head for this host
-            let [heads] = await pool.query('SELECT id FROM hms_accounts_heads WHERE (host_id = ? OR is_system = 1) AND name = ?', [p.owner_user_id, 'Room Revenue']);
-            let headId = heads.length > 0 ? heads[0].id : 1;
+            let amountToSync = parseFloat(p.cr_amount) || 0;
+            let headName = 'Room Revenue';
+            let headType = 'income';
+            let description = `Room Revenue - Booking #${p.booking_id}`;
+
+            if (p.transaction_type === 'security_deposit_claim') {
+                headName = 'Security Deposit Claims Received';
+                description = `Security Deposit Claim - Booking #${p.booking_id}`;
+            } else {
+                const bookingPayments = paymentsByBooking[p.booking_id] || [];
+                let remainingSecurityDeposit = parseFloat(p.security_deposit) || 0;
+                let excludedForCurrentPayment = 0;
+
+                for (const pItem of bookingPayments) {
+                    const pAmount = parseFloat(pItem.cr_amount) || 0;
+                    const excluded = Math.min(pAmount, remainingSecurityDeposit);
+                    remainingSecurityDeposit -= excluded;
+                    if (pItem.id === p.id) {
+                        excludedForCurrentPayment = excluded;
+                        break;
+                    }
+                }
+
+                amountToSync = (parseFloat(p.cr_amount) || 0) - excludedForCurrentPayment;
+            }
+
+            if (amountToSync <= 0) {
+                console.log(`Skipping payment ${p.id} as net amount is <= 0 after security deposit exclusion.`);
+                continue;
+            }
+
+            // Get or create Head for this host
+            let [heads] = await pool.query('SELECT id FROM hms_accounts_heads WHERE (host_id = ? OR is_system = 1) AND name = ?', [p.owner_user_id, headName]);
+            let headId;
+            if (heads.length > 0) {
+                headId = heads[0].id;
+            } else {
+                const [hResult] = await pool.query('INSERT INTO hms_accounts_heads (host_id, name, type) VALUES (?, ?, ?)', [p.owner_user_id, headName, headType]);
+                headId = hResult.insertId;
+            }
 
             await pool.query(
                 `INSERT INTO hms_accounts_transactions (host_id, property_id, account_head_id, amount, type, description, reference_type, reference_id, date) 
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [p.owner_user_id, p.property_id, headId, p.cr_amount, 'credit', `Room Revenue - Booking #${p.booking_id}`, 'payment', p.id, p.payment_date || p.created_at]
+                [p.owner_user_id, p.property_id, headId, amountToSync, 'credit', description, 'payment', p.id, p.payment_date || p.created_at]
             );
 
             // Sync Commission for this payment (only once per booking)
@@ -168,7 +221,7 @@ async function syncAll() {
         console.log(`Synced ${expenses.length} expense records.`);
 
         // 5. Sync Refunds
-        console.log('Syncing Completed Refunds...');
+        console.log('Syncing Refunds (completed or processing)...');
         const [refunds] = await pool.query(`
             SELECT r.*, b.property_id, pr.owner_id as host_id, u.id as owner_user_id
             FROM refunds r
@@ -176,7 +229,8 @@ async function syncAll() {
             JOIN properties pr ON b.property_id = pr.id
             JOIN property_owners po ON pr.owner_id = po.id
             JOIN users u ON po.user_id = u.id
-            WHERE r.status = 'completed'
+            WHERE r.status IN ('completed', 'processing') AND r.refund_amount > 0
+              AND r.refund_reference NOT LIKE 'SEC-REF%'
         `);
 
         for (const refund of refunds) {
@@ -208,7 +262,7 @@ async function syncAll() {
                     `Refund for Booking #${refund.booking_id} - Ref: ${refund.refund_reference}`, 
                     'refund', 
                     refund.id, 
-                    refund.completed_at || new Date()
+                    refund.completed_at || refund.updated_at || new Date()
                 ]
             );
         }

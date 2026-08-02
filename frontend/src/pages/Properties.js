@@ -10,6 +10,7 @@ import useAuthStore from '../store/authStore';
 import useToast from '../hooks/useToast';
 import StickySearchHeader from '../components/layout/StickySearchHeader';
 import PropertyImageSlider from '../components/property/PropertyImageSlider';
+import LazyPropertyCard from '../components/property/LazyPropertyCard';
 
 import MobileSearchModal from '../components/search/MobileSearchModal';
 import { sanitizeText, formatPrice } from '../utils/textUtils';
@@ -197,9 +198,9 @@ const Properties = () => {
           {/* Search Pill */}
           <button
             onClick={() => setShowSearchModal(true)}
-            className="flex-1 flex items-center justify-center bg-white rounded-full px-4 py-2 border border-gray-200 shadow-sm text-center hover:bg-gray-50 transition-all active:scale-[0.98]"
+            className="flex-1 min-w-0 flex items-center justify-center bg-white rounded-full px-4 py-2 border border-gray-200 shadow-sm text-center hover:bg-gray-50 transition-all active:scale-[0.98]"
           >
-            <div className="flex flex-col items-center leading-tight overflow-hidden w-full">
+            <div className="flex flex-col items-center leading-tight overflow-hidden w-full min-w-0">
               <span className="text-sm font-semibold text-gray-900 truncate w-full">
                 {sanitizeText(filters.city) || 'Anywhere'}
               </span>
@@ -211,7 +212,7 @@ const Properties = () => {
         </div>
 
         {/* Bottom Row: Property Type Tabs */}
-        <div className="flex items-center justify-center gap-2 overflow-x-auto scrollbar-hide pb-2">
+        <div className="flex items-center justify-start md:justify-center gap-4 md:gap-6 overflow-x-auto scrollbar-hide pb-2 px-2 w-full">
           {propertyTypesData && propertyTypesData.map((type) => {
             const normalizedName = (type.name || '').toLowerCase();
             let imgSrc = type.icon_url || '/images/nav-icon-room.png';
@@ -224,7 +225,7 @@ const Properties = () => {
               <button
                 key={type.id}
                 onClick={() => navigate(`/search?property_type=${normalizedName}`)}
-                className={`flex flex-col items-center justify-center py-1.5 transition-colors ${isTabActive(normalizedName) ? 'text-gray-900' : 'text-gray-500 hover:text-gray-800'}`}
+                className={`flex flex-col items-center justify-center py-1.5 transition-colors flex-shrink-0 ${isTabActive(normalizedName) ? 'text-gray-900' : 'text-gray-500 hover:text-gray-800'}`}
               >
                 <div className="flex flex-col items-center px-2">
                   <img src={imgSrc} alt={type.name} className={`w-5 h-5 object-contain transition-all duration-300 ${isTabActive(normalizedName) ? 'opacity-100 grayscale-0' : 'opacity-70 grayscale'}`} onError={(e) => { e.target.src = '/images/nav-icon-room.png'; }} />
@@ -535,67 +536,73 @@ const Properties = () => {
             ) : propertiesData?.properties?.length > 0 ? (
               <div className={`grid ${viewMode === 'grid' ? 'grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-6' : 'grid-cols-1 gap-4'}`}>
                 {propertiesData.properties.map((property) => (
-                  <div
+                  <LazyPropertyCard
                     key={property.id}
-                    className={`card-hover ${viewMode === 'list' ? 'flex' : 'flex flex-col h-full'}`}
-                    onClick={() => {
-                      // Pass search params to property detail page
-                      const params = new URLSearchParams();
-                      if (filters.check_in_date) params.set('check_in_date', filters.check_in_date);
-                      if (filters.check_out_date) params.set('check_out_date', filters.check_out_date);
-                      if (filters.min_guests) params.set('guests', filters.min_guests);
-                      const queryString = params.toString();
-                      navigate(`/property/${property.slug || property.id}${queryString ? `?${queryString}` : ''}`);
-                    }}
+                    aspectClass="aspect-[4/3]"
+                    heightClass="sm:h-48"
+                    viewMode={viewMode}
                   >
-                    <div className={`relative rounded-xl overflow-hidden ${viewMode === 'list' ? 'w-1/3 h-32' : 'aspect-[4/3] sm:h-48 mb-3'}`}>
-                      <PropertyImageSlider
-                        property={property}
-                        className="w-full h-full object-cover"
-                      />
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleFavorite(property.id);
-                        }}
-                        className="absolute top-3 right-3 p-2 bg-white rounded-full shadow-md hover:shadow-lg transition-shadow z-20"
-                      >
-                        <FiHeart className={`w-4 h-4 ${favorites.has(property.id) ? 'text-red-500 fill-current' : 'text-gray-400'}`} />
-                      </button>
-                      {property.is_non_refundable && (
-                        <div className="absolute bottom-3 left-3 bg-rose-600 text-white px-2 py-0.5 rounded-md text-[8px] font-bold z-20 shadow-sm uppercase tracking-wider">
-                          Non-Refundable
-                        </div>
-                      )}
-                      <div className="absolute top-3 left-3 bg-white px-2 py-1 rounded-full text-sm font-medium z-20">
-                        <span className="text-red-600 font-bold">BDT {formatPrice(property.base_price)}</span><span className="text-gray-600">/night</span>
-                      </div>
-                    </div>
-
-                    <div className={`${viewMode === 'list' ? 'flex-1 ml-4 space-y-1' : 'space-y-1'}`}>
-                      <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 leading-tight">
-                        {property.title}
-                      </h3>
-                      <p className="text-gray-600 flex items-center text-sm">
-                        <FiMapPin className="mr-1 flex-shrink-0" />
-                        <span className="truncate">{property.city}, {property.state}</span>
-                      </p>
-                      <div className="flex items-center">
-                        {property.total_reviews > 0 ? (
-                          <>
-                            <FiStar className="text-yellow-400 mr-1 fill-yellow-400 flex-shrink-0 w-3.5 h-3.5" />
-                            <span className="font-semibold text-gray-900 text-sm">{parseFloat(property.average_rating).toFixed(1)}</span>
-                            <span className="text-gray-500 text-xs ml-1">({property.total_reviews} verified)</span>
-                          </>
-                        ) : (
-                          <span className="text-gray-400 text-xs font-medium">No reviews yet</span>
+                    <div
+                      className={`card-hover ${viewMode === 'list' ? 'flex' : 'flex flex-col h-full'}`}
+                      onClick={() => {
+                        // Pass search params to property detail page
+                        const params = new URLSearchParams();
+                        if (filters.check_in_date) params.set('check_in_date', filters.check_in_date);
+                        if (filters.check_out_date) params.set('check_out_date', filters.check_out_date);
+                        if (filters.min_guests) params.set('guests', filters.min_guests);
+                        const queryString = params.toString();
+                        navigate(`/property/${property.slug || property.id}${queryString ? `?${queryString}` : ''}`);
+                      }}
+                    >
+                      <div className={`relative rounded-xl overflow-hidden ${viewMode === 'list' ? 'w-1/3 h-32' : 'aspect-[4/3] sm:h-48 mb-3'}`}>
+                        <PropertyImageSlider
+                          property={property}
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite(property.id);
+                          }}
+                          className="absolute top-3 right-3 p-2 bg-white rounded-full shadow-md hover:shadow-lg transition-shadow z-20"
+                        >
+                          <FiHeart className={`w-4 h-4 ${favorites.has(property.id) ? 'text-red-500 fill-current' : 'text-gray-400'}`} />
+                        </button>
+                        {property.is_non_refundable && (
+                          <div className="absolute bottom-3 left-3 bg-rose-600 text-white px-2 py-0.5 rounded-md text-[8px] font-bold z-20 shadow-sm uppercase tracking-wider">
+                            Non-Refundable
+                          </div>
                         )}
+                        <div className="absolute top-3 left-3 bg-white px-2 py-1 rounded-full text-sm font-medium z-20">
+                          <span className="text-red-600 font-bold">BDT {formatPrice(property.base_price)}</span><span className="text-gray-600">/night</span>
+                        </div>
                       </div>
-                      <div className="text-sm text-gray-500">
-                        Max {property.max_guests} guests
+
+                      <div className={`${viewMode === 'list' ? 'flex-1 ml-4 space-y-1' : 'space-y-1'}`}>
+                        <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 leading-tight">
+                          {property.title}
+                        </h3>
+                        <p className="text-gray-600 flex items-center text-sm">
+                          <FiMapPin className="mr-1 flex-shrink-0" />
+                          <span className="truncate">{property.city}, {property.state}</span>
+                        </p>
+                        <div className="flex items-center">
+                          {property.total_reviews > 0 ? (
+                            <>
+                              <FiStar className="text-yellow-400 mr-1 fill-yellow-400 flex-shrink-0 w-3.5 h-3.5" />
+                              <span className="font-semibold text-gray-900 text-sm">{parseFloat(property.average_rating).toFixed(1)}</span>
+                              <span className="text-gray-500 text-xs ml-1">({property.total_reviews} verified)</span>
+                            </>
+                          ) : (
+                            <span className="text-gray-400 text-xs font-medium">No reviews yet</span>
+                          )}
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          Max {property.max_guests} guests
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  </LazyPropertyCard>
                 ))}
               </div>
             ) : (
