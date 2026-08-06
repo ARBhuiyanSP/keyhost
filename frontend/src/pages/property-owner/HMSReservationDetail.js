@@ -14,6 +14,7 @@ import LoadingSpinner from '../../components/common/LoadingSpinner';
 import useToast from '../../hooks/useToast';
 import useSettingsStore from '../../store/settingsStore';
 import { getImageUrl } from '../../utils/imageUrl';
+import GuestProfileModal from '../../components/property-owner/GuestProfileModal';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const fmt = (n) => parseFloat(n || 0).toLocaleString('en-BD', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -57,7 +58,7 @@ const InfoChip = ({ icon: Icon, label, value, accent }) => (
 );
 
 // ─── Tab: Reservation Details ────────────────────────────────────────────────
-const DetailsTab = ({ data }) => {
+const DetailsTab = ({ data, onViewGuestProfile }) => {
     const { reservation, payments, extraBills, foodOrders, summary, extraGuests } = data;
     const [nidImgError, setNidImgError] = useState(false);
     const [passportImgError, setPassportImgError] = useState(false);
@@ -89,7 +90,15 @@ const DetailsTab = ({ data }) => {
                     </div>
                     <div className="flex-1 min-w-0 text-center md:text-left">
                         <div className="flex flex-col md:flex-row md:items-center gap-2 mb-2 justify-center md:justify-start">
-                            <h2 className="text-gray-900 font-extrabold text-2xl tracking-tight leading-none">{guestName}</h2>
+                            <h2 
+                                onClick={() => {
+                                    if (guestPhone && guestPhone !== '—') onViewGuestProfile(guestPhone);
+                                }}
+                                className="text-gray-900 font-extrabold text-2xl tracking-tight leading-none cursor-pointer hover:text-[#004e59] hover:underline"
+                                title="Click to view profile"
+                            >
+                                {guestName}
+                            </h2>
                             {reservation.guest_id && (
                                 <span className="inline-block px-2.5 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-full border border-emerald-200 uppercase tracking-wide">Web Guest</span>
                             )}
@@ -1998,6 +2007,7 @@ const HMSReservationDetail = () => {
     const { id } = useParams();
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState('details');
+    const [selectGuestPhone, setSelectGuestPhone] = useState(null);
 
     const { data, isLoading, error } = useQuery(
         ['hms-res-detail', id],
@@ -2101,7 +2111,7 @@ const HMSReservationDetail = () => {
 
             {/* ── TAB CONTENT ─────────────────────────────────────── */}
             <div className="print-hidden-controls p-4 md:p-6">
-                {activeTab === 'details' && <DetailsTab data={data} />}
+                {activeTab === 'details' && <DetailsTab data={data} onViewGuestProfile={setSelectGuestPhone} />}
                 {activeTab === 'invoices' && (
                     <InvoicesTab
                         data={data}
@@ -2111,6 +2121,13 @@ const HMSReservationDetail = () => {
                 {activeTab === 'confirmation-letter' && <ConfirmationLetterTab data={data} />}
                 {activeTab === 'contract-agreement' && <ContractAgreementTab data={data} />}
             </div>
+
+            {selectGuestPhone && (
+                <GuestProfileModal 
+                    phone={selectGuestPhone} 
+                    onClose={() => setSelectGuestPhone(null)} 
+                />
+            )}
         </div>
     );
 };

@@ -426,13 +426,13 @@ router.post('/bookings', verifyToken, requireGuestOrOwner, validateBooking, asyn
         number_of_guests, number_of_children, number_of_infants,
         base_price, cleaning_fee, security_deposit, extra_guest_fee,
         service_fee, tax_amount, admin_commission_rate, admin_commission_amount, property_owner_earnings,
-        total_amount, currency, status, payment_status,
+        total_amount, original_calculated_price, currency, status, payment_status,
         special_requests, coupon_code, discount_amount,
         booking_source, guest_name, guest_email, guest_phone,
         confirmed_at, payment_deadline,
         booking_type, months_count, extra_days, monthly_rate_used, advance_amount,
         is_non_refundable, booking_date, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     `, [
       bookingReference, req.user.id, property_id, hms_room_id || null,
       check_in_date, check_out_date, check_in_time || '15:00', check_out_time || '11:00',
@@ -440,7 +440,7 @@ router.post('/bookings', verifyToken, requireGuestOrOwner, validateBooking, asyn
       isMonthly ? (property.monthly_rent_amount || 0) : (basePrice * nights),
       cleaningFee, securityDeposit, extraGuestFee,
       serviceFee, taxAmount, commissionRate, commissionAmount, propertyOwnerEarnings,
-      finalTotal, property.currency || 'BDT', initialStatus, 'pending',
+      finalTotal, finalTotal, property.currency || 'BDT', initialStatus, 'pending',
       special_requests || null, coupon_code || null, totalDiscount,
       'website', `${req.user.first_name} ${req.user.last_name}`, req.user.email, req.user.phone || null,
       autoAccept ? new Date() : null,
@@ -451,6 +451,41 @@ router.post('/bookings', verifyToken, requireGuestOrOwner, validateBooking, asyn
     ]);
 
     const bookingId = result.insertId;
+
+    // Start/get conversation and insert system message for negotiation if not auto-accepted
+    if (!autoAccept) {
+      try {
+        const hostUserId = property.owner_user_id;
+        const guestUserId = req.user.id;
+
+        // Check if conversation already exists
+        const [existingConv] = await pool.execute(
+          'SELECT id FROM conversations WHERE guest_id = ? AND host_id = ? AND property_id = ?',
+          [guestUserId, hostUserId, property_id]
+        );
+
+        let conversationId;
+        if (existingConv.length > 0) {
+          conversationId = existingConv[0].id;
+          await pool.execute('UPDATE conversations SET last_message_at = NOW() WHERE id = ?', [conversationId]);
+        } else {
+          const [convResult] = await pool.execute(
+            'INSERT INTO conversations (guest_id, host_id, property_id, last_message_at) VALUES (?, ?, ?, NOW())',
+            [guestUserId, hostUserId, property_id]
+          );
+          conversationId = convResult.insertId;
+        }
+
+        // Insert System notification message
+        const sysMsg = `System: New booking request ${bookingReference} created.\nCheck-in: ${check_in_date}\nCheck-out: ${check_out_date}\nGuests: ${number_of_guests}\nOriginal Price: ৳${finalTotal}.`;
+        await pool.execute(
+          'INSERT INTO messages (conversation_id, sender_id, content) VALUES (?, ?, ?)',
+          [conversationId, guestUserId, sysMsg]
+        );
+      } catch (convErr) {
+        console.error('❌ Failed to auto-start conversation for booking request:', convErr);
+      }
+    }
 
     // Create DR entry if booking is auto-accepted (request_accepted)
     if (autoAccept) {

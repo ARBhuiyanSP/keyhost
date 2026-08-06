@@ -4,12 +4,15 @@ import { FiChevronLeft, FiSend, FiUser, FiInfo, FiMapPin, FiCheckCircle, FiClock
 import api from '../utils/api';
 import useAuthStore from '../store/authStore';
 import useToast from '../hooks/useToast';
+import useSettingsStore from '../store/settingsStore';
 import { getImageUrl } from '../utils/imageUrl';
+import { checkMessageCensorship } from '../utils/censorship';
 
 const ConversationDetail = () => {
     const { id: conversationId } = useParams();
     const navigate = useNavigate();
     const { user } = useAuthStore();
+    const { settings } = useSettingsStore();
     const { showError } = useToast();
     const [messages, setMessages] = useState([]);
     const [conversation, setConversation] = useState(null);
@@ -57,6 +60,13 @@ const ConversationDetail = () => {
         e.preventDefault();
         if (!newMessage.trim() || isSending) return;
 
+        // Client-side message validation / censorship warning
+        const validation = checkMessageCensorship(newMessage.trim(), settings);
+        if (validation.hasRestricted) {
+            showError(validation.reason);
+            return;
+        }
+
         setIsSending(true);
         try {
             const response = await api.post(`/messages/${conversationId}/reply`, {
@@ -95,19 +105,19 @@ const ConversationDetail = () => {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen pt-24 pb-12 flex justify-center bg-gray-50">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black"></div>
+            <div className="py-20 flex justify-center w-full">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#004e59]"></div>
             </div>
         );
     }
 
     if (!conversation) {
         return (
-            <div className="min-h-screen pt-24 pb-12 flex flex-col items-center justify-center bg-gray-50">
-                <h2 className="text-2xl font-bold text-gray-900 mb-4">Conversation not found</h2>
+            <div className="py-20 flex flex-col items-center justify-center w-full">
+                <h2 className="text-xl font-bold text-gray-900 mb-4">Conversation not found</h2>
                 <button
                     onClick={() => navigate('/messages')}
-                    className="px-6 py-3 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors"
+                    className="px-6 py-2.5 bg-[#004e59] hover:bg-[#003941] text-white rounded-lg hover:shadow-md transition-all font-bold text-sm"
                 >
                     Back to Messages
                 </button>
@@ -121,9 +131,9 @@ const ConversationDetail = () => {
     // Removed isGuest usage or derive if needed
 
     return (
-        <div className="min-h-screen bg-white pt-[64px] flex flex-col h-screen fixed inset-0">
+        <div className="flex flex-col h-[calc(100vh-130px)] w-full bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
             {/* Split Layout */}
-            <div className="flex flex-1 overflow-hidden h-full max-w-7xl mx-auto w-full">
+            <div className="flex flex-1 overflow-hidden h-full w-full">
 
                 {/* Left Column: Chat Area */}
                 <div className="flex-1 flex flex-col h-full border-r border-gray-100 relative w-full">
@@ -141,13 +151,13 @@ const ConversationDetail = () => {
                                 <div className="relative">
                                     {otherUserImage ? (
                                         <img
-                                            src={otherUserImage}
+                                            src={getImageUrl(otherUserImage)}
                                             alt={otherUserName}
                                             className="w-10 h-10 rounded-full object-cover border border-gray-100"
                                         />
                                     ) : (
-                                        <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-400">
-                                            <FiUser className="w-5 h-5" />
+                                        <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-600 font-bold text-sm">
+                                            {otherUserName?.[0]?.toUpperCase() || <FiUser className="w-5 h-5 text-gray-400" />}
                                         </div>
                                     )}
                                     <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
@@ -198,13 +208,13 @@ const ConversationDetail = () => {
                                                 {showAvatar ? (
                                                     otherUserImage ? (
                                                         <img
-                                                            src={otherUserImage}
+                                                            src={getImageUrl(otherUserImage)}
                                                             alt={otherUserName}
-                                                            className="w-8 h-8 rounded-full object-cover"
+                                                            className="w-8 h-8 rounded-full object-cover border border-gray-200"
                                                         />
                                                     ) : (
-                                                        <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-400 text-xs">
-                                                            {otherUserName[0]}
+                                                        <div className="w-8 h-8 bg-[#004e59]/10 rounded-full flex items-center justify-center text-[#004e59] text-xs font-black">
+                                                            {otherUserName?.[0]?.toUpperCase() || 'U'}
                                                         </div>
                                                     )
                                                 ) : <div className="w-8" />}

@@ -23,14 +23,18 @@ const Payment = () => {
   const isBkashEnabled = settings?.enable_bkash === true || settings?.enable_bkash === 'true';
   const isNagadEnabled = settings?.enable_nagad === true || settings?.enable_nagad === 'true';
 
-  // Initialize default gateway selection
+  // Initialize default gateway selection (Prioritize bKash, then SSLCommerz, then Nagad)
   useEffect(() => {
     if (settings) {
-      if (settings.enable_sslcommerz !== false) {
-        setSelectedGateway('sslcommerz');
-      } else if (settings.enable_bkash) {
+      const isBkash = settings.enable_bkash === true || settings.enable_bkash === 'true';
+      const isSsl = settings.enable_sslcommerz !== false && settings.enable_sslcommerz !== 'false';
+      const isNagad = settings.enable_nagad === true || settings.enable_nagad === 'true';
+
+      if (isBkash) {
         setSelectedGateway('bkash');
-      } else if (settings.enable_nagad) {
+      } else if (isSsl) {
+        setSelectedGateway('sslcommerz');
+      } else if (isNagad) {
         setSelectedGateway('nagad');
       }
     }

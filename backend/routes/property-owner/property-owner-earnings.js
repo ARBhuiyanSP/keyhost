@@ -236,6 +236,7 @@ router.get('/dashboard', async (req, res) => {
         b.security_deposit_claim_amount,
         b.security_deposit_deduction_amount,
         b.payment_status as status,
+        b.payment_method,
         b.created_at,
         p.title as property_title
       FROM bookings b
@@ -510,11 +511,7 @@ router.get('/analytics', async (req, res) => {
     // Get payment method breakdown (using payments table)
     const [paymentBreakdown] = await pool.execute(`
       SELECT
-        CASE 
-          WHEN b.payment_method = 'cash' THEN 'cash_on_arrival'
-          WHEN b.payment_method = 'sslcommerz' THEN 'online_payment'
-          ELSE 'bank_transfer'
-        END as payment_method,
+        COALESCE(b.payment_method, 'Unknown') as payment_method,
         SUM(b.property_owner_earnings) as total_amount
       FROM bookings b
       JOIN properties p ON b.property_id = p.id
@@ -522,23 +519,20 @@ router.get('/analytics', async (req, res) => {
       AND b.created_at >= DATE_SUB(NOW(), INTERVAL ? MONTH)
       AND b.status IN ('confirmed', 'checked_in', 'checked_out')
       AND b.status != 'cancelled'
-      GROUP BY 
-        CASE 
-          WHEN b.payment_method = 'cash' THEN 'cash_on_arrival'
-          WHEN b.payment_method = 'sslcommerz' THEN 'online_payment'
-          ELSE 'bank_transfer'
-        END
+      GROUP BY COALESCE(b.payment_method, 'Unknown')
     `, [propertyOwnerId, parseInt(period)]);
 
     // Format payment breakdown
     const formattedPaymentBreakdown = {
-      cash_on_arrival: 0,
-      online_payment: 0,
-      bank_transfer: 0
+      cash: 0,
+      sslcommerz: 0,
+      bkash: 0,
+      nagad: 0
     };
 
     paymentBreakdown.forEach(item => {
-      formattedPaymentBreakdown[item.payment_method] = parseFloat(item.total_amount) || 0;
+      const method = (item.payment_method || 'Unknown').toLowerCase();
+      formattedPaymentBreakdown[method] = parseFloat(item.total_amount) || 0;
     });
 
     res.json(
@@ -914,9 +908,26 @@ router.get('/financial-reports', async (req, res) => {
       LIMIT 150
     `, dateParams);
 
+    // Payment method breakdown for Host
+    const [paymentMethods] = await pool.execute(`
+      SELECT
+        COALESCE(b.payment_method, 'Unknown') as method,
+        COUNT(DISTINCT b.id) as count,
+        COALESCE(SUM(b.total_amount), 0) as total_amount
+      FROM bookings b
+      JOIN properties p ON b.property_id = p.id
+      WHERE p.owner_id = ?
+        AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+        AND b.status != 'cancelled'
+        ${dateWhere}
+      GROUP BY b.payment_method
+      ORDER BY total_amount DESC
+    `, dateParams);
+
     res.json(formatResponse(true, 'Financial reports retrieved successfully', {
       summary,
       bookings,
+      paymentMethods,
       dateRange
     }));
 

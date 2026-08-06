@@ -234,9 +234,10 @@ const PropertyOwnerEarnings = () => {
     earningsTrend = [],
     topProperties = [],
     paymentBreakdown = {
-      cash_on_arrival: 0,
-      online_payment: 0,
-      bank_transfer: 0
+      cash: 0,
+      sslcommerz: 0,
+      bkash: 0,
+      nagad: 0
     }
   } = analyticsData || {};
 
@@ -428,17 +429,23 @@ const PropertyOwnerEarnings = () => {
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Payment Methods</h3>
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">Cash on Arrival</span>
-                <span className="font-semibold">{formatCurrency(paymentBreakdown.cash_on_arrival)}</span>
+                <span className="text-gray-600">Cash / Walk-in</span>
+                <span className="font-semibold">{formatCurrency(paymentBreakdown.cash)}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">Online Payment</span>
-                <span className="font-semibold">{formatCurrency(paymentBreakdown.online_payment)}</span>
+                <span className="text-gray-600">bKash Checkout</span>
+                <span className="font-semibold">{formatCurrency(paymentBreakdown.bkash)}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">Bank Transfer</span>
-                <span className="font-semibold">{formatCurrency(paymentBreakdown.bank_transfer)}</span>
+                <span className="text-gray-600">SSLCommerz Cards</span>
+                <span className="font-semibold">{formatCurrency(paymentBreakdown.sslcommerz)}</span>
               </div>
+              {paymentBreakdown.nagad > 0 && (
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">Nagad</span>
+                  <span className="font-semibold">{formatCurrency(paymentBreakdown.nagad)}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -448,87 +455,162 @@ const PropertyOwnerEarnings = () => {
           <div className="px-6 py-4 border-b border-gray-200">
             <h3 className="text-lg font-semibold text-gray-900">Recent Earnings</h3>
           </div>
-          <div className="overflow-x-auto">
+          
+          {/* Desktop Table View */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Booking
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[15%]">
+                    Booking / Date
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[30%]">
                     Property
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Total Amount
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[20%]">
+                    Financials
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Commission
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[18%]">
+                    Security Deposit
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Claim Requested
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Claim Received
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Net Earnings
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Date
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[17%]">
+                    Payment & Status
                   </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {recentEarnings.map((earning) => (
-                  <tr key={earning.id}>
+                  <tr key={earning.id} className="hover:bg-gray-50/40">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {earning.booking_reference}
+                      <div className="font-bold text-gray-900">{earning.booking_reference}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">{formatDate(earning.created_at)}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate font-medium" title={earning.property_title}>
                       {earning.property_title}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatCurrency(earning.booking_total)}
+                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-600">
+                      <div className="flex justify-between gap-4 mb-0.5">
+                        <span>Total:</span>
+                        <span className="font-mono text-gray-850">{formatCurrency(earning.booking_total)}</span>
+                      </div>
+                      <div className="flex justify-between gap-4 text-red-500 mb-1">
+                        <span>Comm:</span>
+                        <span className="font-mono">-{formatCurrency(earning.commission_amount)}</span>
+                      </div>
+                      <div className="flex justify-between gap-4 font-bold text-green-600 border-t border-gray-100 pt-1 mt-0.5 text-sm">
+                        <span>Net:</span>
+                        <span className="font-mono">{formatCurrency(earning.net_earnings)}</span>
+                      </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600">
-                      -{formatCurrency(earning.commission_amount)}
+                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-600">
+                      <div className="flex justify-between gap-2 text-amber-600 mb-1">
+                        <span>Claimed:</span>
+                        <span className="font-mono font-semibold">{earning.security_deposit_claim_amount > 0 ? formatCurrency(earning.security_deposit_claim_amount) : '-'}</span>
+                      </div>
+                      <div className="flex justify-between gap-2 text-amber-800 font-bold">
+                        <span>Received:</span>
+                        <span className="font-mono">{earning.security_deposit_deduction_amount > 0 ? formatCurrency(earning.security_deposit_deduction_amount) : '-'}</span>
+                      </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-amber-500 italic">
-                      {earning.security_deposit_claim_amount > 0 ? formatCurrency(earning.security_deposit_claim_amount) : '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-amber-600 font-bold">
-                      {earning.security_deposit_deduction_amount > 0 ? formatCurrency(earning.security_deposit_deduction_amount) : '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-bold">
-                      {formatCurrency(earning.net_earnings)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        earning.status === 'paid' 
-                          ? 'bg-green-100 text-green-800' 
-                          : earning.status === 'pending'
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : earning.status === 'partial'
-                          ? 'bg-orange-100 text-orange-800'
-                          : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {earning.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatDate(earning.created_at)}
+                    <td className="px-6 py-4 whitespace-nowrap text-xs">
+                      <div className="flex flex-col gap-1.5 items-start">
+                        <span className="font-bold text-gray-700 capitalize">
+                          {earning.payment_method?.replace(/_/g, ' ') || 'Unknown'}
+                        </span>
+                        <span className={`inline-flex px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                          earning.status === 'paid' 
+                            ? 'bg-green-100 text-green-800' 
+                            : earning.status === 'pending'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : earning.status === 'partial'
+                            ? 'bg-orange-100 text-orange-800'
+                            : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {earning.status.toUpperCase()}
+                        </span>
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+
+          {/* Mobile Card List View */}
+          <div className="block md:hidden p-4 space-y-4">
+            {recentEarnings.map((earning) => (
+              <div key={earning.id} className="border border-gray-150 rounded-xl p-4 bg-gray-50/50 space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-bold text-gray-900">{earning.booking_reference}</span>
+                  <span className="text-xs text-gray-500">{formatDate(earning.created_at)}</span>
+                </div>
+                
+                <p className="text-sm text-gray-700 font-medium line-clamp-2 font-sans" title={earning.property_title}>
+                  {earning.property_title}
+                </p>
+                
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-205/60 text-xs">
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-gray-500">
+                      <span>Total:</span>
+                      <span className="font-mono text-gray-850">{formatCurrency(earning.booking_total)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-500">
+                      <span>Comm:</span>
+                      <span className="font-mono text-red-500">-{formatCurrency(earning.commission_amount)}</span>
+                    </div>
+                    <div className="flex justify-between font-semibold text-green-600">
+                      <span>Net:</span>
+                      <span className="font-mono">{formatCurrency(earning.net_earnings)}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2 flex flex-col items-end justify-between">
+                    <span className={`inline-flex px-2.5 py-0.5 text-[10px] font-bold rounded-full ${
+                      earning.status === 'paid' 
+                        ? 'bg-green-100 text-green-800' 
+                        : earning.status === 'pending'
+                        ? 'bg-yellow-100 text-yellow-800'
+                        : earning.status === 'partial'
+                        ? 'bg-orange-100 text-orange-800'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {earning.status.toUpperCase()}
+                    </span>
+                    <div className="text-right">
+                      <span className="text-[10px] text-gray-400 block">Method</span>
+                      <span className="text-xs font-semibold text-gray-750 capitalize">
+                        {earning.payment_method?.replace(/_/g, ' ') || 'Unknown'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {(earning.security_deposit_claim_amount > 0 || earning.security_deposit_deduction_amount > 0) && (
+                  <div className="bg-amber-50/50 p-2.5 rounded-lg text-xs space-y-1 mt-2 border border-amber-100/50">
+                    {earning.security_deposit_claim_amount > 0 && (
+                      <div className="flex justify-between text-amber-700">
+                        <span>Deposit Claim:</span>
+                        <span className="font-semibold font-mono">{formatCurrency(earning.security_deposit_claim_amount)}</span>
+                      </div>
+                    )}
+                    {earning.security_deposit_deduction_amount > 0 && (
+                      <div className="flex justify-between text-amber-800 font-bold">
+                        <span>Deposit Recv:</span>
+                        <span className="font-mono">{formatCurrency(earning.security_deposit_deduction_amount)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+            {recentEarnings.length === 0 && (
+              <p className="text-center py-4 text-sm text-gray-450">No earnings recorded yet.</p>
+            )}
+          </div>
         </div>
 
-        {/* Payout Requests Section */}
+      {/* Payout Requests Section */}
         <div className="mt-8 bg-white rounded-lg shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
             <h2 className="text-lg font-semibold text-gray-900 flex items-center">

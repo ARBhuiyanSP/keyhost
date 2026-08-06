@@ -48,17 +48,17 @@ const Messages = () => {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen pt-24 pb-12 flex justify-center bg-gray-50">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black"></div>
+            <div className="py-20 flex justify-center w-full">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#004e59]"></div>
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-white pt-24 pb-12">
-            <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="py-4 md:py-6">
+            <div className="max-w-5xl mx-auto">
                 <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-                    <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Messages</h1>
+                    <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Messages</h1>
 
                     {/* Search Bar */}
                     <div className="relative max-w-md w-full md:w-80">

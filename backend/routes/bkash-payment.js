@@ -423,6 +423,7 @@ router.post('/execute', verifyToken, async (req, res) => {
         UPDATE bookings 
         SET payment_status = 'paid', 
             status = 'confirmed',
+            payment_method = 'bkash',
             confirmed_at = NOW(),
             updated_at = NOW()
         WHERE id = ?
@@ -658,6 +659,7 @@ async function completeBkashPayment(payment, executeResult, res, bookingId) {
       await pool.execute(`
         UPDATE bookings 
         SET payment_status = 'paid', status = 'confirmed',
+            payment_method = 'bkash',
             confirmed_at = NOW(), updated_at = NOW()
         WHERE id = ?
       `, [bookingId]);

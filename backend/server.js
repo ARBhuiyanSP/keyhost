@@ -32,6 +32,7 @@ const supportRoutes = require('./routes/support');
 const contactRoutes = require('./routes/contact');
 const hmsHRRoutes = require('./routes/property-owner/hms-hr');
 const hmsAccountsRoutes = require('./routes/property-owner/hms-accounts');
+const pushRoutes = require('./routes/push');
 
 // Import middleware
 const { verifyToken } = require('./middleware/auth');
@@ -139,7 +140,8 @@ const apiRoutes = [
   { path: '/support', route: supportRoutes, middleware: verifyToken },
   { path: '/contact', route: contactRoutes },
   { path: '/hms/hr', route: hmsHRRoutes, middleware: verifyToken },
-  { path: '/hms/accounts', route: hmsAccountsRoutes, middleware: verifyToken }
+  { path: '/hms/accounts', route: hmsAccountsRoutes, middleware: verifyToken },
+  { path: '/push', route: pushRoutes }
 ];
 
 // Mount routes
@@ -247,7 +249,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
+// Start server (triggered restart 2)
 app.listen(PORT, () => {
   console.log(`🚀 Keyhost Homes API Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);

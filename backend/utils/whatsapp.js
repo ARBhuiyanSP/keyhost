@@ -26,7 +26,7 @@ const logToFile = (msg, err = null) => {
   }
 };
 
-// Initialize connection automatically on startup if credentials exist
+// Initialize connection automatically on startup if credentials exist in SESSION_DIR
 const initWhatsAppOnStartup = () => {
   try {
     if (fs.existsSync(SESSION_DIR)) {

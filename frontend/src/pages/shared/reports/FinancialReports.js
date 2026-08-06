@@ -70,6 +70,16 @@ const FinancialReports = ({ userRole }) => {
   const net = isAdmin ? parseFloat(summary.net_platform_earnings || 0) : parseFloat(summary.net_earnings || 0);
   const bookingsList = responseData?.bookings || [];
   
+  const mergedPaymentMethods = responseData?.paymentMethods?.map(pm => {
+    const comm = responseData?.commissionPaymentMethods?.find(c => c.method === pm.method);
+    return {
+      method: pm.method,
+      count: pm.count,
+      grossAmount: pm.total_amount,
+      commissionAmount: comm ? comm.total_amount : 0
+    };
+  }) || [];
+  
   return (
     <div className="min-h-screen bg-gray-50 pb-12 print:bg-white print:pb-0 font-sans text-gray-800">
       {/* Print Styles Override */}
@@ -409,11 +419,11 @@ const FinancialReports = ({ userRole }) => {
               </div>
             )}
 
-            {/* SCHEDULE B & C (Admin Only) */}
-            {isAdmin && (responseData?.paymentMethods?.length > 0 || responseData?.commissionStatus?.length > 0) && (
+            {/* SCHEDULE B & C */}
+            {(mergedPaymentMethods.length > 0 || (isAdmin && responseData?.commissionStatus?.length > 0)) && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 print:block print-break-before-page">
                 {/* Schedule B: Payment Methods */}
-                {responseData?.paymentMethods?.length > 0 && (
+                {mergedPaymentMethods.length > 0 && (
                   <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden print:border-none print:shadow-none print:mb-12">
                     <div className="bg-gray-50 px-8 py-5 border-b border-gray-200 print:bg-transparent print:px-0 print:border-b-2 print:border-gray-950">
                       <h3 className="font-extrabold text-gray-800 text-sm uppercase tracking-widest print:text-black">
@@ -425,16 +435,22 @@ const FinancialReports = ({ userRole }) => {
                         <thead>
                           <tr className="border-b-2 border-gray-300 print:border-gray-950">
                             <th className="py-3 text-xs font-bold uppercase tracking-wider text-gray-700 print:text-black">Payment Method</th>
-                            <th className="py-3 text-right text-xs font-bold uppercase tracking-wider text-gray-700 print:text-black w-1/4">Bookings</th>
-                            <th className="py-3 text-right text-xs font-bold uppercase tracking-wider text-gray-700 print:text-black w-1/3">Amount (৳)</th>
+                            <th className="py-3 text-right text-xs font-bold uppercase tracking-wider text-gray-700 print:text-black w-1/6">Bookings</th>
+                            <th className="py-3 text-right text-xs font-bold uppercase tracking-wider text-gray-700 print:text-black w-1/4">Gross (৳)</th>
+                            {isAdmin && (
+                              <th className="py-3 text-right text-xs font-bold uppercase tracking-wider text-gray-700 print:text-black w-1/4">Commission (৳)</th>
+                            )}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 print:divide-gray-300">
-                          {responseData.paymentMethods.map((m, i) => (
+                          {mergedPaymentMethods.map((m, i) => (
                             <tr key={i}>
                               <td className="py-3 text-sm text-gray-800 print:text-black font-semibold capitalize">{m.method?.replace(/_/g, ' ') || 'Unknown'}</td>
                               <td className="py-3 text-right text-sm text-gray-800 print:text-black font-mono">{m.count}</td>
-                              <td className="py-3 text-right text-sm text-gray-800 print:text-black font-bold font-mono">{fmt(m.total_amount)}</td>
+                              <td className="py-3 text-right text-sm text-gray-800 print:text-black font-bold font-mono">{fmt(m.grossAmount)}</td>
+                              {isAdmin && (
+                                <td className="py-3 text-right text-sm text-indigo-700 print:text-black font-bold font-mono">{fmt(m.commissionAmount)}</td>
+                              )}
                             </tr>
                           ))}
                         </tbody>
@@ -443,8 +459,8 @@ const FinancialReports = ({ userRole }) => {
                   </div>
                 )}
 
-                {/* Schedule C: Commission Receivables */}
-                {responseData?.commissionStatus?.length > 0 && (
+                {/* Schedule C: Commission Receivables (Admin Only) */}
+                {isAdmin && responseData?.commissionStatus?.length > 0 && (
                   <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden print:border-none print:shadow-none">
                     <div className="bg-gray-50 px-8 py-5 border-b border-gray-200 print:bg-transparent print:px-0 print:border-b-2 print:border-gray-955">
                       <h3 className="font-extrabold text-gray-800 text-sm uppercase tracking-widest print:text-black">

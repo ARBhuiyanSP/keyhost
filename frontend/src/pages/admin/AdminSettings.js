@@ -78,15 +78,31 @@ const AdminSettings = () => {
         'bkash_username', 'bkash_password', 'bkash_api_url', 'bkash_api_associated_email',
         'enable_nagad', 'nagad_is_live', 'nagad_merchant_id', 'nagad_merchant_private_key',
         'nagad_public_key', 'nagad_api_url',
-        'terms_of_service', 'privacy_policy', 'refund_policy'
+        'terms_of_service', 'privacy_policy', 'refund_policy',
+        'censor_phone_numbers', 'censor_emails', 'censor_links', 'censor_banned_words'
       ];
 
       Object.keys(updatedSettings).forEach(key => {
-        const value = updatedSettings[key];
+        let value = updatedSettings[key];
+        let type = typeof value === 'number' ? 'number' :
+          typeof value === 'boolean' ? 'boolean' : 'string';
+
+        if (key === 'censor_banned_words') {
+          type = 'json';
+          if (typeof value === 'string') {
+            try {
+              JSON.parse(value);
+            } catch (e) {
+              value = '[]';
+            }
+          } else {
+            value = JSON.stringify(value || []);
+          }
+        }
+
         backendFormat[key] = {
           value: value,
-          type: typeof value === 'number' ? 'number' :
-            typeof value === 'boolean' ? 'boolean' : 'string',
+          type: type,
           is_public: publicSettings.includes(key),
           description: `Setting for ${key}`
         };
@@ -219,6 +235,7 @@ const AdminSettings = () => {
     { id: 'email', name: 'Email Settings', icon: FiMail },
     { id: 'payment', name: 'Payment & Currency', icon: FiDollarSign },
     { id: 'sms', name: 'SMS Settings', icon: FiMessageSquare },
+    { id: 'censorship', name: 'Chat Security', icon: FiAlertCircle },
     { id: 'advanced', name: 'Advanced', icon: FiSettings },
   ];
 
@@ -1887,6 +1904,86 @@ const AdminSettings = () => {
                           </p>
                         </div>
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Chat Security / Censorship Settings */}
+                {activeTab === 'censorship' && (
+                  <div className="space-y-6">
+                    <div className="space-y-4">
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={settings.censor_phone_numbers !== false}
+                          onChange={(e) => handleInputChange('censor_phone_numbers', e.target.checked)}
+                          className="h-5 w-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 transition-colors cursor-pointer"
+                        />
+                        <label className="ml-3 text-sm font-semibold text-gray-800 cursor-pointer">
+                          Censor Phone Numbers
+                        </label>
+                      </div>
+                      <p className="text-xs text-gray-500 ml-8 -mt-2">
+                        Automatically redacts mobile phone numbers in host-guest chat messages.
+                      </p>
+
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={settings.censor_emails !== false}
+                          onChange={(e) => handleInputChange('censor_emails', e.target.checked)}
+                          className="h-5 w-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 transition-colors cursor-pointer"
+                        />
+                        <label className="ml-3 text-sm font-semibold text-gray-800 cursor-pointer">
+                          Censor Email Addresses
+                        </label>
+                      </div>
+                      <p className="text-xs text-gray-500 ml-8 -mt-2">
+                        Automatically redacts email addresses in host-guest chat messages.
+                      </p>
+
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={settings.censor_links !== false}
+                          onChange={(e) => handleInputChange('censor_links', e.target.checked)}
+                          className="h-5 w-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 transition-colors cursor-pointer"
+                        />
+                        <label className="ml-3 text-sm font-semibold text-gray-800 cursor-pointer">
+                          Censor Website Links & URLs
+                        </label>
+                      </div>
+                      <p className="text-xs text-gray-500 ml-8 -mt-2">
+                        Automatically redacts URLs and domain names in host-guest chat messages.
+                      </p>
+                    </div>
+
+                    <div className="pt-6 border-t">
+                      <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                        Banned Words & Phrases (JSON Array)
+                      </label>
+                      <textarea
+                        value={
+                          typeof settings.censor_banned_words === 'string'
+                            ? settings.censor_banned_words
+                            : JSON.stringify(settings.censor_banned_words || [])
+                        }
+                        onChange={(e) => {
+                          let val = e.target.value;
+                          try {
+                            val = JSON.parse(e.target.value);
+                          } catch (err) {
+                            // Allow string value while typing
+                          }
+                          handleInputChange('censor_banned_words', val);
+                        }}
+                        rows="4"
+                        className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                        placeholder='e.g. ["basha number", "যোগাযোগ করুন", "facebook"]'
+                      />
+                      <p className="mt-1.5 text-xs text-gray-500 font-medium">
+                        Enter a JSON list of banned words or phrases. For example: <code>{`["call me", "যোগাযোগ", "bkash"]`}</code>.
+                      </p>
                     </div>
                   </div>
                 )}

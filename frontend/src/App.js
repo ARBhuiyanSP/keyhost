@@ -40,6 +40,7 @@ const NotFound = lazy(() => import('./pages/NotFound'));
 const ContactHost = lazy(() => import('./pages/ContactHost'));
 const Messages = lazy(() => import('./pages/Messages'));
 const ConversationDetail = lazy(() => import('./pages/ConversationDetail'));
+const BookingNegotiation = lazy(() => import('./pages/property-owner/BookingNegotiation'));
 const SupportTickets = lazy(() => import('./pages/support/SupportTickets'));
 const TicketChat = lazy(() => import('./pages/support/TicketChat'));
 
@@ -139,7 +140,7 @@ const GuestReports = lazy(() => import('./pages/guest/GuestReports'));
 
 
 function App() {
-  const { user, isAdmin } = useAuthStore();
+  const { user, isAdmin, isAuthenticated } = useAuthStore();
   const { settings, isMaintenanceMode, loadPublicSettings } = useSettingsStore();
   const { isServerUnreachable } = useConnectionStore();
 
@@ -178,6 +179,79 @@ function App() {
 
     checkVersion();
   }, [loadPublicSettings]);
+
+  // Global PWA Push Notification initialization for logged-in users (all panels/dashboards)
+  useEffect(() => {
+    if (isAuthenticated) {
+      const initPush = async () => {
+        try {
+          const { registerServiceWorker, isPushSupported, isSubscribed, subscribeToPush, getNotificationPermission } = await import('./utils/pushSubscription');
+          await registerServiceWorker();
+          
+          if (isPushSupported()) {
+            const permission = getNotificationPermission();
+            // If already permitted in browser but not synced in local state, subscribe automatically
+            if (permission === 'granted' && !isSubscribed()) {
+              console.log('[Push] Syncing active subscription with server...');
+              await subscribeToPush();
+            }
+          }
+        } catch (err) {
+          console.error('[Push] Initialization failed:', err);
+        }
+      };
+      initPush();
+    }
+  }, [isAuthenticated]);
+
+  // Listen for push notifications in the foreground and play synthesized sound
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      const handleServiceWorkerMessage = (event) => {
+        if (event.data && event.data.type === 'PUSH_RECEIVED') {
+          console.log('[Push] Received in foreground, playing synthesized chime sound');
+          
+          try {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (AudioContextClass) {
+              const audioCtx = new AudioContextClass();
+              
+              // Helper to play a clean chime tone (bell envelope)
+              const playTone = (frequency, startOffset, duration) => {
+                const osc = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(frequency, audioCtx.currentTime + startOffset);
+                
+                // Gain envelope (bell curve: instant attack, decay to zero)
+                gainNode.gain.setValueAtTime(0, audioCtx.currentTime + startOffset);
+                gainNode.gain.linearRampToValueAtTime(0.2, audioCtx.currentTime + startOffset + 0.04);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + startOffset + duration);
+                
+                osc.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                
+                osc.start(audioCtx.currentTime + startOffset);
+                osc.stop(audioCtx.currentTime + startOffset + duration);
+              };
+
+              // Play a beautiful, premium double chime sound
+              playTone(587.33, 0, 0.35);    // D5 note
+              playTone(880.00, 0.1, 0.45);   // A5 note (harmonic fifth)
+            }
+          } catch (soundErr) {
+            console.warn('[Push] Audio playback failed (user interaction required or API blocked):', soundErr);
+          }
+        }
+      };
+
+      navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage);
+      return () => {
+        navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage);
+      };
+    }
+  }, []);
 
   if (isServerUnreachable) {
     return <ConnectionErrorScreen />;
@@ -433,6 +507,11 @@ function App() {
               <PropertyOwnerBookings />
             </ProtectedRoute>
           } />
+          <Route path="/property-owner/booking-negotiation/:bookingId" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <BookingNegotiation />
+            </ProtectedRoute>
+          } />
           <Route path="/property-owner/calendar" element={
             <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
               <PropertyOwnerCalendar />
@@ -664,6 +743,11 @@ function App() {
           <Route path="/guest/bookings/:id" element={
             <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
               <GuestBookingDetail />
+            </ProtectedRoute>
+          } />
+          <Route path="/guest/booking-negotiation/:bookingId" element={
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
+              <BookingNegotiation />
             </ProtectedRoute>
           } />
           <Route path="/guest/refunds" element={

@@ -111,6 +111,7 @@ async function completeNagadPayment(payment, verifyResult, res, bookingId) {
       await pool.execute(`
         UPDATE bookings 
         SET payment_status = 'paid', status = 'confirmed',
+            payment_method = 'nagad',
             confirmed_at = NOW(), updated_at = NOW()
         WHERE id = ?
       `, [bookingId]);

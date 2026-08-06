@@ -1,6 +1,16 @@
 const axios = require('axios');
 const { pool } = require('../config/database');
 const { sendWhatsAppMessage } = require('./whatsapp');
+const {
+  sendBookingRequestEmail,
+  sendBookingAcceptedEmail,
+  sendBookingPaidHostEmail,
+  sendBookingPaidGuestEmail,
+  sendCheckoutEmail,
+  sendRefundGuestEmail,
+  sendRefundHostEmail
+} = require('./email');
+const { sendPushToUser } = require('./pushNotification');
 
 // Helper to format check-in/out dates without timezone shifts
 function formatSmsDate(dateInput) {
@@ -173,6 +183,7 @@ async function getBookingDetailsForSms(bookingId) {
         b.id,
         b.booking_reference,
         b.total_amount,
+        b.payment_method,
         b.check_in_date,
         b.check_out_date,
         b.guest_name,
@@ -183,12 +194,15 @@ async function getBookingDetailsForSms(bookingId) {
         p.title as property_title,
         p.internal_name as property_internal_name,
         p.owner_id,
+        o_u.id as host_user_id,
         o_u.first_name as owner_first_name,
         o_u.last_name as owner_last_name,
         o_u.phone as owner_phone,
+        o_u.email as owner_email,
         g_u.first_name as guest_first_name,
         g_u.last_name as guest_last_name,
-        g_u.phone as guest_user_phone
+        g_u.phone as guest_user_phone,
+        g_u.email as guest_user_email
       FROM bookings b
       JOIN properties p ON b.property_id = p.id
       JOIN property_owners po ON p.owner_id = po.id
@@ -224,7 +238,9 @@ async function sendBookingRequestSms(bookingId, isAutoAccepted = false) {
     const checkInStr = formatSmsDate(booking.check_in_date);
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    const bookingUrl = `${frontendUrl}/property-owner/bookings?search=${booking.booking_reference}`;
+    const bookingUrl = isAutoAccepted 
+      ? `${frontendUrl}/property-owner/bookings?search=${booking.booking_reference}`
+      : `${frontendUrl}/property-owner/booking-negotiation/${bookingId}`;
 
     let template;
     if (isAutoAccepted) {
@@ -246,6 +262,38 @@ async function sendBookingRequestSms(bookingId, isAutoAccepted = false) {
 
     console.log(`[SMS] Sending Booking Request/Auto-Accepted to Host: ${message}`);
     await sendSMS({ to: hostPhone, message });
+
+    // ── Email to Host ──────────────────────────────────────────
+    const hostEmail = booking.owner_email;
+    if (hostEmail) {
+      const frontendUrlForEmail = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const emailBookingUrl = isAutoAccepted
+        ? `${frontendUrlForEmail}/property-owner/bookings?search=${booking.booking_reference}`
+        : `${frontendUrlForEmail}/property-owner/booking-negotiation/${bookingId}`;
+      await sendBookingRequestEmail({
+        toEmail: hostEmail,
+        hostName,
+        guestName,
+        propertyName: booking.host_property_name,
+        bookingRef: booking.booking_reference,
+        checkInDate: checkInStr,
+        bookingUrl: emailBookingUrl
+      });
+    }
+
+    // ── Push Notification to Host ───────────────────────────────
+    if (booking.host_user_id) {
+      const frontendUrlPush = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const pushUrl = isAutoAccepted
+        ? `${frontendUrlPush}/property-owner/bookings?search=${booking.booking_reference}`
+        : `${frontendUrlPush}/property-owner/booking-negotiation/${bookingId}`;
+      await sendPushToUser(booking.host_user_id, {
+        title: isAutoAccepted ? '✅ New Booking (Auto-Accepted)' : '🔔 New Booking Request',
+        body: `${guestName} wants to book ${booking.host_property_name} — Check-in: ${checkInStr}`,
+        url: pushUrl,
+        tag: `booking-request-${booking.booking_reference}`
+      });
+    }
   } catch (error) {
     console.error('[SMS] sendBookingRequestSms error:', error);
   }
@@ -295,6 +343,33 @@ async function sendBookingAcceptedSms(bookingId) {
 
     console.log(`[SMS] Sending Booking Accepted to Guest: ${message}`);
     await sendSMS({ to: guestPhone, message });
+
+    // ── Email to Guest ─────────────────────────────────────────
+    const guestEmail = booking.guest_email || booking.guest_user_email;
+    if (guestEmail) {
+      const frontendUrlForEmail = process.env.FRONTEND_URL || 'http://localhost:3000';
+      await sendBookingAcceptedEmail({
+        toEmail: guestEmail,
+        guestName,
+        propertyName: booking.property_title,
+        bookingRef: booking.booking_reference,
+        checkInDate: checkInStr,
+        amount: amountStr,
+        deadline: deadlineStr,
+        paymentUrl: `${frontendUrlForEmail}/guest/bookings`
+      });
+    }
+
+    // ── Push Notification to Guest ─────────────────────────────
+    if (booking.guest_id) {
+      const frontendUrlPush = process.env.FRONTEND_URL || 'http://localhost:3000';
+      await sendPushToUser(booking.guest_id, {
+        title: '🎉 Booking Accepted!',
+        body: `Your booking at ${booking.property_title} was accepted. Pay ${amountStr} to confirm.`,
+        url: `${frontendUrlPush}/guest/bookings`,
+        tag: `booking-accepted-${booking.booking_reference}`
+      });
+    }
   } catch (error) {
     console.error('[SMS] sendBookingAcceptedSms error:', error);
   }
@@ -312,6 +387,9 @@ async function sendBookingPaidSms(bookingId) {
     const checkInStr = formatSmsDate(booking.check_in_date);
     const amountStr = booking.total_amount ? `৳${booking.total_amount}` : '';
 
+    const methodRaw = booking.payment_method ? String(booking.payment_method).toLowerCase() : '';
+    const viaPaymentMethod = methodRaw ? ` via ${methodRaw === 'sslcommerz' ? 'SSLCommerz' : methodRaw === 'bkash' ? 'bKash' : methodRaw === 'nagad' ? 'Nagad' : methodRaw}` : '';
+
     const placeholders = {
       host_name: hostName,
       guest_name: guestName,
@@ -320,25 +398,99 @@ async function sendBookingPaidSms(bookingId) {
       property_name_guest: booking.property_title,
       booking_ref: booking.booking_reference,
       check_in_date: checkInStr,
-      amount: amountStr
+      amount: amountStr,
+      via_payment_method: viaPaymentMethod
     };
 
     // 1. Send to Host
     if (hostPhone) {
-      const defaultHostTemplate = `[Keyhost] Payment Confirmed! Booking {booking_ref} for {property_name} has been paid successfully. Guest: {guest_name}. Check-in: {check_in_date}.`;
+      const defaultHostTemplate = `[Keyhost] Payment Confirmed! Booking {booking_ref} for {property_name} has been paid successfully{via_payment_method}. Guest: {guest_name}. Check-in: {check_in_date}.`;
       const hostTemplate = await getSettingValue('sms_template_booking_paid_host', defaultHostTemplate);
-      const hostMsg = parseTemplate(hostTemplate, placeholders);
+      let hostMsg = parseTemplate(hostTemplate, placeholders);
+      
+      // Auto-inject if template does not have {via_payment_method} and doesn't mention "via"
+      if (viaPaymentMethod && !hostMsg.toLowerCase().includes('via')) {
+        if (hostMsg.includes('paid successfully')) {
+          hostMsg = hostMsg.replace('paid successfully', `paid successfully${viaPaymentMethod}`);
+        } else {
+          hostMsg = hostMsg.trim().replace(/\.$/, '') + `${viaPaymentMethod}.`;
+        }
+      }
+
       console.log(`[SMS] Sending Booking Paid to Host: ${hostMsg}`);
       await sendSMS({ to: hostPhone, message: hostMsg });
     }
 
     // 2. Send to Guest
     if (guestPhone) {
-      const defaultGuestTemplate = `[Keyhost] Thank you {guest_name}! Payment of {amount} for booking {booking_ref} ({property_name}) was successful. Your stay is confirmed. Check-in: {check_in_date}.`;
+      const defaultGuestTemplate = `[Keyhost] Thank you {guest_name}! Payment of {amount}{via_payment_method} for booking {booking_ref} ({property_name}) was successful. Your stay is confirmed. Check-in: {check_in_date}.`;
       const guestTemplate = await getSettingValue('sms_template_booking_paid_guest', defaultGuestTemplate);
-      const guestMsg = parseTemplate(guestTemplate, placeholders);
+      let guestMsg = parseTemplate(guestTemplate, placeholders);
+      
+      // Auto-inject if template does not have {via_payment_method} and doesn't mention "via"
+      if (viaPaymentMethod && !guestMsg.toLowerCase().includes('via')) {
+        if (guestMsg.includes('was successful')) {
+          guestMsg = guestMsg.replace('was successful', `was successful${viaPaymentMethod}`);
+        } else {
+          guestMsg = guestMsg.trim().replace(/\.$/, '') + ` (${methodRaw === 'sslcommerz' ? 'SSLCommerz' : methodRaw === 'bkash' ? 'bKash' : methodRaw === 'nagad' ? 'Nagad' : methodRaw} payment).`;
+        }
+      }
+
       console.log(`[SMS] Sending Booking Paid to Guest: ${guestMsg}`);
       await sendSMS({ to: guestPhone, message: guestMsg });
+    }
+
+    // ── Emails ────────────────────────────────────────────────
+    const paymentMethodLabel = methodRaw
+      ? (methodRaw === 'sslcommerz' ? 'SSLCommerz' : methodRaw === 'bkash' ? 'bKash' : methodRaw === 'nagad' ? 'Nagad' : methodRaw)
+      : '';
+    const checkOutStr = formatSmsDate(booking.check_out_date);
+
+    const hostEmail = booking.owner_email;
+    if (hostEmail) {
+      await sendBookingPaidHostEmail({
+        toEmail: hostEmail,
+        hostName,
+        guestName,
+        propertyName: booking.host_property_name,
+        bookingRef: booking.booking_reference,
+        checkInDate: checkInStr,
+        amount: amountStr,
+        paymentMethod: paymentMethodLabel
+      });
+    }
+
+    const guestEmail = booking.guest_email || booking.guest_user_email;
+    if (guestEmail) {
+      await sendBookingPaidGuestEmail({
+        toEmail: guestEmail,
+        guestName,
+        propertyName: booking.property_title,
+        bookingRef: booking.booking_reference,
+        checkInDate: checkInStr,
+        checkOutDate: checkOutStr,
+        amount: amountStr,
+        paymentMethod: paymentMethodLabel
+      });
+    }
+
+    // ── Push Notifications ─────────────────────────────────────
+    const frontendUrlPushPaid = process.env.FRONTEND_URL || 'http://localhost:3000';
+    if (booking.host_user_id) {
+      await sendPushToUser(booking.host_user_id, {
+        title: '💰 Payment Received!',
+        body: `${guestName} paid ${amountStr} for ${booking.host_property_name}. Check-in: ${checkInStr}`,
+        url: `${frontendUrlPushPaid}/property-owner/bookings`,
+        tag: `payment-received-${booking.booking_reference}`
+      });
+    }
+    if (booking.guest_id) {
+      await sendPushToUser(booking.guest_id, {
+        title: '✅ Booking Confirmed!',
+        body: `Your stay at ${booking.property_title} is confirmed. Check-in: ${checkInStr}`,
+        url: `${frontendUrlPushPaid}/guest/bookings`,
+        tag: `booking-confirmed-${booking.booking_reference}`
+      });
     }
   } catch (error) {
     console.error('[SMS] sendBookingPaidSms error:', error);
@@ -369,6 +521,30 @@ async function sendCheckoutSms(bookingId) {
 
     console.log(`[SMS] Sending Checkout to Guest: ${message}`);
     await sendSMS({ to: guestPhone, message });
+
+    // ── Email to Guest ─────────────────────────────────────────
+    const guestEmail = booking.guest_email || booking.guest_user_email;
+    if (guestEmail) {
+      const frontendUrlForEmail = process.env.FRONTEND_URL || 'http://localhost:3000';
+      await sendCheckoutEmail({
+        toEmail: guestEmail,
+        guestName,
+        propertyName: booking.property_title,
+        bookingRef: booking.booking_reference,
+        reviewUrl: `${frontendUrlForEmail}/guest/bookings`
+      });
+    }
+
+    // ── Push Notification to Guest ─────────────────────────────
+    if (booking.guest_id) {
+      const frontendUrlPushCheckout = process.env.FRONTEND_URL || 'http://localhost:3000';
+      await sendPushToUser(booking.guest_id, {
+        title: '👋 Thank You for Staying!',
+        body: `Your checkout from ${booking.property_title} is complete. Hope to see you again!`,
+        url: `${frontendUrlPushCheckout}/guest/bookings`,
+        tag: `checkout-${booking.booking_reference}`
+      });
+    }
   } catch (error) {
     console.error('[SMS] sendCheckoutSms error:', error);
   }
@@ -411,6 +587,51 @@ async function sendRefundSms(bookingId, refundAmount, reason = '') {
       const hostMsg = parseTemplate(hostTemplate, placeholders);
       console.log(`[SMS] Sending Refund to Host: ${hostMsg}`);
       await sendSMS({ to: hostPhone, message: hostMsg });
+    }
+
+    // ── Emails ────────────────────────────────────────────────
+    const guestEmail = booking.guest_email || booking.guest_user_email;
+    if (guestEmail) {
+      await sendRefundGuestEmail({
+        toEmail: guestEmail,
+        guestName,
+        propertyName: booking.property_title,
+        bookingRef: booking.booking_reference,
+        amount: amountStr,
+        reason: reason || 'Booking cancellation refund'
+      });
+    }
+
+    const hostEmail = booking.owner_email;
+    if (hostEmail) {
+      await sendRefundHostEmail({
+        toEmail: hostEmail,
+        hostName,
+        guestName,
+        propertyName: booking.host_property_name,
+        bookingRef: booking.booking_reference,
+        amount: amountStr,
+        reason: reason || 'Booking cancellation refund'
+      });
+    }
+
+    // ── Push Notifications ─────────────────────────────────────
+    const frontendUrlPushRefund = process.env.FRONTEND_URL || 'http://localhost:3000';
+    if (booking.guest_id) {
+      await sendPushToUser(booking.guest_id, {
+        title: '💸 Refund Initiated',
+        body: `Refund of ${amountStr} for booking ${booking.booking_reference} has been processed.`,
+        url: `${frontendUrlPushRefund}/guest/bookings`,
+        tag: `refund-${booking.booking_reference}`
+      });
+    }
+    if (booking.host_user_id) {
+      await sendPushToUser(booking.host_user_id, {
+        title: 'ℹ️ Refund Processed',
+        body: `Refund of ${amountStr} for booking ${booking.booking_reference} at ${booking.host_property_name}.`,
+        url: `${frontendUrlPushRefund}/property-owner/bookings`,
+        tag: `refund-host-${booking.booking_reference}`
+      });
     }
   } catch (error) {
     console.error('[SMS] sendRefundSms error:', error);

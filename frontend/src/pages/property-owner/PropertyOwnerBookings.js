@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from 'react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { FiCalendar, FiSearch, FiFilter, FiEye, FiUser, FiHome, FiDollarSign, FiMapPin, FiCheck, FiX, FiCreditCard, FiAlertTriangle, FiLogIn, FiLogOut, FiChevronRight } from 'react-icons/fi';
+import { FiCalendar, FiSearch, FiFilter, FiEye, FiUser, FiHome, FiDollarSign, FiMapPin, FiCheck, FiX, FiCreditCard, FiAlertTriangle, FiLogIn, FiLogOut, FiChevronRight, FiMessageSquare } from 'react-icons/fi';
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import useToast from '../../hooks/useToast';
 import { formatPrice } from '../../utils/textUtils';
+import GuestProfileModal from '../../components/property-owner/GuestProfileModal';
 
 const ExpandablePropertyTitle = ({ title, maxLength = 25 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -55,6 +56,7 @@ const PropertyOwnerBookings = () => {
   const [deductionData, setDeductionData] = useState({ amount: '', reason: '' });
   const [isSubmittingDeduction, setIsSubmittingDeduction] = useState(false);
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
+  const [selectGuestPhone, setSelectGuestPhone] = useState(null);
 
   // Fetch property owner's bookings
   const { data: bookingsData, isLoading, refetch } = useQuery(
@@ -594,7 +596,15 @@ const PropertyOwnerBookings = () => {
                             {booking.guest_name?.split(' ').map(n => n[0]).join('').substring(0, 2) || 'G'}
                           </div>
                           <div>
-                            <div className="text-xs font-bold text-gray-800 leading-tight">{booking.guest_name || 'Guest'}</div>
+                            <div 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (booking.guest_phone) setSelectGuestPhone(booking.guest_phone);
+                              }}
+                              className="text-xs font-bold text-gray-800 leading-tight cursor-pointer hover:text-primary-600 hover:underline"
+                            >
+                              {booking.guest_name || 'Guest'}
+                            </div>
                             <div className="text-[10px] text-gray-400 truncate max-w-[110px]">{booking.guest_email}</div>
                           </div>
                         </div>
@@ -642,6 +652,17 @@ const PropertyOwnerBookings = () => {
                           >
                             <FiEye className="h-3.5 w-3.5" />
                           </button>
+
+                          {booking.status === 'pending' && (
+                            <button
+                              onClick={() => navigate(`/property-owner/booking-negotiation/${booking.id}`)}
+                              type="button"
+                              className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors focus:outline-none"
+                              title="Negotiate & Chat"
+                            >
+                              <FiMessageSquare className="h-3.5 w-3.5" />
+                            </button>
+                          )}
 
                           {(booking.payment_status === 'pending' || booking.payment_status === 'processing') && (
                             <button
@@ -745,7 +766,15 @@ const PropertyOwnerBookings = () => {
                       {booking.guest_name?.split(' ').map(n => n[0]).join('').substring(0, 2) || 'G'}
                     </div>
                     <div>
-                      <h4 className="text-sm font-bold text-gray-900 leading-tight">{booking.guest_name || 'Guest'}</h4>
+                      <h4 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (booking.guest_phone) setSelectGuestPhone(booking.guest_phone);
+                        }}
+                        className="text-sm font-bold text-gray-900 leading-tight cursor-pointer hover:text-primary-600 hover:underline"
+                      >
+                        {booking.guest_name || 'Guest'}
+                      </h4>
                       <p className="text-[10px] text-blue-600 font-bold tracking-wide">{booking.booking_reference}</p>
                     </div>
                   </div>
@@ -814,12 +843,22 @@ const PropertyOwnerBookings = () => {
                 {/* Action Bar */}
                 <div className="px-4 py-2.5 bg-gray-50/80 border-t border-gray-100 flex items-center gap-2 flex-wrap">
                   <button
-                    onClick={() => handleViewBooking(booking)}
-                    type="button"
-                    className="flex-1 min-w-0 flex items-center justify-center gap-1 px-2 py-2 bg-white border border-gray-200 hover:border-blue-300 hover:bg-blue-50 text-gray-600 hover:text-blue-700 rounded-xl font-semibold text-[10px] transition-all focus:outline-none"
-                  >
-                    <FiEye className="h-3 w-3 shrink-0" /><span>Details</span>
-                  </button>
+                     onClick={() => handleViewBooking(booking)}
+                     type="button"
+                     className="flex-1 min-w-0 flex items-center justify-center gap-1 px-2 py-2 bg-white border border-gray-200 hover:border-blue-300 hover:bg-blue-50 text-gray-600 hover:text-blue-700 rounded-xl font-semibold text-[10px] transition-all focus:outline-none"
+                   >
+                     <FiEye className="h-3 w-3 shrink-0" /><span>Details</span>
+                   </button>
+
+                   {booking.status === 'pending' && (
+                     <button
+                       onClick={() => navigate(`/property-owner/booking-negotiation/${booking.id}`)}
+                       type="button"
+                       className="flex-1 min-w-0 flex items-center justify-center gap-1 px-2 py-2 bg-indigo-50 hover:bg-indigo-150 border border-indigo-200 text-indigo-750 rounded-xl font-semibold text-[10px] transition-all focus:outline-none"
+                     >
+                       <FiMessageSquare className="h-3 w-3 shrink-0" /><span>Negotiate</span>
+                     </button>
+                   )}
 
                   {(booking.payment_status === 'pending' || booking.payment_status === 'processing') && (
                     <button
@@ -993,7 +1032,15 @@ const PropertyOwnerBookings = () => {
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Name:</span>
-                        <span className="font-medium">{selectedBooking.guest_name || 'N/A'}</span>
+                        <span 
+                          onClick={() => {
+                            if (selectedBooking.guest_phone) setSelectGuestPhone(selectedBooking.guest_phone);
+                          }}
+                          className="font-medium cursor-pointer text-primary-600 hover:underline"
+                          title="Click to view profile"
+                        >
+                          {selectedBooking.guest_name || 'N/A'}
+                        </span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Email:</span>
@@ -1238,7 +1285,15 @@ const PropertyOwnerBookings = () => {
                       <div className="bg-gray-50 rounded-lg p-4 space-y-2">
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-600">Guest:</span>
-                          <span className="font-medium">{selectedBooking.guest_name || 'Guest'}</span>
+                          <span 
+                            onClick={() => {
+                              if (selectedBooking.guest_phone) setSelectGuestPhone(selectedBooking.guest_phone);
+                            }}
+                            className="font-medium cursor-pointer text-primary-600 hover:underline"
+                            title="Click to view profile"
+                          >
+                            {selectedBooking.guest_name || 'Guest'}
+                          </span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-600">Property:</span>
@@ -1714,6 +1769,13 @@ const PropertyOwnerBookings = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {selectGuestPhone && (
+        <GuestProfileModal 
+          phone={selectGuestPhone} 
+          onClose={() => setSelectGuestPhone(null)} 
+        />
       )}
     </div >
   );

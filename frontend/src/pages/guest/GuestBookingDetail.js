@@ -267,6 +267,12 @@ const GuestBookingDetail = () => {
                   <div>
                     <p className="font-semibold text-yellow-800 text-sm">Waiting for owner confirmation</p>
                     <p className="text-yellow-700 text-sm mt-0.5">Your request has been submitted. The property owner will respond shortly.</p>
+                    <button 
+                      onClick={() => navigate(`/guest/booking-negotiation/${booking.id}`)}
+                      className="mt-3 px-5 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:opacity-90 transition-opacity"
+                    >
+                      Chat & Negotiate Rate
+                    </button>
                   </div>
                 </div>
               )}
@@ -276,9 +282,14 @@ const GuestBookingDetail = () => {
                   <div>
                     <p className="font-semibold text-blue-800 text-sm">Owner accepted your request!</p>
                     <p className="text-blue-700 text-sm mt-0.5">Please complete payment to confirm your booking.</p>
-                    <button onClick={() => navigate(`/payment/${booking.id}`)} className="mt-3 px-5 py-2 bg-[#E41D57] text-white text-sm font-bold rounded-xl hover:opacity-90 transition-opacity">
-                      Make Payment →
-                    </button>
+                    <div className="flex gap-2">
+                      <button onClick={() => navigate(`/payment/${booking.id}`)} className="mt-3 px-5 py-2 bg-[#E41D57] text-white text-sm font-bold rounded-xl hover:opacity-90 transition-opacity">
+                        Make Payment →
+                      </button>
+                      <button onClick={() => navigate(`/guest/booking-negotiation/${booking.id}`)} className="mt-3 px-5 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:opacity-90 transition-opacity">
+                        Chat with Host
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

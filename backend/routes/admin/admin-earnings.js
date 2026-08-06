@@ -370,6 +370,22 @@ router.get('/financial-reports', async (req, res) => {
       GROUP BY ae.payment_status
     `, dateParams);
 
+    // Commission payment method breakdown
+    const [commissionPaymentMethods] = await pool.execute(`
+      SELECT
+        COALESCE(b.payment_method, 'Unknown') as method,
+        COUNT(DISTINCT ae.booking_id) as count,
+        COALESCE(SUM(ae.net_commission), 0) as total_amount
+      FROM admin_earnings ae
+      JOIN bookings b ON ae.booking_id = b.id
+      WHERE ae.status = 'active'
+        AND b.status != 'cancelled'
+        AND b.payment_status = 'paid'
+        ${dateWhere}
+      GROUP BY b.payment_method
+      ORDER BY total_amount DESC
+    `, dateParams);
+
     // Fetch detailed transactions for the period
     const [bookings] = await pool.execute(`
       SELECT
@@ -406,6 +422,7 @@ router.get('/financial-reports', async (req, res) => {
       monthlyTrend,
       topProperties,
       paymentMethods,
+      commissionPaymentMethods,
       commissionStatus,
       bookings,
       dateRange

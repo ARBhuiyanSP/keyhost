@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { FiMenu, FiX, FiUser, FiLogOut, FiSettings, FiHeart, FiBookOpen, FiDollarSign, FiChevronDown, FiGrid, FiAward, FiHome, FiSearch, FiMinus, FiPlus, FiMapPin, FiMessageSquare, FiGlobe, FiCalendar } from 'react-icons/fi';
+import { FiMenu, FiX, FiUser, FiLogOut, FiSettings, FiHeart, FiBookOpen, FiDollarSign, FiChevronDown, FiGrid, FiAward, FiHome, FiSearch, FiMinus, FiPlus, FiMapPin, FiMessageSquare, FiGlobe, FiCalendar, FiBell, FiBellOff } from 'react-icons/fi';
+import useToast from '../../hooks/useToast';
+import { isPushSupported, subscribeToPush, unsubscribeFromPush, getNotificationPermission, isSubscribed, registerServiceWorker } from '../../utils/pushSubscription';
 import { useQuery } from 'react-query';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -56,6 +58,55 @@ const Navbar = () => {
   const location = useLocation();
   const { user, isAuthenticated, logout, isAdmin, isPropertyOwner, becomeHost } = useAuthStore();
   const { settings, loadPublicSettings } = useSettingsStore();
+
+  const { showSuccess, showError, showInfo } = useToast();
+  const [isPushEnabled, setIsPushEnabled] = useState(false);
+
+  // Register Service Worker on mount for logged-in users
+  useEffect(() => {
+    if (isAuthenticated) {
+      registerServiceWorker();
+    }
+  }, [isAuthenticated]);
+
+  // Synchronize initial push toggle state
+  useEffect(() => {
+    if (isAuthenticated && isPushSupported()) {
+      setIsPushEnabled(isSubscribed() && getNotificationPermission() === 'granted');
+    }
+  }, [isAuthenticated]);
+
+  const handlePushToggle = async () => {
+    if (!isPushSupported()) {
+      showError('Push notifications are not supported on this browser');
+      return;
+    }
+
+    if (isPushEnabled) {
+      const success = await unsubscribeFromPush();
+      if (success) {
+        setIsPushEnabled(false);
+        showSuccess('Push notifications disabled');
+      } else {
+        showError('Failed to disable push notifications');
+      }
+    } else {
+      const permission = getNotificationPermission();
+      if (permission === 'denied') {
+        showError('Notification permission has been blocked. Please enable it in browser settings.');
+        return;
+      }
+      
+      showInfo('Requesting notification permission...');
+      const success = await subscribeToPush();
+      if (success) {
+        setIsPushEnabled(true);
+        showSuccess('Push notifications enabled successfully! 🎉');
+      } else {
+        showError('Failed to enable push notifications');
+      }
+    }
+  };
 
   // Fetch menu notification counts reactively via React Query for logged-in users
   const { data: notificationCounts } = useQuery(
@@ -932,6 +983,26 @@ const Navbar = () => {
                 className="text-sm font-semibold text-gray-800 hover:bg-gray-100 px-3 py-2 rounded-full transition-colors whitespace-nowrap"
               >
                 Become a host
+              </button>
+            )}
+
+            {/* Push Notification Bell Toggle */}
+            {isAuthenticated && isPushSupported() && (
+              <button
+                onClick={handlePushToggle}
+                className="p-2 text-gray-755 hover:bg-gray-100 rounded-full transition-all duration-200 relative group flex items-center justify-center"
+                title={isPushEnabled ? 'Disable Push Notifications' : 'Enable Push Notifications'}
+                aria-label="Toggle notifications"
+              >
+                {isPushEnabled ? (
+                  <FiBell className="w-[18px] h-[18px] text-[#004e59]" />
+                ) : (
+                  <FiBellOff className="w-[18px] h-[18px] text-gray-400" />
+                )}
+                {/* Visual indicator when disabled to remind them to subscribe */}
+                {!isPushEnabled && (
+                  <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full border border-white animate-pulse"></span>
+                )}
               </button>
             )}
 

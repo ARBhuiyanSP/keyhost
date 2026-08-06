@@ -13,6 +13,7 @@ import LoadingSpinner from '../../components/common/LoadingSpinner';
 import { getImageUrl, getFirstImageUrl } from '../../utils/imageUrl';
 import { format, addDays, isSameDay, parseISO } from 'date-fns';
 import DatePicker from 'react-datepicker';
+import GuestProfileModal from '../../components/property-owner/GuestProfileModal';
 import 'react-datepicker/dist/react-datepicker.css';
 import PaymentManagementModal from '../../components/property-owner/PaymentManagementModal';
 
@@ -308,6 +309,7 @@ const HMSReservations = () => {
     };
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const [selectGuestPhone, setSelectGuestPhone] = useState(null);
     const [statusFilter, setStatusFilter] = useState('');
     const [viewTab, setViewTab] = useState('all'); // 'all', 'arrivals', 'in_house', 'departures'
     
@@ -1146,7 +1148,15 @@ const HMSReservations = () => {
                                                     {(res.guest_name || res.guest_first_name)?.[0]?.toUpperCase()}
                                                 </div>
                                                 <div>
-                                                    <div className="font-bold text-gray-900">{res.guest_name || (res.guest_first_name ? `${res.guest_first_name} ${res.guest_last_name}` : 'Guest')}</div>
+                                                    <div 
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            if (res.guest_phone) setSelectGuestPhone(res.guest_phone);
+                                                        }}
+                                                        className="font-bold text-gray-900 cursor-pointer hover:text-primary-600 hover:underline"
+                                                    >
+                                                        {res.guest_name || (res.guest_first_name ? `${res.guest_first_name} ${res.guest_last_name}` : 'Guest')}
+                                                    </div>
                                                     <div className="text-xs text-gray-500 flex items-center gap-1.5 flex-wrap">
                                                         <span className="font-mono whitespace-nowrap">{res.booking_reference}</span>
                                                         {res.guest_id && <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-bold uppercase whitespace-nowrap">Web Guest</span>}
@@ -1348,7 +1358,13 @@ const HMSReservations = () => {
                                             {initials.toUpperCase()}
                                         </div>
                                         <div>
-                                            <h4 className="text-sm font-bold text-gray-900 leading-tight">
+                                            <h4 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (res.guest_phone) setSelectGuestPhone(res.guest_phone);
+                                                }}
+                                                className="text-sm font-bold text-gray-900 leading-tight cursor-pointer hover:text-primary-600 hover:underline"
+                                            >
                                                 {res.guest_name || (res.guest_first_name ? `${res.guest_first_name} ${res.guest_last_name}` : 'Guest')}
                                             </h4>
                                             <div className="text-[10px] text-gray-400 mt-0.5 flex items-center gap-1">
@@ -2396,6 +2412,13 @@ const HMSReservations = () => {
                     display: none !important;
                 }
             `}</style>
+
+            {selectGuestPhone && (
+                <GuestProfileModal 
+                    phone={selectGuestPhone} 
+                    onClose={() => setSelectGuestPhone(null)} 
+                />
+            )}
         </div>
     );
 };

@@ -1737,6 +1737,78 @@ router.put('/profile', async (req, res) => {
   }
 });
 
+// Propose custom price for a pending booking request
+router.post('/bookings/:id/propose-price', requireHMSPermission('manage_reservations'), validateId, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { proposed_price } = req.body;
+
+    const parsedPrice = parseFloat(proposed_price);
+    if (isNaN(parsedPrice) || parsedPrice <= 0) {
+      return res.status(400).json(formatResponse(false, 'Invalid proposed price'));
+    }
+
+    // Get property owner ID
+    const [owners] = await pool.execute(
+      'SELECT id FROM property_owners WHERE user_id = ?',
+      [req.user.id]
+    );
+    if (owners.length === 0) {
+      return res.status(404).json(formatResponse(false, 'Property owner not found'));
+    }
+    const ownerId = owners[0].id;
+
+    // Verify booking belongs to property owner's property
+    const [bookings] = await pool.execute(`
+      SELECT b.*, p.owner_id
+      FROM bookings b
+      JOIN properties p ON b.property_id = p.id
+      WHERE b.id = ? AND p.owner_id = ?
+    `, [id, ownerId]);
+
+    if (bookings.length === 0) {
+      return res.status(404).json(formatResponse(false, 'Booking not found or access denied'));
+    }
+
+    const booking = bookings[0];
+    if (booking.status !== 'pending') {
+      return res.status(400).json(formatResponse(false, 'Price can only be proposed for pending booking requests'));
+    }
+
+    // Save proposed price
+    await pool.execute(`
+      UPDATE bookings
+      SET host_proposed_price = ?,
+          updated_at = NOW()
+      WHERE id = ?
+    `, [parsedPrice, id]);
+
+    // Send system message to negotiation conversation
+    try {
+      const [conversations] = await pool.execute(
+        'SELECT id FROM conversations WHERE guest_id = ? AND host_id = ? AND property_id = ?',
+        [booking.guest_id, req.user.id, booking.property_id]
+      );
+      if (conversations.length > 0) {
+        const conversationId = conversations[0].id;
+        const sysMsg = `System: Host has proposed a special rate of ৳${parsedPrice} (Original: ৳${booking.original_calculated_price || booking.total_amount}) for booking ${booking.booking_reference}.`;
+        await pool.execute(
+          'INSERT INTO messages (conversation_id, sender_id, content) VALUES (?, ?, ?)',
+          [conversationId, req.user.id, sysMsg]
+        );
+        await pool.execute('UPDATE conversations SET last_message_at = NOW() WHERE id = ?', [conversationId]);
+      }
+    } catch (convErr) {
+      console.error('❌ Failed to send propose-price system message:', convErr);
+    }
+
+    res.json(formatResponse(true, 'Proposed price updated successfully', { proposed_price: parsedPrice }));
+  } catch (error) {
+    console.error('Propose price error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to propose price', null, error.message));
+  }
+});
+
 // Confirm booking (property owner confirms pending booking)
 router.patch('/bookings/:id/confirm', requireHMSPermission('manage_reservations'), validateId, async (req, res) => {
   console.log('=== PROPERTY OWNER CONFIRM BOOKING ROUTE CALLED ===');
@@ -1792,17 +1864,38 @@ router.patch('/bookings/:id/confirm', requireHMSPermission('manage_reservations'
     `);
     const paymentTimeLimitMinutes = settings.length > 0 ? parseInt(settings[0].setting_value) || 15 : 15;
 
+    // If host proposed a custom price, recalculate commission and ower earnings
+    let finalTotal = booking.total_amount;
+    let commissionAmount = booking.admin_commission_amount;
+    let propertyOwnerEarnings = booking.property_owner_earnings;
+
+    if (booking.host_proposed_price !== null) {
+      finalTotal = parseFloat(booking.host_proposed_price);
+      
+      const [commissionSettings] = await pool.execute(`
+        SELECT setting_value FROM system_settings WHERE setting_key = 'admin_commission_rate'
+      `);
+      const commissionRate = commissionSettings.length > 0 ? parseFloat(commissionSettings[0].setting_value) : 10.00;
+      const securityDeposit = parseFloat(booking.security_deposit) || 0;
+      
+      commissionAmount = (Math.max(0, finalTotal - securityDeposit) * commissionRate) / 100;
+      propertyOwnerEarnings = Math.max(0, finalTotal - securityDeposit - commissionAmount);
+    }
+
     // Update booking: Owner accepts, but keep status as 'pending' until payment
     // Use confirmed_at field to track when owner accepted the request
     // Set payment_deadline = NOW() + payment_time_limit_minutes
     await pool.execute(`
       UPDATE bookings
       SET status = 'request_accepted',
+          total_amount = ?,
+          admin_commission_amount = ?,
+          property_owner_earnings = ?,
           confirmed_at = NOW(),
           payment_deadline = DATE_ADD(NOW(), INTERVAL ? MINUTE),
           updated_at = NOW()
       WHERE id = ?
-    `, [paymentTimeLimitMinutes, id]);
+    `, [finalTotal, commissionAmount, propertyOwnerEarnings, paymentTimeLimitMinutes, id]);
 
     // Create DR entry when owner accepts (receivable amount - admin will receive this)
     const drReference = `DR-${Date.now()}-${id}`;
@@ -1815,13 +1908,41 @@ router.patch('/bookings/:id/confirm', requireHMSPermission('manage_reservations'
     `, [
       id,
       drReference,
-      booking.total_amount,
+      finalTotal,
       booking.currency || 'BDT',
-      booking.total_amount,
-      `Owner accepted booking request - Receivable amount: ৳${booking.total_amount}`
+      finalTotal,
+      `Owner accepted booking request - Receivable amount: ৳${finalTotal}`
     ]);
 
-    console.log(`Owner accepted booking request ${id}. DR entry created: ৳${booking.total_amount}`);
+    // Update admin earnings entry in case total price changed
+    await pool.execute(`
+      UPDATE admin_earnings
+      SET booking_total = ?,
+          commission_amount = ?,
+          net_commission = ?
+      WHERE booking_id = ?
+    `, [finalTotal - (parseFloat(booking.security_deposit) || 0), commissionAmount, commissionAmount, id]);
+
+    console.log(`Owner accepted booking request ${id}. DR entry created: ৳${finalTotal}`);
+
+    // Send system message to negotiation conversation
+    try {
+      const [conversations] = await pool.execute(
+        'SELECT id FROM conversations WHERE guest_id = ? AND host_id = ? AND property_id = ?',
+        [booking.guest_id, req.user.id, booking.property_id]
+      );
+      if (conversations.length > 0) {
+        const conversationId = conversations[0].id;
+        const sysMsg = `System: Host has accepted the booking request ${booking.booking_reference} (Rate: ৳${finalTotal}). Payment is pending.`;
+        await pool.execute(
+          'INSERT INTO messages (conversation_id, sender_id, content) VALUES (?, ?, ?)',
+          [conversationId, req.user.id, sysMsg]
+        );
+        await pool.execute('UPDATE conversations SET last_message_at = NOW() WHERE id = ?', [conversationId]);
+      }
+    } catch (convErr) {
+      console.error('❌ Failed to send accept-booking system message:', convErr);
+    }
 
     // Get updated booking
     const [updatedBookings] = await pool.execute(`
@@ -3069,6 +3190,143 @@ router.get('/hms/guests/lookup', requireHMSAccess, async (req, res) => {
     }
 });
 
+// Get detailed guest profile, metrics, and recent bookings across owner's properties
+router.get('/hms/guests/profile-details', requireHMSAccess, async (req, res) => {
+    try {
+        const { phone } = req.query;
+        if (!phone) {
+            return res.status(400).json(formatResponse(false, 'Phone number is required'));
+        }
+
+        const digitsOnly = phone.replace(/\D/g, '');
+        const suffixMatch = digitsOnly.length >= 10 ? `%${digitsOnly.slice(-10)}` : `%${digitsOnly}`;
+
+        // 1. Get detailed guest stats across all properties owned by this owner
+        const [statsRows] = await pool.query(`
+            SELECT 
+                MAX(b.guest_name) as guest_name,
+                b.guest_phone,
+                MAX(b.guest_email) as guest_email,
+                MAX(b.guest_nationality) as nationality,
+                MAX(b.guest_nid_number) as nid_number,
+                MAX(b.guest_passport_number) as passport_number,
+                MAX(b.guest_nid_document_url) as nid_document_url,
+                MAX(b.guest_passport_document_url) as passport_document_url,
+                COUNT(b.id) as total_bookings_count,
+                SUM(b.total_amount) as total_revenue_spent,
+                MAX(b.check_out_date) as last_visit_date,
+                MIN(b.check_in_date) as first_visit_date
+            FROM bookings b
+            JOIN properties p ON b.property_id = p.id
+            WHERE (b.guest_phone = ? OR b.guest_phone LIKE ? OR REPLACE(b.guest_phone, '+', '') = ?)
+              AND p.owner_id = (SELECT id FROM property_owners WHERE user_id = ?)
+            GROUP BY b.guest_phone
+            LIMIT 1
+        `, [phone, suffixMatch, digitsOnly, req.user.id]);
+
+        let profile = null;
+
+        if (statsRows.length > 0) {
+            profile = statsRows[0];
+        } else {
+            // Fallback to searching in bookings general or users table if they have no bookings yet with this owner
+            const [fallbackRows] = await pool.query(`
+                SELECT 
+                    guest_name, guest_email, guest_phone,
+                    guest_nationality as nationality, 
+                    guest_nid_number as nid_number, 
+                    guest_passport_number as passport_number, 
+                    guest_nid_document_url as nid_document_url, 
+                    guest_passport_document_url as passport_document_url
+                FROM bookings
+                WHERE (guest_phone = ? OR guest_phone LIKE ? OR REPLACE(guest_phone, '+', '') = ?)
+                ORDER BY id DESC
+                LIMIT 1
+            `, [phone, suffixMatch, digitsOnly]);
+
+            if (fallbackRows.length > 0) {
+                const fb = fallbackRows[0];
+                profile = {
+                    guest_name: fb.guest_name,
+                    guest_phone: fb.guest_phone,
+                    guest_email: fb.guest_email,
+                    nationality: fb.nationality,
+                    nid_number: fb.nid_number,
+                    passport_number: fb.passport_number,
+                    nid_document_url: fb.nid_document_url,
+                    passport_document_url: fb.passport_document_url,
+                    total_bookings_count: 0,
+                    total_revenue_spent: 0,
+                    last_visit_date: null,
+                    first_visit_date: null
+                };
+            } else {
+                // Try from users table
+                const [userRows] = await pool.query(`
+                    SELECT 
+                        CONCAT(first_name, ' ', last_name) as guest_name,
+                        email as guest_email, phone as guest_phone, 
+                        nationality, nid_number, passport_number, 
+                        nid_document_url, passport_document_url
+                    FROM users
+                    WHERE phone = ? OR phone LIKE ? OR REPLACE(phone, '+', '') = ?
+                    LIMIT 1
+                `, [phone, suffixMatch, digitsOnly]);
+
+                if (userRows.length > 0) {
+                    const u = userRows[0];
+                    profile = {
+                        guest_name: u.guest_name,
+                        guest_phone: u.guest_phone,
+                        guest_email: u.guest_email,
+                        nationality: u.nationality,
+                        nid_number: u.nid_number,
+                        passport_number: u.passport_number,
+                        nid_document_url: u.nid_document_url,
+                        passport_document_url: u.passport_document_url,
+                        total_bookings_count: 0,
+                        total_revenue_spent: 0,
+                        last_visit_date: null,
+                        first_visit_date: null
+                    };
+                }
+            }
+        }
+
+        if (!profile) {
+            return res.status(404).json(formatResponse(false, 'Guest profile not found'));
+        }
+
+        // 2. Fetch the recent 5 bookings for this guest across owner's properties
+        const [bookings] = await pool.query(`
+            SELECT 
+                b.id,
+                b.booking_reference,
+                b.check_in_date,
+                b.check_out_date,
+                b.total_amount,
+                b.status,
+                p.title as property_title,
+                r.room_number as hms_room_number
+            FROM bookings b
+            JOIN properties p ON b.property_id = p.id
+            LEFT JOIN hms_rooms r ON b.hms_room_id = r.id
+            WHERE (b.guest_phone = ? OR b.guest_phone LIKE ? OR REPLACE(b.guest_phone, '+', '') = ?)
+              AND p.owner_id = (SELECT id FROM property_owners WHERE user_id = ?)
+            ORDER BY b.check_in_date DESC
+            LIMIT 5
+        `, [phone, suffixMatch, digitsOnly, req.user.id]);
+
+        res.json(formatResponse(true, 'Guest profile retrieved successfully', {
+            profile,
+            recentBookings: bookings
+        }));
+    } catch (error) {
+        console.error('[HMS] Get guest profile details error:', error);
+        res.status(500).json(formatResponse(false, 'Failed to retrieve guest profile details', null, error.message));
+    }
+});
+
 // Get HMS guests list for a specific property
 router.get('/hms/guests/:propertyId', requireHMSAccess, requireHMSPermission('manage_reservations'), async (req, res) => {
     try {
@@ -3112,6 +3370,7 @@ router.get('/hms/guests/:propertyId', requireHMSAccess, requireHMSPermission('ma
         res.status(500).json(formatResponse(false, 'Failed to retrieve guests list', null, error.message));
     }
 });
+
 
 // Get HMS guest analytics for a specific property
 router.get('/hms/analytics/guests/:propertyId', requireHMSAccess, requireHMSPermission('manage_reservations'), async (req, res) => {
