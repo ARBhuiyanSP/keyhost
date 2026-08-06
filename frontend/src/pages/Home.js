@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQuery } from 'react-query';
+import { useInView } from 'react-intersection-observer';
 import {
   FiTruck, FiSearch, FiMapPin, FiCalendar, FiUsers, FiStar, FiWifi, FiCoffee, FiShield,
   FiTv, FiHome, FiDroplet, FiSun, FiEye, FiUser, FiLogOut, FiSettings, FiHeart, FiBookOpen,
@@ -16,7 +17,11 @@ import useSettingsStore from '../store/settingsStore';
 import useAuthStore from '../store/authStore';
 import StickySearchHeader from '../components/layout/StickySearchHeader';
 import PropertyImageSlider from '../components/property/PropertyImageSlider';
-import { getRecentlyViewed } from '../utils/recentlyViewed';
+import AnimatedSection from '../components/common/AnimatedSection';
+import { getRecentlyViewed, removeFromRecentlyViewed } from '../utils/recentlyViewed';
+import { formatPrice, getLocationSubtitle } from '../utils/textUtils';
+import LazyPropertyCard from '../components/property/LazyPropertyCard';
+import useLocationAutocomplete from '../hooks/useLocationAutocomplete';
 
 // Category Section Component
 const CategorySection = ({ category, checkCarouselScroll, activePropertyType }) => {
@@ -25,22 +30,30 @@ const CategorySection = ({ category, checkCarouselScroll, activePropertyType }) 
   const [canScrollPrevCat, setCanScrollPrevCat] = useState(false);
   const [canScrollNextCat, setCanScrollNextCat] = useState(false);
 
+  const { ref, inView } = useInView({
+    triggerOnce: true,
+    rootMargin: '200px 0px',
+  });
+
   const { data: categoryProperties, isLoading: isLoadingCategoryProperties } = useQuery(
     [`category-properties`, category.id],
     () => api.get(`/guest/display-categories/${category.id}/properties?limit=10`),
     {
       select: (response) => {
         const properties = response.data?.data?.properties || [];
-        console.log(`Category ${category.name} properties:`, properties);
         return properties;
       },
-      enabled: !!category.id && category.property_count > 0,
+      enabled: inView && !!category.id && category.property_count > 0,
     }
   );
 
   const filteredCategoryProperties = useMemo(() => {
     const type = (activePropertyType || '').toLowerCase();
     if (!type) return categoryProperties || [];
+    // Monthly Rent tab: filter by monthly_rent_enabled flag
+    if (type.includes('monthly')) {
+      return (categoryProperties || []).filter((p) => p.monthly_rent_enabled == 1);
+    }
     return (categoryProperties || []).filter((p) => {
       const pt = (p?.property_type || p?.propertyType || '').toString().toLowerCase();
       return pt === type || pt.includes(type) || type.includes(pt);
@@ -110,6 +123,27 @@ const CategorySection = ({ category, checkCarouselScroll, activePropertyType }) 
     };
   }, [filteredCategoryProperties, checkCarouselScroll]);
 
+  if (!inView) {
+    return (
+      <section ref={ref} className="pt-0 pb-10 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="h-8 w-48 bg-gray-200 animate-pulse rounded mb-4"></div>
+          <div className="flex gap-4 overflow-x-auto pb-4">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="flex-shrink-0 w-[calc(50%-8px)] sm:w-[260px] lg:w-[calc((100%-80px)/6)]">
+                <div className="card h-full">
+                  <div className="loading-skeleton h-48 mb-4 rounded-lg"></div>
+                  <div className="loading-skeleton h-4 mb-2"></div>
+                  <div className="loading-skeleton h-4 w-2/3"></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   if (isLoadingCategoryProperties) {
     return (
       <section className="pt-0 pb-10 bg-white">
@@ -136,99 +170,110 @@ const CategorySection = ({ category, checkCarouselScroll, activePropertyType }) 
   }
 
   return (
-    <section className="pt-0 pb-10 bg-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-4">
-          <div className="text-left flex-1">
-            <h2 className="text-xl md:text-2xl font-bold text-gray-900">
-              {category.name}
-            </h2>
-            {category.description && (
-              <p className="text-gray-600 mt-1">{category.description}</p>
-            )}
-          </div>
-
-          {/* Navigation Buttons */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              type="button"
-              onClick={() => scrollCategoryCarousel('prev')}
-              disabled={!canScrollPrevCat}
-              className={`w-10 h-10 rounded-full bg-white border border-gray-300 flex items-center justify-center transition-all shadow-sm active:scale-95 ${canScrollPrevCat
-                ? 'hover:bg-gray-50 cursor-pointer text-gray-700'
-                : 'opacity-50 cursor-not-allowed text-gray-400'
-                }`}
-              aria-label="Previous"
-            >
-              <FiChevronLeft className="w-5 h-5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollCategoryCarousel('next')}
-              disabled={!canScrollNextCat}
-              className={`w-10 h-10 rounded-full bg-white border border-gray-300 flex items-center justify-center transition-all shadow-sm active:scale-95 ${canScrollNextCat
-                ? 'hover:bg-gray-50 cursor-pointer text-gray-700'
-                : 'opacity-50 cursor-not-allowed text-gray-400'
-                }`}
-              aria-label="Next"
-            >
-              <FiChevronRight className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        <div
-          ref={categoryCarouselRef}
-          className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide scroll-smooth snap-x snap-mandatory"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-        >
-          {filteredCategoryProperties.map((property) => (
-            <div
-              key={property.id}
-              data-carousel-card
-              className="flex-shrink-0 w-[calc(50%-8px)] sm:w-[260px] lg:w-[calc((100%-80px)/6)] cursor-pointer snap-start"
-              onClick={() => navigate(`/property/${property.id}`)}
-            >
-              <div className="card-hover h-full">
-                <div className="relative h-48 mb-4 rounded-lg overflow-hidden">
-                  <PropertyImageSlider
-                    property={property}
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute top-4 right-4 bg-white px-3 py-1.5 rounded-full text-sm font-medium z-20 shadow-md">
-                    <span className="text-red-600 font-bold">৳{property.base_price}</span>
-                    <span className="text-gray-600"> / night</span>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 leading-tight">
-                    {property.title}
-                  </h3>
-                  <p className="text-gray-600 flex items-center text-sm">
-                    <FiMapPin className="mr-1 flex-shrink-0" />
-                    <span className="truncate">{property.city}, {property.state}</span>
-                  </p>
-                  <div className="flex items-center">
-                    {property.average_rating ? (
-                      <>
-                        <FiStar className="text-pink mr-1 fill-yellow-400 flex-shrink-0" />
-                        <span className="font-medium text-gray-900">{property.average_rating}</span>
-                      </>
-                    ) : (
-                      <>
-                        <FiStar className="text-pink mr-1 fill-yellow-400 flex-shrink-0" />
-                        <span className="font-medium text-gray-900">New</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
+    <AnimatedSection>
+      <section ref={ref} className="pt-0 pb-10 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-4">
+            <div className="text-left flex-1">
+              <h2 className="text-xl md:text-2xl font-bold text-gray-900">
+                {category.name}
+              </h2>
+              {category.description && (
+                <p className="text-gray-600 mt-1">{category.description}</p>
+              )}
             </div>
-          ))}
+
+            {/* Navigation Buttons */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => scrollCategoryCarousel('prev')}
+                disabled={!canScrollPrevCat}
+                className={`w-10 h-10 rounded-full bg-white border border-gray-300 flex items-center justify-center transition-all shadow-sm active:scale-95 ${canScrollPrevCat
+                  ? 'hover:bg-gray-50 cursor-pointer text-gray-700'
+                  : 'opacity-50 cursor-not-allowed text-gray-400'
+                  }`}
+                aria-label="Previous"
+              >
+                <FiChevronLeft className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollCategoryCarousel('next')}
+                disabled={!canScrollNextCat}
+                className={`w-10 h-10 rounded-full bg-white border border-gray-300 flex items-center justify-center transition-all shadow-sm active:scale-95 ${canScrollNextCat
+                  ? 'hover:bg-gray-50 cursor-pointer text-gray-700'
+                  : 'opacity-50 cursor-not-allowed text-gray-400'
+                  }`}
+                aria-label="Next"
+              >
+                <FiChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          <div
+            ref={categoryCarouselRef}
+            className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide scroll-smooth snap-x snap-mandatory"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          >
+            {filteredCategoryProperties.map((property) => (
+              <div
+                key={property.id}
+                data-carousel-card
+                className="flex-shrink-0 w-[calc(50%-8px)] sm:w-[260px] lg:w-[calc((100%-80px)/6)] cursor-pointer snap-start"
+                onClick={() => navigate(`/property/${property.slug || property.id}`)}
+              >
+                <LazyPropertyCard>
+                  <div className="card-hover h-full">
+                    <div className="relative h-48 mb-4 rounded-lg overflow-hidden">
+                      <PropertyImageSlider
+                        property={property}
+                        className="w-full h-full object-cover"
+                      />
+                      {property.is_non_refundable && (
+                        <div className="absolute top-4 left-4 bg-rose-600 text-white px-2 py-1 rounded-md text-[10px] font-bold z-20 shadow-sm uppercase tracking-wider">
+                          Non-Refundable
+                        </div>
+                      )}
+                      <div className="absolute top-4 right-4 bg-white px-3 py-1.5 rounded-full text-sm font-medium z-20 shadow-md">
+                        <span className="text-red-600 font-bold">
+                          ৳{formatPrice(((activePropertyType === 'monthly rent' || (activePropertyType && activePropertyType.includes('monthly'))) && property.monthly_rent_enabled) ? property.monthly_rent_amount : property.base_price)}
+                        </span>
+                        <span className="text-gray-600">
+                          {((activePropertyType === 'monthly rent' || (activePropertyType && activePropertyType.includes('monthly'))) && property.monthly_rent_enabled) ? ' / month' : ' / night'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 leading-tight">
+                        {property.title}
+                      </h3>
+                      <p className="text-gray-600 flex items-center text-sm">
+                        <FiMapPin className="mr-1 flex-shrink-0" />
+                        <span className="truncate">{property.city}, {property.state}</span>
+                      </p>
+                      <div className="flex items-center">
+                        {property.total_reviews > 0 ? (
+                          <>
+                            <FiStar className="text-yellow-400 mr-1 fill-yellow-400 flex-shrink-0 w-3.5 h-3.5" />
+                            <span className="font-semibold text-gray-900 text-sm">{parseFloat(property.average_rating).toFixed(1)}</span>
+                            <span className="text-gray-500 text-xs ml-1">({property.total_reviews})</span>
+                          </>
+                        ) : (
+                          <span className="text-gray-400 text-xs font-medium">No reviews yet</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </LazyPropertyCard>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+    </AnimatedSection>
   );
 };
 
@@ -242,13 +287,16 @@ const Home = () => {
   const [endDate, setEndDate] = useState(new Date());
   const carouselRef = useRef(null);
   const recentlyViewedCarouselRef = useRef(null);
+  const newPropertiesCarouselRef = useRef(null);
   const displayCategoryCarouselRefs = useRef({});
   const locationDropdownRef = useRef(null);
-  const [recentlyViewedIds, setRecentlyViewedIds] = useState([]);
+  const [recentlyViewedProperties, setRecentlyViewedProperties] = useState([]);
   const [canScrollPrev, setCanScrollPrev] = useState(false);
   const [canScrollNext, setCanScrollNext] = useState(false);
   const [canScrollPrevRecent, setCanScrollPrevRecent] = useState(false);
   const [canScrollNextRecent, setCanScrollNextRecent] = useState(false);
+  const [canScrollPrevNew, setCanScrollPrevNew] = useState(false);
+  const [canScrollNextNew, setCanScrollNextNew] = useState(false);
   const [categoryScrollStates, setCategoryScrollStates] = useState({});
   const [showStickySearchHeader, setShowStickySearchHeader] = useState(false);
   const [showMobileSearch, setShowMobileSearch] = useState(false);
@@ -348,6 +396,7 @@ const Home = () => {
         { name: 'Owner Dashboard', path: '/property-owner', icon: FiSettings },
         { name: 'My Properties', path: '/property-owner/properties', icon: FiBookOpen },
         { name: 'Bookings', path: '/property-owner/bookings', icon: FiBookOpen },
+        { name: 'Calendar Sync', path: '/property-owner/calendar', icon: FiCalendar },
         { name: 'Analytics', path: '/property-owner/analytics', icon: FiSettings },
         { name: 'Earnings', path: '/property-owner/earnings', icon: FiDollarSign },
         { name: 'Profile', path: '/property-owner/profile', icon: FiUser },
@@ -441,18 +490,21 @@ const Home = () => {
     return <IconComponent className="w-8 h-8" />;
   };
 
-  // Load search state from localStorage on mount
+  // Load search state from localStorage on mount (always start fresh with empty dates on homepage)
   const loadSearchState = () => {
     try {
       const saved = localStorage.getItem('searchState');
       if (saved) {
         const parsed = JSON.parse(saved);
         return {
-          location: parsed.location || '',
-          checkIn: parsed.checkIn ? new Date(parsed.checkIn) : null,
-          checkOut: parsed.checkOut ? new Date(parsed.checkOut) : null,
+          location: '',
+          checkIn: null,
+          checkOut: null,
           guests: parsed.guests || 1,
-          propertyType: ''
+          propertyType: '',
+          monthlySearchMode: parsed.monthlySearchMode || 'duration',
+          moveInDate: null,
+          durationMonths: parsed.durationMonths || 1
         };
       }
     } catch (error) {
@@ -463,23 +515,26 @@ const Home = () => {
       checkIn: null,
       checkOut: null,
       guests: 1,
-      propertyType: ''
+      propertyType: '',
+      monthlySearchMode: 'duration',
+      moveInDate: null,
+      durationMonths: 1
     };
   };
 
   const [searchData, setSearchData] = useState(loadSearchState);
-  const [activePropertyType, setActivePropertyType] = useState('');
+  const [activePropertyType, setActivePropertyType] = useState(undefined);
   const [airportList, setAirportList] = useState([]);
 
-  // Fetch airport list for mobile flight search
-  useEffect(() => {
-    fetch('/data/airportlist.json')
-      .then(res => res.json())
-      .then(data => {
-        setAirportList(Object.values(data));
-      })
-      .catch(err => console.error('Failed to load airports:', err));
-  }, []);
+  // Google Places Autocomplete for the mobile search overlay
+  const { placePredictions, handlePlaceSelect } = useLocationAutocomplete(
+    searchData.location,
+    activePropertyType,
+    ({ location, latitude, longitude }) => {
+      setSearchData(prev => ({ ...prev, location, latitude, longitude }));
+      setMobileSearchStep('dates');
+    }
+  );
 
   const getAirportSuggestions = (input) => {
     if (!input || typeof input !== 'string' || input.length < 2) return [];
@@ -496,39 +551,95 @@ const Home = () => {
     }).slice(0, 10);
   };
 
-  // Fetch featured properties
+  // Helper: is monthly rent tab active?
+  const isMonthlyTabActive = (activePropertyType || '').toLowerCase().includes('monthly');
+
+  // Fetch featured properties (short-stay) - cached for 5 minutes
   const { data: featuredProperties, isLoading } = useQuery(
     'featured-properties',
-    () => api.get('/guest/properties?is_featured=true&limit=10'),
+    () => api.get('/guest/properties?is_featured=true&limit=10&booking_type=short_stay'),
     {
+      staleTime: 300000, // 5 minutes
+      cacheTime: 600000, // 10 minutes
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
+      select: (response) => response.data?.data?.properties || [],
+    }
+  );
+
+  // Fetch monthly-rent properties (only when monthly tab is active) - cached for 5 minutes
+  const { data: monthlyProperties, isLoading: isLoadingMonthly } = useQuery(
+    'monthly-properties',
+    () => api.get('/guest/properties?booking_type=monthly&limit=20'),
+    {
+      enabled: isMonthlyTabActive,
+      staleTime: 300000, // 5 minutes
+      cacheTime: 600000, // 10 minutes
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
       select: (response) => response.data?.data?.properties || [],
     }
   );
 
   const filteredFeaturedProperties = useMemo(() => {
     const type = (activePropertyType || '').toLowerCase();
+    // Monthly Rent tab: use dedicated monthly properties list
+    if (type.includes('monthly')) {
+      return monthlyProperties || [];
+    }
     if (!type) return featuredProperties || [];
     return (featuredProperties || []).filter((p) => {
       const pt = (p?.property_type || p?.propertyType || '').toString().toLowerCase();
       return pt === type || pt.includes(type) || type.includes(pt);
     });
-  }, [featuredProperties, activePropertyType]);
+  }, [featuredProperties, monthlyProperties, activePropertyType]);
 
-  // Fetch amenities
+  // Fetch new added/approved properties (last 10) - cached for 5 minutes
+  const { data: newProperties, isLoading: isLoadingNew } = useQuery(
+    'new-properties',
+    () => api.get('/guest/properties?sort_by=created_at&sort_order=DESC&limit=10'),
+    {
+      staleTime: 300000, // 5 minutes
+      cacheTime: 600000, // 10 minutes
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
+      select: (response) => response.data?.data?.properties || [],
+    }
+  );
+
+  const filteredNewProperties = useMemo(() => {
+    const type = (activePropertyType || '').toLowerCase();
+    if (!type) return newProperties || [];
+    return (newProperties || []).filter((p) => {
+      const pt = (p?.property_type || p?.propertyType || '').toString().toLowerCase();
+      return pt === type || pt.includes(type) || type.includes(pt);
+    });
+  }, [newProperties, activePropertyType]);
+
+  // Fetch amenities - cached for 10 minutes
   const { data: amenities } = useQuery(
     'amenities',
     () => api.get('/guest/properties/amenities/list'),
     {
+      staleTime: 600000,
+      cacheTime: 900000,
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
       select: (response) => response.data?.data?.amenities || [],
     }
   );
 
-  // Fetch property types for tabs
+  // Fetch property types for tabs — fully DB-driven, including Flight
   const { data: propertyTypes } = useQuery(
     'home-property-types',
     () => api.get('/properties/property-types/list'),
     {
-      select: (response) => (response.data?.data?.propertyTypes || []).filter(pt => pt.is_active !== false),
+      staleTime: 600000, // 10 minutes
+      cacheTime: 900000, // 15 minutes
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
+      select: (response) =>
+        (response.data?.data?.propertyTypes || []).filter(pt => pt.is_active !== false),
     }
   );
 
@@ -537,20 +648,41 @@ const Home = () => {
     'property-locations',
     () => api.get('/properties/locations/list'),
     {
+      staleTime: 600000, // 10 minutes
+      cacheTime: 900000, // 15 minutes
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
       select: (response) => response.data?.data?.locations || [],
     }
   );
 
+  // Derived after propertyTypes loads: is Flight enabled by admin?
+  const isFlightEnabled = Array.isArray(propertyTypes) &&
+    propertyTypes.some(t => (t.name || '').toLowerCase() === 'flight');
+
+  // Load airport JSON ONLY when Flight tab is enabled — saves ~200KB on page load
   useEffect(() => {
-    if (propertyTypes && propertyTypes.length > 0 && !activePropertyType) {
-      setActivePropertyType((propertyTypes[0].name || '').toLowerCase());
+    if (!isFlightEnabled) {
+      setAirportList([]);
+      return;
+    }
+    fetch('/data/airportlist.json')
+      .then(res => res.json())
+      .then(data => setAirportList(Object.values(data)))
+      .catch(err => console.error('Failed to load airports:', err));
+  }, [isFlightEnabled]);
+
+  // Set active property type to 'all' by default
+  useEffect(() => {
+    if (propertyTypes && activePropertyType === undefined) {
+      setActivePropertyType('');
     }
   }, [propertyTypes, activePropertyType]);
 
   // Listen for navbar tab clicks and sync active property type
   useEffect(() => {
     const handleSetType = (e) => {
-      if (e.detail) setActivePropertyType(e.detail);
+      if (typeof e.detail === 'string') setActivePropertyType(e.detail);
     };
     window.addEventListener('setActivePropertyType', handleSetType);
     return () => window.removeEventListener('setActivePropertyType', handleSetType);
@@ -558,7 +690,7 @@ const Home = () => {
 
   // Notify navbar about active type changes
   useEffect(() => {
-    if (activePropertyType) {
+    if (typeof activePropertyType === 'string') {
       window.dispatchEvent(new CustomEvent('activePropertyTypeChanged', { detail: activePropertyType }));
     }
   }, [activePropertyType]);
@@ -590,9 +722,45 @@ const Home = () => {
     return `${year}-${month}-${day}`;
   };
 
+  const calculateCheckOutDate = (startDate, months) => {
+    if (!startDate) return null;
+    const d = new Date(startDate);
+    d.setMonth(d.getMonth() + parseInt(months));
+    return d;
+  };
+
+  const handleNearbyClick = (e) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    if (navigator.geolocation) {
+      setSearchData(prev => ({ ...prev, location: 'Locating...' }));
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setSearchData(prev => ({
+            ...prev,
+            location: 'Nearby',
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+          }));
+          setMobileSearchStep('dates');
+        },
+        (error) => {
+          console.error("Geolocation error:", error);
+          setSearchData(prev => ({ ...prev, location: 'Nearby' }));
+          setMobileSearchStep('dates');
+        }
+      );
+    } else {
+      setSearchData(prev => ({ ...prev, location: 'Nearby' }));
+      setMobileSearchStep('dates');
+    }
+  };
+
   const handleHomeSearch = (e) => {
     e.preventDefault();
     const params = new URLSearchParams();
+    const isMonthly = activePropertyType === 'monthly rent' || (activePropertyType && activePropertyType.includes('monthly'));
 
     if (activePropertyType === 'flight') {
       if (searchData.tripType) params.append('trip_type', searchData.tripType);
@@ -603,9 +771,29 @@ const Home = () => {
       params.append('travelers', searchData.guests || 1);
       if (searchData.flightClass) params.append('class', searchData.flightClass);
     } else {
-      if (searchData.location) params.append('city', searchData.location);
-      if (searchData.checkIn) params.append('check_in_date', formatDateLocal(searchData.checkIn));
-      if (searchData.checkOut) params.append('check_out_date', formatDateLocal(searchData.checkOut));
+      if (searchData.location) {
+        params.append('city', searchData.location);
+      }
+      if (searchData.latitude && searchData.longitude) {
+        params.append('latitude', searchData.latitude);
+        params.append('longitude', searchData.longitude);
+      }
+      if (isMonthly) {
+        params.append('booking_type', 'monthly');
+        if (searchData.monthlySearchMode === 'duration') {
+          if (searchData.moveInDate) {
+            params.append('check_in_date', formatDateLocal(searchData.moveInDate));
+            const computedCheckOut = calculateCheckOutDate(searchData.moveInDate, searchData.durationMonths || 1);
+            params.append('check_out_date', formatDateLocal(computedCheckOut));
+          }
+        } else {
+          if (searchData.checkIn) params.append('check_in_date', formatDateLocal(searchData.checkIn));
+          if (searchData.checkOut) params.append('check_out_date', formatDateLocal(searchData.checkOut));
+        }
+      } else {
+        if (searchData.checkIn) params.append('check_in_date', formatDateLocal(searchData.checkIn));
+        if (searchData.checkOut) params.append('check_out_date', formatDateLocal(searchData.checkOut));
+      }
       if (searchData.guests) params.append('min_guests', searchData.guests);
     }
 
@@ -615,28 +803,38 @@ const Home = () => {
     const searchState = {
       ...searchData,
       location: searchData.location,
+      latitude: searchData.latitude || null,
+      longitude: searchData.longitude || null,
       checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
       checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
       guests: searchData.guests,
       propertyType: activePropertyType,
-      tripType: searchData.tripType
+      tripType: searchData.tripType,
+      monthlySearchMode: searchData.monthlySearchMode,
+      moveInDate: searchData.moveInDate ? formatDateLocal(searchData.moveInDate) : null,
+      durationMonths: searchData.durationMonths
     };
     localStorage.setItem('searchState', JSON.stringify(searchState));
 
     navigate(`${activePropertyType === 'flight' ? '/flight/results' : '/search'}?${params.toString()}`);
   };
 
-  const getTypeIcon = (typeName, isActive = false) => {
+  const getTypeIcon = (typeName, isActive = false, iconUrl = '') => {
     const normalized = (typeName || '').toLowerCase();
 
-    let imgSrc = '/images/nav-icon-room.png'; // Default fallback
+    // Use admin-set icon first, then smart-detect
+    let imgSrc = iconUrl || '/images/nav-icon-room.png';
 
-    if (normalized.includes('apartment') || normalized.includes('villa') || normalized.includes('house') || normalized.includes('home')) {
-      imgSrc = '/images/nav-icon-apartment.png';
-    } else if (normalized.includes('hotel')) {
-      imgSrc = '/images/nav-icon-hotel.png';
-    } else if (normalized.includes('flight')) {
-      imgSrc = '/images/flight.png';
+    if (!iconUrl) {
+      if (normalized.includes('apartment') || normalized.includes('villa') || normalized.includes('house') || normalized.includes('home')) {
+        imgSrc = '/images/nav-icon-apartment.png';
+      } else if (normalized.includes('hotel')) {
+        imgSrc = '/images/nav-icon-hotel.png';
+      } else if (normalized.includes('flight')) {
+        imgSrc = '/images/flight.png';
+      } else if (normalized.includes('monthly') || normalized.includes('rent')) {
+        imgSrc = '/images/nav-icon-monthly.png';
+      }
     }
 
     return (
@@ -647,18 +845,22 @@ const Home = () => {
           ? 'opacity-100 grayscale-0'
           : 'opacity-70 grayscale'
           }`}
+        onError={(e) => { e.target.src = '/images/nav-icon-room.png'; }}
       />
     );
   };
 
-  // Fetch display categories (public endpoint)
+  // Fetch display categories (public endpoint) - cached for 5 minutes
   const { data: displayCategories, isLoading: isLoadingCategories } = useQuery(
     'display-categories',
     () => api.get('/guest/display-categories'),
     {
+      staleTime: 300000, // 5 minutes
+      cacheTime: 600000, // 10 minutes
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
       select: (response) => {
         const categories = response.data?.data?.categories || [];
-        console.log('Display Categories:', categories);
         return categories;
       },
     }
@@ -788,6 +990,42 @@ const Home = () => {
       }, 300);
     }
   };
+  // New Properties carousel navigation
+  const scrollNewPropertiesCarousel = (direction) => {
+    if (newPropertiesCarouselRef.current) {
+      const isMobile = window.innerWidth < 640;
+      const containerWidth = newPropertiesCarouselRef.current.clientWidth;
+      const gap = 16; // gap-4 = 16px
+
+      let scrollAmount;
+      if (isMobile) {
+        scrollAmount = containerWidth;
+      } else {
+        const firstCard = newPropertiesCarouselRef.current.querySelector('[data-carousel-card]');
+        const cardWidth = firstCard ? firstCard.getBoundingClientRect().width : 260;
+        scrollAmount = cardWidth + gap;
+      }
+
+      const currentScroll = newPropertiesCarouselRef.current.scrollLeft;
+      const maxScroll = newPropertiesCarouselRef.current.scrollWidth - newPropertiesCarouselRef.current.clientWidth;
+
+      let newScroll;
+      if (direction === 'next') {
+        newScroll = Math.min(currentScroll + scrollAmount, maxScroll);
+      } else {
+        newScroll = Math.max(currentScroll - scrollAmount, 0);
+      }
+
+      newPropertiesCarouselRef.current.scrollTo({
+        left: newScroll,
+        behavior: 'smooth'
+      });
+
+      setTimeout(() => {
+        checkCarouselScroll(newPropertiesCarouselRef.current, setCanScrollPrevNew, setCanScrollNextNew);
+      }, 300);
+    }
+  };
 
   // Update button states on scroll and resize
   useEffect(() => {
@@ -799,15 +1037,21 @@ const Home = () => {
       checkCarouselScroll(recentlyViewedCarouselRef.current, setCanScrollPrevRecent, setCanScrollNextRecent);
     };
 
+    const handleNewCarouselScroll = () => {
+      checkCarouselScroll(newPropertiesCarouselRef.current, setCanScrollPrevNew, setCanScrollNextNew);
+    };
+
     const handleResize = () => {
       setTimeout(() => {
         checkCarouselScroll(carouselRef.current, setCanScrollPrev, setCanScrollNext);
         checkCarouselScroll(recentlyViewedCarouselRef.current, setCanScrollPrevRecent, setCanScrollNextRecent);
+        checkCarouselScroll(newPropertiesCarouselRef.current, setCanScrollPrevNew, setCanScrollNextNew);
       }, 100);
     };
 
     const carousel = carouselRef.current;
     const recentCarousel = recentlyViewedCarouselRef.current;
+    const newCarousel = newPropertiesCarouselRef.current;
 
     if (carousel) {
       carousel.addEventListener('scroll', handleCarouselScroll);
@@ -819,20 +1063,48 @@ const Home = () => {
       checkCarouselScroll(recentCarousel, setCanScrollPrevRecent, setCanScrollNextRecent);
     }
 
+    if (newCarousel) {
+      newCarousel.addEventListener('scroll', handleNewCarouselScroll);
+      checkCarouselScroll(newCarousel, setCanScrollPrevNew, setCanScrollNextNew);
+    }
+
     window.addEventListener('resize', handleResize);
 
     return () => {
       if (carousel) carousel.removeEventListener('scroll', handleCarouselScroll);
       if (recentCarousel) recentCarousel.removeEventListener('scroll', handleRecentCarouselScroll);
+      if (newCarousel) newCarousel.removeEventListener('scroll', handleNewCarouselScroll);
       window.removeEventListener('resize', handleResize);
     };
-  }, [filteredFeaturedProperties, recentlyViewedIds, activePropertyType]);
+  }, [filteredFeaturedProperties, recentlyViewedProperties, filteredNewProperties, activePropertyType]);
 
-  // Get recently viewed property IDs on mount and refresh periodically
+  // Get recently viewed properties on mount and refresh periodically
   useEffect(() => {
-    const updateRecentlyViewed = () => {
+    const updateRecentlyViewed = async () => {
       const recent = getRecentlyViewed(10);
-      setRecentlyViewedIds(recent.map(p => p.id));
+      if (recent.length === 0) {
+        setRecentlyViewedProperties([]);
+        return;
+      }
+
+      setRecentlyViewedProperties(recent);
+
+      // Clean up deleted properties from localStorage
+      try {
+        const ids = recent.map(p => p.id).join(',');
+        const response = await api.get(`/guest/properties/validate-multiple?ids=${ids}`);
+        if (response.data.success) {
+          const validIds = response.data.data.validIds;
+          const filtered = recent.filter(p => validIds.includes(p.id));
+
+          if (filtered.length !== recent.length) {
+            localStorage.setItem('recently_viewed_properties', JSON.stringify(filtered));
+            setRecentlyViewedProperties(filtered);
+          }
+        }
+      } catch (error) {
+        console.error('Error validating recently viewed:', error);
+      }
     };
 
     // Update on mount
@@ -868,29 +1140,6 @@ const Home = () => {
     };
   }, []);
 
-  // Fetch recently viewed properties
-  const { data: recentlyViewedProperties } = useQuery(
-    ['recently-viewed-properties', recentlyViewedIds],
-    async () => {
-      if (recentlyViewedIds.length === 0) return [];
-
-      // Fetch each property by ID
-      const promises = recentlyViewedIds.map(id =>
-        api.get(`/properties/${id}`).catch(() => null)
-      );
-      const results = await Promise.all(promises);
-
-      // Filter out failed requests and extract property data
-      return results
-        .filter(result => result && result.data?.data?.property)
-        .map(result => result.data.data.property);
-    },
-    {
-      enabled: recentlyViewedIds.length > 0,
-      select: (properties) => properties || [],
-    }
-  );
-
   const filteredRecentlyViewedProperties = useMemo(() => {
     const type = (activePropertyType || '').toLowerCase();
     if (!type) return recentlyViewedProperties || [];
@@ -908,6 +1157,15 @@ const Home = () => {
       }, 100);
     }
   }, [filteredRecentlyViewedProperties]);
+
+  // Update button states when new properties change
+  useEffect(() => {
+    if (filteredNewProperties && filteredNewProperties.length > 0) {
+      setTimeout(() => {
+        checkCarouselScroll(newPropertiesCarouselRef.current, setCanScrollPrevNew, setCanScrollNextNew);
+      }, 100);
+    }
+  }, [filteredNewProperties]);
 
 
 
@@ -931,21 +1189,45 @@ const Home = () => {
               <span className="text-sm">Start your search</span>
             </button>
           </div>
-          <div className="px-4 pb-2 flex items-center justify-center gap-2 overflow-x-auto scrollbar-hide">
+          {/* Dynamic tabs from DB - admin controlled */}
+          <div className="px-4 pb-2 flex items-center justify-center gap-3 overflow-x-auto scrollbar-hide w-full">
+            <button
+              onClick={() => setActivePropertyType('')}
+              className={`flex flex-col items-center justify-center py-1.5 transition-colors flex-shrink-0 ${!activePropertyType
+                ? 'text-gray-900'
+                : 'text-gray-500 hover:text-gray-800'
+                }`}
+            >
+              <div className="flex flex-col items-center px-2">
+                <FiGrid className={`w-5 h-5 transition-all duration-300 ${activePropertyType === '' ? 'opacity-100 grayscale-0' : 'opacity-70 grayscale'}`} />
+                <span className="text-xs font-semibold whitespace-nowrap mt-1.5">All</span>
+                <span
+                  className={`mt-1.5 h-[2px] w-full ${activePropertyType === '' ? 'bg-black' : 'bg-transparent'
+                    }`}
+                />
+              </div>
+            </button>
+
             {propertyTypes.map((type) => {
               const isActive = activePropertyType === (type.name || '').toLowerCase();
               return (
                 <button
                   key={type.id}
-                  onClick={() => setActivePropertyType((type.name || '').toLowerCase())}
-                  className={`flex flex-col items-center justify-center py-1.5 transition-colors ${isActive
+                  onClick={() => {
+                    const typeLower = (type.name || '').toLowerCase();
+                    setActivePropertyType(typeLower);
+                    if (typeLower === 'flight') {
+                      navigate('/search?property_type=flight');
+                    }
+                  }}
+                  className={`flex flex-col items-center justify-center py-1.5 transition-colors flex-shrink-0 ${isActive
                     ? 'text-gray-900'
                     : 'text-gray-500 hover:text-gray-800'
                     }`}
                 >
                   <div className="flex flex-col items-center px-2">
-                    {getTypeIcon(type.name, isActive)}
-                    <span className="text-base font-medium whitespace-nowrap mt-1.5">{type.name}</span>
+                    {getTypeIcon(type.name, isActive, type.icon_url)}
+                    <span className="text-xs font-semibold whitespace-nowrap mt-1.5">{type.name}</span>
                     <span
                       className={`mt-1.5 h-[2px] w-full ${isActive ? 'bg-black' : 'bg-transparent'
                         }`}
@@ -954,18 +1236,6 @@ const Home = () => {
                 </button>
               );
             })}
-
-            {/* Manual Flight Tab - Moved to End */}
-            <button
-              onClick={() => navigate('/search?property_type=flight')}
-              className="flex flex-col items-center justify-center py-1.5 transition-colors text-gray-500 hover:text-gray-800"
-            >
-              <div className="flex flex-col items-center px-2">
-                <img src="/images/flight.png" alt="Flight" className="w-5 h-5 object-contain transition-all duration-300 opacity-70 grayscale" />
-                <span className="text-base font-medium whitespace-nowrap mt-1.5">Flight</span>
-                <span className="mt-1.5 h-[2px] w-full bg-transparent" />
-              </div>
-            </button>
           </div>
         </div>
       )}
@@ -984,8 +1254,21 @@ const Home = () => {
               <FiX className="w-4 h-4 text-black" />
             </button>
 
-            {/* Property Type Tabs */}
-            <div className="flex items-center justify-center gap-6 overflow-x-auto scrollbar-hide px-10 w-full">
+            {/* Dynamic Property Type Tabs from DB */}
+            <div className="flex items-center justify-center gap-3 overflow-x-auto scrollbar-hide px-10 w-full">
+              <button
+                onClick={() => setActivePropertyType('')}
+                className="flex flex-col items-center gap-2 min-w-[64px] flex-shrink-0 group cursor-pointer"
+              >
+                <div className={`transition-opacity duration-200 ${!activePropertyType ? 'opacity-100' : 'opacity-60 group-hover:opacity-80'}`}>
+                  <FiGrid className="w-5 h-5" />
+                </div>
+                <span className={`text-xs font-semibold whitespace-nowrap pb-2 border-b-2 transition-all duration-200 ${activePropertyType === '' ? 'text-black border-black' : 'text-gray-500 border-transparent group-hover:text-gray-800'
+                  }`}>
+                  All
+                </span>
+              </button>
+
               {propertyTypes.map((type) => {
                 const isActive = activePropertyType === (type.name || '').toLowerCase();
                 return (
@@ -995,7 +1278,7 @@ const Home = () => {
                     className="flex flex-col items-center gap-2 min-w-[64px] flex-shrink-0 group cursor-pointer"
                   >
                     <div className={`transition-opacity duration-200 ${isActive ? 'opacity-100' : 'opacity-60 group-hover:opacity-80'}`}>
-                      {getTypeIcon(type.name, isActive)}
+                      {getTypeIcon(type.name, isActive, type.icon_url)}
                     </div>
                     <span className={`text-xs font-semibold whitespace-nowrap pb-2 border-b-2 transition-all duration-200 ${isActive ? 'text-black border-black' : 'text-gray-500 border-transparent group-hover:text-gray-800'
                       }`}>
@@ -1004,22 +1287,6 @@ const Home = () => {
                   </button>
                 );
               })}
-
-              {/* Manual Flight Tab inside Modal - Moved to End */}
-              <button
-                onClick={() => {
-                  setShowMobileSearch(false);
-                  navigate('/search?property_type=flight');
-                }}
-                className="flex flex-col items-center gap-2 min-w-[64px] flex-shrink-0 group cursor-pointer"
-              >
-                <div className="transition-opacity duration-200 opacity-60 group-hover:opacity-100">
-                  <img src="/images/flight.png" alt="Flight" className="w-5 h-5 object-contain transition-all duration-300 opacity-70 grayscale" />
-                </div>
-                <span className="text-xs font-semibold whitespace-nowrap pb-2 border-b-2 transition-all duration-200 text-gray-500 border-transparent group-hover:text-gray-900 group-hover:border-gray-300">
-                  Flight
-                </span>
-              </button>
             </div>
           </div>
 
@@ -1107,35 +1374,74 @@ const Home = () => {
                     </div>
 
                     {/* Suggestions */}
-                    {locationSuggestionsData && locationSuggestionsData.length > 0 && (
+                    {searchData.location && searchData.location.trim().length >= 2 && placePredictions.length > 0 ? (
                       <div className="mt-2 pl-2">
-                        <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Suggested destinations</div>
-                        <div className="space-y-4">
-                          <button className="flex items-center gap-4 w-full text-left" onClick={(e) => { e.stopPropagation(); setSearchData(prev => ({ ...prev, location: 'Nearby' })); setMobileSearchStep('dates'); }}>
-                            <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center"><FiMapPin className="w-5 h-5" /></div>
-                            <div className="font-semibold text-gray-700">Nearby</div>
-                          </button>
-                          {locationSuggestionsData.slice(0, 5).map((loc, idx) => (
+                        <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Search locations</div>
+                        <div className="space-y-3.5 mt-2">
+                          {placePredictions.map((pred, idx) => (
                             <button
-                              key={idx}
+                              key={pred.place_id || idx}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSearchData(prev => ({ ...prev, location: loc.city }));
-                                setMobileSearchStep('dates');
+                                handlePlaceSelect(pred);
                               }}
-                              className="flex items-center gap-4 w-full text-left"
+                              className="flex items-center gap-3.5 w-full text-left group"
                             >
-                              <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                                <FiMapPin className="w-5 h-5 text-gray-500" />
+                              <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 text-gray-500 group-hover:bg-pink-100 group-hover:text-[#E41D57] transition-all duration-300">
+                                <FiMapPin className="w-5 h-5" />
                               </div>
-                              <div>
-                                <div className="font-semibold text-gray-900">{loc.city}</div>
-                                <div className="text-sm text-gray-500">{loc.country}</div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-bold text-gray-900 group-hover:text-black transition-colors truncate">
+                                  {pred.structured_formatting?.main_text || pred.description}
+                                </div>
+                                <div className="text-xs text-gray-400 group-hover:text-gray-500 transition-colors truncate mt-0.5">
+                                  {pred.structured_formatting?.secondary_text || ''}
+                                </div>
                               </div>
                             </button>
                           ))}
                         </div>
                       </div>
+                    ) : (
+                      locationSuggestionsData && locationSuggestionsData.length > 0 && (
+                        <div className="mt-2 pl-2">
+                          <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Suggested destinations</div>
+                          <div className="space-y-3.5 mt-2">
+                            <button
+                              className="flex items-center gap-3.5 w-full text-left group"
+                              onClick={handleNearbyClick}
+                            >
+                              <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 text-gray-500 group-hover:bg-pink-100 group-hover:text-[#E41D57] transition-all duration-300">
+                                <FiMapPin className="w-5 h-5" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-bold text-gray-900 group-hover:text-black transition-colors">Nearby</div>
+                                <div className="text-[10px] text-gray-400 group-hover:text-gray-500 transition-colors italic font-normal mt-0.5">Find what's around you using GPS</div>
+                              </div>
+                            </button>
+                            {locationSuggestionsData.slice(0, 5).map((loc, idx) => (
+                              <button
+                                key={idx}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSearchData(prev => ({ ...prev, location: loc.city, latitude: null, longitude: null }));
+                                  setMobileSearchStep('dates');
+                                }}
+                                className="flex items-center gap-3.5 w-full text-left group"
+                              >
+                                <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 text-gray-500 group-hover:bg-pink-100 group-hover:text-[#E41D57] transition-all duration-300">
+                                  <FiMapPin className="w-5 h-5" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-bold text-gray-900 group-hover:text-black transition-colors truncate">{loc.city}</div>
+                                  <div className="text-xs text-gray-400 group-hover:text-gray-500 transition-colors truncate mt-0.5">{loc.country}</div>
+                                  <div className="text-[10px] text-gray-400 group-hover:text-gray-500 transition-colors italic font-normal mt-0.5 truncate">{getLocationSubtitle(loc.city)}</div>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )
                     )}
                   </div>
                 ) : (
@@ -1212,34 +1518,118 @@ const Home = () => {
             >
               {mobileSearchStep === 'dates' ? (
                 <div className="animate-fadeIn">
-                  <h3 className="text-2xl font-bold text-black mb-4">When's your trip?</h3>
+                  <h3 className="text-2xl font-bold text-black mb-4">
+                    {activePropertyType === 'monthly rent' || (activePropertyType && activePropertyType.includes('monthly')) ? 'Select move-in & duration' : "When's your trip?"}
+                  </h3>
 
-                  <div onClick={(e) => e.stopPropagation()}>
-                    <DatePicker
-                      selected={searchData.checkIn}
-                      onChange={(dates) => {
-                        const [start, end] = dates;
-                        handleInputChange('checkIn', start);
-                        handleInputChange('checkOut', end);
-                        if (end) {
-                          setTimeout(() => setMobileSearchStep('guests'), 300);
-                        }
-                      }}
-                      startDate={searchData.checkIn}
-                      endDate={searchData.checkOut}
-                      selectsRange
-                      minDate={new Date()}
-                      inline
-                      monthsShown={1}
-                      calendarClassName="mobile-date-picker-calendar w-full"
-                      wrapperClassName="w-full"
-                    />
-                  </div>
+                  {(activePropertyType === 'monthly rent' || (activePropertyType && activePropertyType.includes('monthly'))) ? (
+                    <div className="space-y-4" onClick={(e) => e.stopPropagation()}>
+                      {/* Mode Toggle */}
+                      <div className="flex bg-gray-100 p-1 rounded-xl">
+                        <button
+                          type="button"
+                          onClick={() => handleInputChange('monthlySearchMode', 'duration')}
+                          className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${searchData.monthlySearchMode === 'duration' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                        >
+                          Duration (Months)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleInputChange('monthlySearchMode', 'range')}
+                          className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${searchData.monthlySearchMode === 'range' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                        >
+                          Custom Range
+                        </button>
+                      </div>
+
+                      {searchData.monthlySearchMode === 'duration' ? (
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Move-in Date</label>
+                            <DatePicker
+                              selected={searchData.moveInDate || new Date()}
+                              onChange={(date) => handleInputChange('moveInDate', date)}
+                              minDate={new Date()}
+                              inline
+                              calendarClassName="mobile-date-picker-calendar w-full"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Stay Duration</label>
+                            <div className="flex gap-2 overflow-x-auto pb-2">
+                              {[1, 2, 3, 4, 5, 6, 9, 12].map((m) => (
+                                <button
+                                  key={m}
+                                  type="button"
+                                  onClick={() => {
+                                    handleInputChange('durationMonths', m);
+                                    setTimeout(() => setMobileSearchStep('guests'), 300);
+                                  }}
+                                  className={`px-4 py-2 text-sm font-bold rounded-xl whitespace-nowrap border ${searchData.durationMonths === m ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'}`}
+                                >
+                                  {m} {m === 1 ? 'Month' : 'Months'}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <DatePicker
+                          selected={searchData.checkIn}
+                          onChange={(dates) => {
+                            const [start, end] = dates;
+                            handleInputChange('checkIn', start);
+                            handleInputChange('checkOut', end);
+                            if (end) {
+                              setTimeout(() => setMobileSearchStep('guests'), 300);
+                            }
+                          }}
+                          startDate={searchData.checkIn}
+                          endDate={searchData.checkOut}
+                          selectsRange
+                          minDate={new Date()}
+                          inline
+                          calendarClassName="mobile-date-picker-calendar w-full"
+                        />
+                      )}
+                    </div>
+                  ) : (
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <DatePicker
+                        selected={searchData.checkIn}
+                        onChange={(dates) => {
+                          const [start, end] = dates;
+                          handleInputChange('checkIn', start);
+                          handleInputChange('checkOut', end);
+                          if (end) {
+                            setTimeout(() => setMobileSearchStep('guests'), 300);
+                          }
+                        }}
+                        startDate={searchData.checkIn}
+                        endDate={searchData.checkOut}
+                        selectsRange
+                        minDate={new Date()}
+                        inline
+                        monthsShown={1}
+                        calendarClassName="mobile-date-picker-calendar w-full"
+                        wrapperClassName="w-full"
+                      />
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="flex justify-between items-center">
                   <span className="text-gray-500 font-semibold text-sm">When</span>
-                  <span className="text-black font-bold text-sm">{getDateRangeDisplay() || 'Add dates'}</span>
+                  <span className="text-black font-bold text-sm">
+                    {(activePropertyType === 'monthly rent' || (activePropertyType && activePropertyType.includes('monthly')))
+                      ? (searchData.monthlySearchMode === 'duration'
+                          ? (searchData.moveInDate
+                              ? `${searchData.moveInDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} (${searchData.durationMonths || 1} ${searchData.durationMonths === 1 ? 'month' : 'months'})`
+                              : 'Add date & duration')
+                          : (getDateRangeDisplay() || 'Add dates'))
+                      : (getDateRangeDisplay() || 'Add dates')
+                    }
+                  </span>
                 </div>
               )}
             </div>
@@ -1328,268 +1718,422 @@ const Home = () => {
         </div>
       )}
 
-      {/* Recently Viewed Properties */}
-      {filteredRecentlyViewedProperties && filteredRecentlyViewedProperties.length > 0 && (
-        <section className="pt-8 md:pt-10 pb-6 bg-white">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-4">
-              <div className="text-left flex-1">
-                <h2 className="text-xl md:text-2xl font-bold text-gray-900">
-                  Recently Viewed
-                </h2>
-              </div>
-
-              {/* Navigation Buttons */}
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <button
-                  onClick={() => scrollRecentlyViewedCarousel('prev')}
-                  disabled={!canScrollPrevRecent}
-                  className={`w-10 h-10 rounded-full bg-white border border-gray-300 flex items-center justify-center transition-all shadow-sm active:scale-95 ${canScrollPrevRecent
-                    ? 'hover:bg-gray-50 cursor-pointer text-gray-700'
-                    : 'opacity-50 cursor-not-allowed text-gray-400'
-                    }`}
-                  aria-label="Previous"
-                >
-                  <FiChevronLeft className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => scrollRecentlyViewedCarousel('next')}
-                  disabled={!canScrollNextRecent}
-                  className={`w-10 h-10 rounded-full bg-white border border-gray-300 flex items-center justify-center transition-all shadow-sm active:scale-95 ${canScrollNextRecent
-                    ? 'hover:bg-gray-50 cursor-pointer text-gray-700'
-                    : 'opacity-50 cursor-not-allowed text-gray-400'
-                    }`}
-                  aria-label="Next"
-                >
-                  <FiChevronRight className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            <div
-              ref={recentlyViewedCarouselRef}
-              className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide scroll-smooth snap-x snap-mandatory"
-              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-            >
-              {filteredRecentlyViewedProperties.slice(0, 10).map((property) => (
-                <div
-                  key={property.id}
-                  data-carousel-card
-                  className="flex-shrink-0 w-[calc(50%-8px)] sm:w-[260px] lg:w-[calc((100%-80px)/6)] cursor-pointer snap-start"
-                  onClick={() => navigate(`/property/${property.id}`)}
-                >
-                  <div className="card-hover h-full">
-                    <div className="relative h-48 mb-4 rounded-lg overflow-hidden">
-                      <PropertyImageSlider
-                        property={property}
-                        className="w-full h-full object-cover"
-                      />
-                      <div className="absolute top-4 right-4 bg-white px-3 py-1.5 rounded-full text-sm font-medium z-20 shadow-md">
-                        <span className="text-red-600 font-bold">৳{property.base_price}</span>
-                        <span className="text-gray-600"> per day</span>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 leading-tight">
-                        {property.title}
-                      </h3>
-                      <p className="text-gray-600 flex items-center text-sm">
-                        <FiMapPin className="mr-1 flex-shrink-0" />
-                        <span className="truncate">{property.city}, {property.state}</span>
-                      </p>
-                      <div className="flex items-center">
-                        {property.average_rating ? (
-                          <>
-                            <FiStar className="text-yellow-400 mr-1 fill-yellow-400 flex-shrink-0" />
-                            <span className="font-medium text-gray-900">{property.average_rating}</span>
-                          </>
-                        ) : (
-                          <>
-                            <FiStar className="text-yellow-400 mr-1 fill-yellow-400 flex-shrink-0" />
-                            <span className="font-medium text-gray-900">New</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
       {/* Featured Properties */}
       {filteredFeaturedProperties && filteredFeaturedProperties.length > 0 && (
-        <section className="pt-8 md:pt-10 pb-6 bg-white">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-4">
-              <div className="text-left flex-1">
-                <h2 className="text-xl md:text-2xl font-bold text-gray-900">
-                  Featured Properties
-                </h2>
+        <AnimatedSection>
+          <section className="pt-8 md:pt-10 pb-6 bg-white">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-4">
+                <div className="text-left flex-1">
+                  <h2 className="text-xl md:text-2xl font-bold text-gray-900">
+                    Featured Properties
+                  </h2>
+                </div>
+
+                {/* Navigation Buttons */}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => scrollCarousel('prev')}
+                    disabled={!canScrollPrev}
+                    className={`w-10 h-10 rounded-full bg-white border border-gray-300 flex items-center justify-center transition-all shadow-sm active:scale-95 ${canScrollPrev
+                      ? 'hover:bg-gray-50 cursor-pointer text-gray-700'
+                      : 'opacity-50 cursor-not-allowed text-gray-400'
+                      }`}
+                    aria-label="Previous"
+                  >
+                    <FiChevronLeft className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => scrollCarousel('next')}
+                    disabled={!canScrollNext}
+                    className={`w-10 h-10 rounded-full bg-white border border-gray-300 flex items-center justify-center transition-all shadow-sm active:scale-95 ${canScrollNext
+                      ? 'hover:bg-gray-50 cursor-pointer text-gray-700'
+                      : 'opacity-50 cursor-not-allowed text-gray-400'
+                      }`}
+                    aria-label="Next"
+                  >
+                    <FiChevronRight className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
-              {/* Navigation Buttons */}
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <button
-                  onClick={() => scrollCarousel('prev')}
-                  disabled={!canScrollPrev}
-                  className={`w-10 h-10 rounded-full bg-white border border-gray-300 flex items-center justify-center transition-all shadow-sm active:scale-95 ${canScrollPrev
-                    ? 'hover:bg-gray-50 cursor-pointer text-gray-700'
-                    : 'opacity-50 cursor-not-allowed text-gray-400'
-                    }`}
-                  aria-label="Previous"
-                >
-                  <FiChevronLeft className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => scrollCarousel('next')}
-                  disabled={!canScrollNext}
-                  className={`w-10 h-10 rounded-full bg-white border border-gray-300 flex items-center justify-center transition-all shadow-sm active:scale-95 ${canScrollNext
-                    ? 'hover:bg-gray-50 cursor-pointer text-gray-700'
-                    : 'opacity-50 cursor-not-allowed text-gray-400'
-                    }`}
-                  aria-label="Next"
-                >
-                  <FiChevronRight className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {isLoading ? (
-              <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide scroll-smooth" ref={carouselRef}>
-                {[...Array(10)].map((_, i) => (
-                  <div key={i} data-carousel-card className="flex-shrink-0 w-[calc(50%-8px)] sm:w-[260px] lg:w-[calc((100%-80px)/6)] snap-start">
-                    <div className="card">
-                      <div className="loading-skeleton h-48 mb-4 rounded-lg"></div>
-                      <div className="loading-skeleton h-4 mb-2"></div>
-                      <div className="loading-skeleton h-4 w-2/3"></div>
+              {(isLoading || (isMonthlyTabActive && isLoadingMonthly)) ? (
+                <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide scroll-smooth" ref={carouselRef}>
+                  {[...Array(10)].map((_, i) => (
+                    <div key={i} data-carousel-card className="flex-shrink-0 w-[calc(50%-8px)] sm:w-[260px] lg:w-[calc((100%-80px)/6)] snap-start">
+                      <div className="card">
+                        <div className="loading-skeleton h-48 mb-4 rounded-lg"></div>
+                        <div className="loading-skeleton h-4 mb-2"></div>
+                        <div className="loading-skeleton h-4 w-2/3"></div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
+              ) : (
+                <div
+                  ref={carouselRef}
+                  className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide scroll-smooth snap-x snap-mandatory"
+                  style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                >
+                  {filteredFeaturedProperties?.slice(0, 10).map((property) => (
+                    <div
+                      key={property.id}
+                      data-carousel-card
+                      className="flex-shrink-0 w-[calc(50%-8px)] sm:w-[260px] lg:w-[calc((100%-80px)/6)] cursor-pointer snap-start"
+                      onClick={() => navigate(`/property/${property.slug || property.id}`)}
+                    >
+                      <LazyPropertyCard>
+                        <div className="card-hover h-full">
+                          <div className="relative h-48 mb-4 rounded-lg overflow-hidden">
+                            <PropertyImageSlider
+                              property={property}
+                              className="w-full h-full object-cover"
+                            />
+                            {property.is_non_refundable && (
+                              <div className="absolute top-4 left-4 bg-rose-600 text-white px-2 py-0.5 rounded-md text-[8px] font-bold z-20 shadow-sm uppercase tracking-wider">
+                                Non-Refundable
+                              </div>
+                            )}
+                            <div className="absolute top-4 right-4 bg-white px-3 py-1.5 rounded-full text-sm font-medium z-20 shadow-md">
+                              <span className="text-red-600 font-bold">
+                                ৳{formatPrice(((activePropertyType === 'monthly rent' || (activePropertyType && activePropertyType.includes('monthly'))) && property.monthly_rent_enabled) ? property.monthly_rent_amount : property.base_price)}
+                              </span>
+                              <span className="text-gray-600">
+                                {((activePropertyType === 'monthly rent' || (activePropertyType && activePropertyType.includes('monthly'))) && property.monthly_rent_enabled) ? ' / month' : ' / night'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 leading-tight">
+                              {property.title}
+                            </h3>
+                            <p className="text-gray-600 flex items-center text-sm">
+                              <FiMapPin className="mr-1 flex-shrink-0" />
+                              <span className="truncate">{property.city}, {property.state}</span>
+                            </p>
+                            <div className="flex items-center">
+                              {property.total_reviews > 0 ? (
+                                <>
+                                  <FiStar className="text-yellow-400 mr-1 fill-yellow-400 flex-shrink-0 w-3.5 h-3.5" />
+                                  <span className="font-semibold text-gray-900 text-sm">{parseFloat(property.average_rating).toFixed(1)}</span>
+                                  <span className="text-gray-500 text-xs ml-1">({property.total_reviews})</span>
+                                </>
+                              ) : (
+                                <span className="text-gray-400 text-xs font-medium">No reviews yet</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </LazyPropertyCard>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        </AnimatedSection>
+      )}
+
+      {/* Recently Viewed Properties */}
+      {filteredRecentlyViewedProperties && filteredRecentlyViewedProperties.length > 0 && (
+        <AnimatedSection>
+          <section className="pt-8 md:pt-10 pb-6 bg-white">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-4">
+                <div className="text-left flex-1">
+                  <h2 className="text-xl md:text-2xl font-bold text-gray-900">
+                    Recently Viewed
+                  </h2>
+                </div>
+
+                {/* Navigation Buttons */}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => scrollRecentlyViewedCarousel('prev')}
+                    disabled={!canScrollPrevRecent}
+                    className={`w-10 h-10 rounded-full bg-white border border-gray-300 flex items-center justify-center transition-all shadow-sm active:scale-95 ${canScrollPrevRecent
+                      ? 'hover:bg-gray-50 cursor-pointer text-gray-700'
+                      : 'opacity-50 cursor-not-allowed text-gray-400'
+                      }`}
+                    aria-label="Previous"
+                  >
+                    <FiChevronLeft className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => scrollRecentlyViewedCarousel('next')}
+                    disabled={!canScrollNextRecent}
+                    className={`w-10 h-10 rounded-full bg-white border border-gray-300 flex items-center justify-center transition-all shadow-sm active:scale-95 ${canScrollNextRecent
+                      ? 'hover:bg-gray-50 cursor-pointer text-gray-700'
+                      : 'opacity-50 cursor-not-allowed text-gray-400'
+                      }`}
+                    aria-label="Next"
+                  >
+                    <FiChevronRight className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
-            ) : (
+
               <div
-                ref={carouselRef}
+                ref={recentlyViewedCarouselRef}
                 className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide scroll-smooth snap-x snap-mandatory"
                 style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
               >
-                {filteredFeaturedProperties?.slice(0, 10).map((property) => (
+                {filteredRecentlyViewedProperties.slice(0, 10).map((property) => (
                   <div
                     key={property.id}
                     data-carousel-card
                     className="flex-shrink-0 w-[calc(50%-8px)] sm:w-[260px] lg:w-[calc((100%-80px)/6)] cursor-pointer snap-start"
-                    onClick={() => navigate(`/property/${property.id}`)}
+                    onClick={() => navigate(`/property/${property.slug || property.id}`)}
                   >
-                    <div className="card-hover h-full">
-                      <div className="relative h-48 mb-4 rounded-lg overflow-hidden">
-                        <PropertyImageSlider
-                          property={property}
-                          className="w-full h-full object-cover"
-                        />
-                        <div className="absolute top-4 right-4 bg-white px-3 py-1.5 rounded-full text-sm font-medium z-20 shadow-md">
-                          <span className="text-red-600 font-bold">৳{property.base_price}</span>
-                          <span className="text-gray-600"> per day</span>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 leading-tight">
-                          {property.title}
-                        </h3>
-                        <p className="text-gray-600 flex items-center text-sm">
-                          <FiMapPin className="mr-1 flex-shrink-0" />
-                          <span className="truncate">{property.city}, {property.state}</span>
-                        </p>
-                        <div className="flex items-center">
-                          {property.average_rating ? (
-                            <>
-                              <FiStar className="text-yellow-400 mr-1 fill-yellow-400 flex-shrink-0" />
-                              <span className="font-medium text-gray-900">{property.average_rating}</span>
-                            </>
-                          ) : (
-                            <>
-                              <FiStar className="text-yellow-400 mr-1 fill-yellow-400 flex-shrink-0" />
-                              <span className="font-medium text-gray-900">New</span>
-                            </>
+                    <LazyPropertyCard>
+                      <div className="card-hover h-full">
+                        <div className="relative h-48 mb-4 rounded-lg overflow-hidden">
+                          <PropertyImageSlider
+                            property={property}
+                            className="w-full h-full object-cover"
+                          />
+                          {property.is_non_refundable && (
+                            <div className="absolute top-4 left-4 bg-rose-600 text-white px-2 py-0.5 rounded-md text-[8px] font-bold z-20 shadow-sm uppercase tracking-wider">
+                              Non-Refundable
+                            </div>
                           )}
+                          <div className="absolute top-4 right-4 bg-white px-3 py-1.5 rounded-full text-sm font-medium z-20 shadow-md">
+                            <span className="text-red-600 font-bold">
+                              ৳{formatPrice(((activePropertyType === 'monthly rent' || (activePropertyType && activePropertyType.includes('monthly'))) && property.monthly_rent_enabled) ? property.monthly_rent_amount : property.base_price)}
+                            </span>
+                            <span className="text-gray-600">
+                              {((activePropertyType === 'monthly rent' || (activePropertyType && activePropertyType.includes('monthly'))) && property.monthly_rent_enabled) ? ' / month' : ' / night'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 leading-tight">
+                            {property.title}
+                          </h3>
+                          <p className="text-gray-600 flex items-center text-sm">
+                            <FiMapPin className="mr-1 flex-shrink-0" />
+                            <span className="truncate">{property.city}, {property.state}</span>
+                          </p>
+                          <div className="flex items-center">
+                            {property.total_reviews > 0 ? (
+                              <>
+                                <FiStar className="text-yellow-400 mr-1 fill-yellow-400 flex-shrink-0 w-3.5 h-3.5" />
+                                <span className="font-semibold text-gray-900 text-sm">{parseFloat(property.average_rating).toFixed(1)}</span>
+                                <span className="text-gray-500 text-xs ml-1">({property.total_reviews})</span>
+                              </>
+                            ) : (
+                              <span className="text-gray-400 text-xs font-medium">No reviews yet</span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    </LazyPropertyCard>
                   </div>
                 ))}
               </div>
-            )}
-          </div>
-        </section>
+            </div>
+          </section>
+        </AnimatedSection>
+      )}
+      {/* New Added/Approved Properties */}
+      {filteredNewProperties && filteredNewProperties.length > 0 && (
+        <AnimatedSection>
+          <section className="pt-8 md:pt-10 pb-6 bg-white border-t border-gray-100">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-4">
+                <div className="text-left flex-1">
+                  <h2 className="text-xl md:text-2xl font-bold text-gray-900">
+                    New Added Properties
+                  </h2>
+                </div>
+
+                {/* Navigation Buttons */}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => scrollNewPropertiesCarousel('prev')}
+                    disabled={!canScrollPrevNew}
+                    className={`w-10 h-10 rounded-full bg-white border border-gray-300 flex items-center justify-center transition-all shadow-sm active:scale-95 ${canScrollPrevNew
+                      ? 'hover:bg-gray-50 cursor-pointer text-gray-700'
+                      : 'opacity-50 cursor-not-allowed text-gray-400'
+                      }`}
+                    aria-label="Previous"
+                  >
+                    <FiChevronLeft className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => scrollNewPropertiesCarousel('next')}
+                    disabled={!canScrollNextNew}
+                    className={`w-10 h-10 rounded-full bg-white border border-gray-300 flex items-center justify-center transition-all shadow-sm active:scale-95 ${canScrollNextNew
+                      ? 'hover:bg-gray-50 cursor-pointer text-gray-700'
+                      : 'opacity-50 cursor-not-allowed text-gray-400'
+                      }`}
+                    aria-label="Next"
+                  >
+                    <FiChevronRight className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              <div
+                ref={newPropertiesCarouselRef}
+                className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide scroll-smooth snap-x snap-mandatory"
+                style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+              >
+                {filteredNewProperties.slice(0, 10).map((property) => (
+                  <div
+                    key={property.id}
+                    data-carousel-card
+                    className="flex-shrink-0 w-[calc(50%-8px)] sm:w-[260px] lg:w-[calc((100%-80px)/6)] cursor-pointer snap-start"
+                    onClick={() => navigate(`/property/${property.slug || property.id}`)}
+                  >
+                    <LazyPropertyCard>
+                      <div className="card-hover h-full">
+                        <div className="relative h-48 mb-4 rounded-lg overflow-hidden">
+                          <PropertyImageSlider
+                            property={property}
+                            className="w-full h-full object-cover"
+                          />
+                          {property.is_non_refundable && (
+                            <div className="absolute top-4 left-4 bg-rose-600 text-white px-2 py-0.5 rounded-md text-[8px] font-bold z-20 shadow-sm uppercase tracking-wider">
+                              Non-Refundable
+                            </div>
+                          )}
+                          <div className="absolute top-4 right-4 bg-white px-3 py-1.5 rounded-full text-sm font-medium z-20 shadow-md">
+                            <span className="text-red-600 font-bold">
+                              ৳{formatPrice(((activePropertyType === 'monthly rent' || (activePropertyType && activePropertyType.includes('monthly'))) && property.monthly_rent_enabled) ? property.monthly_rent_amount : property.base_price)}
+                            </span>
+                            <span className="text-gray-600">
+                              {((activePropertyType === 'monthly rent' || (activePropertyType && activePropertyType.includes('monthly'))) && property.monthly_rent_enabled) ? ' / month' : ' / night'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 leading-tight">
+                            {property.title}
+                          </h3>
+                          <p className="text-gray-600 flex items-center text-sm">
+                            <FiMapPin className="mr-1 flex-shrink-0" />
+                            <span className="truncate">{property.city}, {property.state}</span>
+                          </p>
+                          <div className="flex items-center">
+                            {property.total_reviews > 0 ? (
+                              <>
+                                <FiStar className="text-yellow-400 mr-1 fill-yellow-400 flex-shrink-0 w-3.5 h-3.5" />
+                                <span className="font-semibold text-gray-900 text-sm">{parseFloat(property.average_rating).toFixed(1)}</span>
+                                <span className="text-gray-500 text-xs ml-1">({property.total_reviews})</span>
+                              </>
+                            ) : (
+                              <span className="text-gray-400 text-xs font-medium">No reviews yet</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </LazyPropertyCard>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        </AnimatedSection>
       )}
 
+
+
       {/* Display Categories Sections */}
-      {!isLoadingCategories && displayCategories && displayCategories.length > 0 && displayCategories
-        .filter(category => {
-          const shouldShow = category.is_active && category.property_count > 0;
-          if (!shouldShow) {
-            console.log('Category filtered out:', category.name, { is_active: category.is_active, property_count: category.property_count });
-          }
-          return shouldShow;
-        })
-        .map((category) => (
-          <CategorySection key={category.id} category={category} checkCarouselScroll={checkCarouselScroll} activePropertyType={activePropertyType} />
-        ))}
+      <div className="min-h-[200px]">
+        {!isLoadingCategories && displayCategories && displayCategories.length > 0 && displayCategories
+          .filter(category => {
+            const shouldShow = category.is_active && category.property_count > 0;
+            if (!shouldShow) {
+              console.log('Category filtered out:', category.name, { is_active: category.is_active, property_count: category.property_count });
+            }
+            return shouldShow;
+          })
+          .map((category) => (
+            <CategorySection key={category.id} category={category} checkCarouselScroll={checkCarouselScroll} activePropertyType={activePropertyType} />
+          ))}
+
+        {/* Global Empty State Fallback if filtering yields no results */}
+        {activePropertyType &&
+          (!filteredFeaturedProperties || filteredFeaturedProperties.length === 0) &&
+          (!filteredRecentlyViewedProperties || filteredRecentlyViewedProperties.length === 0) &&
+          (!filteredNewProperties || filteredNewProperties.length === 0) &&
+          (!isLoadingCategories && displayCategories && displayCategories.length > 0) && (
+            <div className="py-16 text-center">
+              <div className="text-gray-300 text-6xl mb-4">🏠</div>
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">No {activePropertyType}s found</h3>
+              <p className="text-gray-500 mb-6">We couldn't find any properties matching this category right now.</p>
+              <button
+                onClick={() => {
+                  setActivePropertyType('');
+                  window.dispatchEvent(new CustomEvent('setActivePropertyType', { detail: '' }));
+                }}
+                className="px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+              >
+                View All Properties
+              </button>
+            </div>
+          )}
+      </div>
 
       {/* Amenities Section */}
-      <section className="py-10 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-left mb-8">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">
-              Popular Amenities
-            </h2>
-            <p className="text-xl text-gray-600">
-              Find properties with the amenities you love
-            </p>
-          </div>
+      <AnimatedSection>
+        <section className="py-10 bg-gray-50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-left mb-8">
+              <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">
+                Popular Amenities
+              </h2>
+              <p className="text-xl text-gray-600">
+                Find properties with the amenities you love
+              </p>
+            </div>
 
-          <div className="grid grid-cols-3 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            {amenities?.slice(0, 12).map((amenity) => {
-              const IconElement = getAmenityIcon(amenity.name, amenity.category);
-              return (
-                <div
-                  key={amenity.id}
-                  className="bg-white rounded-lg p-2 hover:shadow-md transition-shadow cursor-pointer"
-                  onClick={() => navigate(`/search?amenities=${amenity.id}`)}
-                >
-                  <div className="flex items-center py-1">
-                    <div className="text-gray-600 mr-2 flex-shrink-0 text-sm">
-                      {React.cloneElement(IconElement, { className: 'w-4 h-4' })}
+            <div className="grid grid-cols-3 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              {amenities?.slice(0, 12).map((amenity) => {
+                const IconElement = getAmenityIcon(amenity.name, amenity.category);
+                return (
+                  <div
+                    key={amenity.id}
+                    className="bg-white rounded-lg p-2 hover:shadow-md transition-shadow cursor-pointer"
+                    onClick={() => navigate(`/search?amenities=${amenity.id}`)}
+                  >
+                    <div className="flex items-center py-1">
+                      <div className="text-gray-600 mr-2 flex-shrink-0 text-sm">
+                        {React.cloneElement(IconElement, { className: 'w-4 h-4' })}
+                      </div>
+                      <span className="text-gray-700 text-[0.7rem]">{amenity.name}</span>
                     </div>
-                    <span className="text-gray-700 text-[0.7rem]">{amenity.name}</span>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </AnimatedSection>
 
       {/* CTA Section */}
-      <section className="pt-10 pb-6 md:py-10 bg-white text-gray-900">
-        <div className="max-w-4xl mx-auto text-center px-4 sm:px-6 lg:px-8">
-          <h2 className="text-3xl md:text-4xl font-bold mb-4 text-gray-900">
-            Ready to Book Your Stay?
-          </h2>
-          <p className="text-xl mb-6 text-gray-600">
-            Join thousands of satisfied guests who have found their perfect accommodation with us
-          </p>
-          <button
-            onClick={() => navigate('/properties')}
-            className="bg-[#E41D57] text-white hover:bg-[#C01A4A] font-medium py-3 px-8 rounded-lg transition-colors duration-200"
-          >
-            Browse All Properties
-          </button>
-        </div>
-      </section>
+      <AnimatedSection>
+        <section className="pt-10 pb-6 md:py-10 bg-white text-gray-900">
+          <div className="max-w-4xl mx-auto text-center px-4 sm:px-6 lg:px-8">
+            <h2 className="text-3xl md:text-4xl font-bold mb-4 text-gray-900">
+              Ready to Book Your Stay?
+            </h2>
+            <p className="text-xl mb-6 text-gray-600">
+              Join thousands of satisfied guests who have found their perfect accommodation with us
+            </p>
+            <button
+              onClick={() => navigate('/properties')}
+              className="bg-[#E41D57] text-white hover:bg-[#C01A4A] font-medium py-3 px-8 rounded-lg transition-colors duration-200"
+            >
+              Browse All Properties
+            </button>
+          </div>
+        </section>
+      </AnimatedSection>
     </div>
   );
 };

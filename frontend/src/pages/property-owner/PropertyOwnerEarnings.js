@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useQueryClient } from 'react-query';
-import { FiDollarSign, FiTrendingUp, FiTrendingDown, FiCalendar, FiCreditCard, FiBarChart2, FiDownload, FiEye, FiSend, FiClock } from 'react-icons/fi';
+import { FiDollarSign, FiTrendingUp, FiTrendingDown, FiCalendar, FiCreditCard, FiBarChart2, FiDownload, FiEye, FiSend, FiClock, FiShield } from 'react-icons/fi';
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import useToast from '../../hooks/useToast';
@@ -65,12 +65,15 @@ const PropertyOwnerEarnings = () => {
   );
 
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-BD', {
-      style: 'currency',
-      currency: 'BDT',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount || 0);
+    const value = parseFloat(amount || 0);
+    const hasDecimals = value % 1 !== 0;
+    const isNegative = value < 0;
+    const absValue = Math.abs(value);
+    const formatted = absValue.toLocaleString('en-IN', {
+      minimumFractionDigits: hasDecimals ? 2 : 0,
+      maximumFractionDigits: 2
+    });
+    return (isNegative ? '-৳' : '৳') + formatted;
   };
 
   const getPaymentStatusColor = (status) => {
@@ -203,6 +206,8 @@ const PropertyOwnerEarnings = () => {
       total_booking_amount: 0,
       total_commission: 0,
       net_earnings: 0,
+      total_requested_claims: 0,
+      total_received_claims: 0,
       pending_amount: 0,
       paid_amount: 0,
       available_for_payout: 0
@@ -212,6 +217,8 @@ const PropertyOwnerEarnings = () => {
       total_booking_amount: 0,
       total_commission: 0,
       net_earnings: 0,
+      total_requested_claims: 0,
+      total_received_claims: 0,
       pending_amount: 0,
       paid_amount: 0,
       available_for_payout: 0
@@ -236,7 +243,7 @@ const PropertyOwnerEarnings = () => {
   const handlePayoutRequest = async () => {
     try {
       const response = await api.post('/property-owner/earnings/payout-request', {
-        amount: currentMonth.available_for_payout,
+        amount: lifetime.available_for_payout,
         payment_method: 'bank_transfer'
       });
       
@@ -254,6 +261,8 @@ const PropertyOwnerEarnings = () => {
     }
   };
 
+  const hasNoData = lifetime.total_bookings === 0 && lifetime.net_earnings === 0 && recentEarnings.length === 0;
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -263,8 +272,20 @@ const PropertyOwnerEarnings = () => {
           <p className="mt-2 text-gray-600">Track your bookings, commissions, and earnings</p>
         </div>
 
-        {/* Period Selector */}
-        <div className="mb-6">
+        {hasNoData ? (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
+            <div className="mx-auto w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+              <FiDollarSign className="w-12 h-12 text-gray-400" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">No earnings yet</h2>
+            <p className="text-gray-600 max-w-md mx-auto mb-6">
+              You haven't received any earnings yet. Earnings will appear here after guests complete their stays and payments are processed.
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Period Selector */}
+            <div className="mb-6">
           <select
             value={selectedPeriod}
             onChange={(e) => setSelectedPeriod(e.target.value)}
@@ -278,71 +299,85 @@ const PropertyOwnerEarnings = () => {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 md:gap-6 mb-8">
           {/* Total Earnings */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <FiDollarSign className="w-6 h-6 text-green-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Total Earnings</p>
-                <p className="text-2xl font-bold text-gray-900">{formatCurrency(lifetime.net_earnings)}</p>
+          <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100 border-b-4 border-b-emerald-500 flex flex-col justify-between h-full hover:shadow-md transition-shadow duration-200">
+            <div className="flex justify-between items-start gap-2">
+              <span className="text-[10px] md:text-xs font-bold text-gray-400 uppercase tracking-wider leading-tight">Total Earnings</span>
+              <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg shrink-0">
+                <FiDollarSign className="w-4 h-4 md:w-5 md:h-5" />
               </div>
             </div>
+            <p className="text-lg md:text-xl font-black text-gray-800 mt-3">{formatCurrency(lifetime.net_earnings)}</p>
           </div>
 
           {/* Commission Paid */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <FiTrendingUp className="w-6 h-6 text-blue-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Commission Paid</p>
-                <p className="text-2xl font-bold text-gray-900">{formatCurrency(lifetime.total_commission)}</p>
+          <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100 border-b-4 border-b-blue-500 flex flex-col justify-between h-full hover:shadow-md transition-shadow duration-200">
+            <div className="flex justify-between items-start gap-2">
+              <span className="text-[10px] md:text-xs font-bold text-gray-400 uppercase tracking-wider leading-tight">Commission Paid</span>
+              <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg shrink-0">
+                <FiTrendingUp className="w-4 h-4 md:w-5 md:h-5" />
               </div>
             </div>
+            <p className="text-lg md:text-xl font-black text-gray-800 mt-3">{formatCurrency(lifetime.total_commission)}</p>
           </div>
 
           {/* Available for Payout */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-yellow-100 rounded-lg">
-                <FiClock className="w-6 h-6 text-yellow-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Available for Payout</p>
-                <p className="text-2xl font-bold text-gray-900">{formatCurrency(currentMonth.available_for_payout)}</p>
+          <div className={`bg-white rounded-xl shadow-sm p-4 border border-gray-100 border-b-4 ${lifetime.available_for_payout < 0 ? 'border-b-red-500' : 'border-b-yellow-500'} flex flex-col justify-between h-full hover:shadow-md transition-shadow duration-200`}>
+            <div className="flex justify-between items-start gap-2">
+              <span className="text-[10px] md:text-xs font-bold text-gray-400 uppercase tracking-wider leading-tight">Available for Payout</span>
+              <div className={`p-1.5 ${lifetime.available_for_payout < 0 ? 'bg-red-50 text-red-600' : 'bg-yellow-50 text-yellow-600'} rounded-lg shrink-0`}>
+                <FiClock className="w-4 h-4 md:w-5 md:h-5" />
               </div>
             </div>
+            <p className={`text-lg md:text-xl font-black ${lifetime.available_for_payout < 0 ? 'text-red-600' : 'text-gray-800'} mt-3`}>{formatCurrency(lifetime.available_for_payout)}</p>
           </div>
 
           {/* Commission Rate */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <FiBarChart2 className="w-6 h-6 text-purple-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Commission Rate</p>
-                <p className="text-2xl font-bold text-gray-900">{settings.commission_rate}%</p>
+          <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100 border-b-4 border-b-purple-500 flex flex-col justify-between h-full hover:shadow-md transition-shadow duration-200">
+            <div className="flex justify-between items-start gap-2">
+              <span className="text-[10px] md:text-xs font-bold text-gray-400 uppercase tracking-wider leading-tight">Commission Rate</span>
+              <div className="p-1.5 bg-purple-50 text-purple-600 rounded-lg shrink-0">
+                <FiBarChart2 className="w-4 h-4 md:w-5 md:h-5" />
               </div>
             </div>
+            <p className="text-lg md:text-xl font-black text-gray-800 mt-3">{settings.commission_rate}%</p>
+          </div>
+
+          {/* Claims Requested */}
+          <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100 border-b-4 border-b-amber-300 flex flex-col justify-between h-full hover:shadow-md transition-shadow duration-200">
+            <div className="flex justify-between items-start gap-2">
+              <span className="text-[10px] md:text-xs font-bold text-gray-400 uppercase tracking-wider leading-tight">Claims Requested</span>
+              <div className="p-1.5 bg-amber-50 text-amber-500 rounded-lg shrink-0">
+                <FiShield className="w-4 h-4 md:w-5 md:h-5" />
+              </div>
+            </div>
+            <p className="text-lg md:text-xl font-black text-gray-800 mt-3">{formatCurrency(lifetime.total_requested_claims)}</p>
+          </div>
+
+          {/* Claims Received */}
+          <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100 border-b-4 border-b-amber-600 flex flex-col justify-between h-full hover:shadow-md transition-shadow duration-200">
+            <div className="flex justify-between items-start gap-2">
+              <span className="text-[10px] md:text-xs font-bold text-gray-400 uppercase tracking-wider leading-tight">Claims Received</span>
+              <div className="p-1.5 bg-amber-100 text-amber-600 rounded-lg shrink-0">
+                <FiShield className="w-4 h-4 md:w-5 md:h-5" />
+              </div>
+            </div>
+            <p className="text-lg md:text-xl font-black text-gray-800 mt-3">{formatCurrency(lifetime.total_received_claims)}</p>
           </div>
         </div>
 
         {/* Payout Request Section */}
-        {currentMonth.available_for_payout > 0 && (
-          <div className="bg-white rounded-lg shadow p-6 mb-8">
-            <div className="flex items-center justify-between">
+        {lifetime.available_for_payout > 0 && (
+          <div className="bg-white rounded-lg shadow p-5 md:p-6 mb-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">Request Payout</h3>
-                <p className="text-gray-600">You have {formatCurrency(currentMonth.available_for_payout)} available for payout</p>
+                <p className="text-gray-600 text-sm">You have {formatCurrency(lifetime.available_for_payout)} available for payout</p>
               </div>
               <button
                 onClick={handlePayoutRequest}
-                className="bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700 transition-colors flex items-center"
+                className="bg-primary-600 text-white px-6 py-2.5 rounded-lg hover:bg-primary-700 transition-colors flex items-center justify-center w-full sm:w-auto font-medium shadow-sm"
               >
                 <FiSend className="w-4 h-4 mr-2" />
                 Request Payout
@@ -364,6 +399,14 @@ const PropertyOwnerEarnings = () => {
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Lifetime Earnings</span>
                 <span className="font-semibold">{formatCurrency(lifetime.net_earnings)}</span>
+              </div>
+              <div className="flex justify-between items-center text-amber-700 bg-amber-50 p-2 rounded">
+                <span className="text-sm font-medium">Claims Requested</span>
+                <span className="font-bold">{formatCurrency(lifetime.total_requested_claims)}</span>
+              </div>
+              <div className="flex justify-between items-center text-green-700 bg-green-50 p-2 rounded">
+                <span className="text-sm font-medium">Claims Received (Included in Earnings)</span>
+                <span className="font-bold">{formatCurrency(lifetime.total_received_claims)}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Total Commission Paid</span>
@@ -422,6 +465,12 @@ const PropertyOwnerEarnings = () => {
                     Commission
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Claim Requested
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Claim Received
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Net Earnings
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -447,7 +496,13 @@ const PropertyOwnerEarnings = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600">
                       -{formatCurrency(earning.commission_amount)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-amber-500 italic">
+                      {earning.security_deposit_claim_amount > 0 ? formatCurrency(earning.security_deposit_claim_amount) : '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-amber-600 font-bold">
+                      {earning.security_deposit_deduction_amount > 0 ? formatCurrency(earning.security_deposit_deduction_amount) : '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-bold">
                       {formatCurrency(earning.net_earnings)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -456,6 +511,8 @@ const PropertyOwnerEarnings = () => {
                           ? 'bg-green-100 text-green-800' 
                           : earning.status === 'pending'
                           ? 'bg-yellow-100 text-yellow-800'
+                          : earning.status === 'partial'
+                          ? 'bg-orange-100 text-orange-800'
                           : 'bg-gray-100 text-gray-800'
                       }`}>
                         {earning.status}
@@ -570,6 +627,8 @@ const PropertyOwnerEarnings = () => {
             </div>
           )}
         </div>
+          </>
+        )}
       </div>
     </div>
   );

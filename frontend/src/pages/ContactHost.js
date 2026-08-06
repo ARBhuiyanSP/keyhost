@@ -5,6 +5,7 @@ import api from '../utils/api';
 import useToast from '../hooks/useToast';
 import useAuthStore from '../store/authStore';
 import StickySearchHeader from '../components/layout/StickySearchHeader';
+import { getImageUrl } from '../utils/imageUrl';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 
@@ -148,6 +149,12 @@ const ContactHost = () => {
 
         // Calculate total guests
         const totalGuests = bookingData.guests.adults + bookingData.guests.children;
+        const nights = calculateNights();
+        const isMonthly = property.monthly_rent_enabled && property.monthly_approved && 
+            (property.monthly_stay_type === 'monthly_only' || nights >= 30);
+        const bookingType = isMonthly ? 'monthly' : 'short_stay';
+        const monthsCount = isMonthly ? Math.floor(nights / 30) : 0;
+        const extraDays = isMonthly ? nights % 30 : 0;
 
         const bookingPayload = {
             check_in_date: bookingData.check_in_date,
@@ -155,19 +162,17 @@ const ContactHost = () => {
             number_of_guests: totalGuests,
             number_of_children: bookingData.guests.children || 0,
             number_of_infants: bookingData.guests.infants || 0,
-            // special_requests: '', // Add if needed
+            booking_type: bookingType,
+            months_count: monthsCount,
+            extra_days: extraDays,
         };
 
         if (!isAuthenticated) {
             // Store booking data in localStorage before redirecting to login
-            const propertyData = {
-                id: property.id,
-                title: property.title,
-                base_price: property.base_price,
-                max_guests: property.max_guests,
-                // Add other necessary fields similar to PropertyDetail
+            const propertyData = property ? {
+                ...property,
                 main_image: property.main_image || property.images?.[0] || null
-            };
+            } : null;
 
             const pendingBookingData = {
                 property_id: id,
@@ -185,6 +190,9 @@ const ContactHost = () => {
         if (bookingData.check_in_date) params.set('check_in_date', bookingData.check_in_date);
         if (bookingData.check_out_date) params.set('check_out_date', bookingData.check_out_date);
         if (totalGuests) params.set('guests', totalGuests.toString());
+        if (bookingType) params.set('booking_type', bookingType);
+        if (monthsCount) params.set('duration_months', monthsCount.toString());
+        if (extraDays) params.set('extra_days', extraDays.toString());
 
         const queryString = params.toString();
         // Passing bookingData structure that matches what PropertyDetail uses
@@ -292,7 +300,7 @@ const ContactHost = () => {
                             <div className="flex-shrink-0">
                                 {property.owner_profile_image ? (
                                     <img
-                                        src={property.owner_profile_image}
+                                        src={getImageUrl(property.owner_profile_image)}
                                         alt={property.owner_first_name}
                                         className="w-16 h-16 rounded-full object-cover"
                                     />
@@ -376,7 +384,7 @@ const ContactHost = () => {
                                 <div className="w-24 h-24 flex-shrink-0 rounded-lg overflow-hidden">
                                     {property.main_image || property.images?.[0] ? (
                                         <img
-                                            src={property.main_image?.image_url || property.images?.[0]?.image_url}
+                                            src={getImageUrl(property.main_image?.image_url || property.images?.[0]?.image_url)}
                                             alt={property.title}
                                             className="w-full h-full object-cover"
                                         />

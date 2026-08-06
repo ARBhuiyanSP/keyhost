@@ -4,6 +4,7 @@ import { FiChevronLeft, FiSend, FiUser, FiInfo, FiMapPin, FiCheckCircle, FiClock
 import api from '../utils/api';
 import useAuthStore from '../store/authStore';
 import useToast from '../hooks/useToast';
+import { getImageUrl } from '../utils/imageUrl';
 
 const ConversationDetail = () => {
     const { id: conversationId } = useParams();
@@ -291,7 +292,7 @@ const ConversationDetail = () => {
                                 <div className="aspect-[4/3] bg-gray-100 relative">
                                     {conversation.property_image ? (
                                         <img
-                                            src={conversation.property_image}
+                                            src={getImageUrl(conversation.property_image)}
                                             alt={conversation.property_title}
                                             className="w-full h-full object-cover"
                                         />

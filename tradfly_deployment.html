@@ -1,0 +1,1343 @@
+<!DOCTYPE html>
+<html lang="bn">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>tradfly.com — Deployment Guide</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box
+        }
+
+        body {
+            background: #0d1117;
+            color: #e6edf3;
+            font-family: 'Inter', sans-serif;
+            font-size: 15px;
+            line-height: 1.7
+        }
+
+        a {
+            color: #58a6ff
+        }
+
+        code {
+            background: #21262d;
+            border: 1px solid #30363d;
+            border-radius: 4px;
+            padding: 2px 7px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: #ffa657
+        }
+
+        .header {
+            background: linear-gradient(135deg, #0d1117, #161b22, #1a2332);
+            border-bottom: 1px solid #30363d;
+            padding: 52px 24px;
+            text-align: center;
+            position: relative;
+            overflow: hidden
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: -80px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 500px;
+            height: 260px;
+            background: radial-gradient(ellipse, rgba(88, 166, 255, .13) 0%, transparent 70%);
+            pointer-events: none
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(88, 166, 255, .1);
+            border: 1px solid rgba(88, 166, 255, .3);
+            color: #58a6ff;
+            padding: 6px 18px;
+            border-radius: 100px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 20px
+        }
+
+        .header h1 {
+            font-size: clamp(26px, 5vw, 46px);
+            font-weight: 800;
+            background: linear-gradient(135deg, #e6edf3, #58a6ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 12px
+        }
+
+        .header p {
+            color: #8b949e;
+            font-size: 15px;
+            max-width: 540px;
+            margin: 0 auto 28px
+        }
+
+        .arch {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap
+        }
+
+        .arch-box {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 10px;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            font-weight: 500
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0
+        }
+
+        .dot-g {
+            background: #3fb950
+        }
+
+        .dot-b {
+            background: #58a6ff
+        }
+
+        .arch-box small {
+            color: #8b949e;
+            font-size: 12px;
+            display: block
+        }
+
+        .container {
+            max-width: 880px;
+            margin: 0 auto;
+            padding: 40px 24px 80px
+        }
+
+        .part {
+            margin: 52px 0 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #30363d
+        }
+
+        .pnum {
+            width: 42px;
+            height: 42px;
+            background: linear-gradient(135deg, #58a6ff, #388bfd);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 18px;
+            color: #fff;
+            flex-shrink: 0
+        }
+
+        .part h2 {
+            font-size: 21px;
+            font-weight: 700
+        }
+
+        .part p {
+            color: #8b949e;
+            font-size: 14px;
+            margin-top: 2px
+        }
+
+        .step {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            margin-bottom: 14px;
+            overflow: hidden
+        }
+
+        .step:hover {
+            border-color: #484f58
+        }
+
+        .sh {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 18px 20px
+        }
+
+        .sn {
+            width: 28px;
+            height: 28px;
+            background: #21262d;
+            border: 1px solid #30363d;
+            border-radius: 7px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+            color: #58a6ff;
+            flex-shrink: 0
+        }
+
+        .st {
+            font-weight: 600;
+            font-size: 15px
+        }
+
+        .sb {
+            padding: 0 20px 20px
+        }
+
+        .sb p {
+            color: #c9d1d9;
+            margin: 8px 0;
+            font-size: 14px
+        }
+
+        .sb ul,
+        .sb ol {
+            padding-left: 20px;
+            margin: 10px 0
+        }
+
+        .sb li {
+            color: #c9d1d9;
+            font-size: 14px;
+            margin: 5px 0
+        }
+
+        .sb li strong {
+            color: #e6edf3
+        }
+
+        .cb {
+            background: #010409;
+            border: 1px solid #30363d;
+            border-radius: 10px;
+            margin: 12px 0;
+            overflow: hidden
+        }
+
+        .cb-h {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 9px 14px;
+            background: #21262d;
+            border-bottom: 1px solid #30363d
+        }
+
+        .cb-h span {
+            font-size: 12px;
+            color: #8b949e;
+            font-family: 'JetBrains Mono', monospace
+        }
+
+        .copy-btn {
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #8b949e;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all .2s;
+            font-family: 'Inter', sans-serif
+        }
+
+        .copy-btn:hover {
+            background: #30363d;
+            color: #e6edf3
+        }
+
+        .copy-btn.ok {
+            color: #3fb950;
+            border-color: #3fb950
+        }
+
+        pre {
+            padding: 16px;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            line-height: 1.65
+        }
+
+        .cm {
+            color: #6e7681
+        }
+
+        .ck {
+            color: #79c0ff
+        }
+
+        .cv {
+            color: #a5d6ff
+        }
+
+        .cc {
+            color: #56d364
+        }
+
+        .cp {
+            color: #ffa657
+        }
+
+        .alert {
+            display: flex;
+            gap: 12px;
+            padding: 13px 15px;
+            border-radius: 9px;
+            margin: 12px 0;
+            font-size: 14px
+        }
+
+        .ai {
+            font-size: 18px;
+            flex-shrink: 0
+        }
+
+        .an {
+            background: rgba(88, 166, 255, .08);
+            border: 1px solid rgba(88, 166, 255, .25)
+        }
+
+        .aw {
+            background: rgba(210, 153, 34, .08);
+            border: 1px solid rgba(210, 153, 34, .25)
+        }
+
+        .aw .at {
+            color: #d29922
+        }
+
+        .ae {
+            background: rgba(248, 81, 73, .08);
+            border: 1px solid rgba(248, 81, 73, .25)
+        }
+
+        .ae .at {
+            color: #f85149
+        }
+
+        .as {
+            background: rgba(63, 185, 80, .08);
+            border: 1px solid rgba(63, 185, 80, .25)
+        }
+
+        .as .at {
+            color: #3fb950
+        }
+
+        .at {
+            font-weight: 700;
+            margin-bottom: 3px
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+            font-size: 14px
+        }
+
+        th {
+            background: #21262d;
+            padding: 9px 13px;
+            text-align: left;
+            font-weight: 600;
+            border: 1px solid #30363d;
+            color: #8b949e;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: .5px
+        }
+
+        td {
+            padding: 9px 13px;
+            border: 1px solid #30363d;
+            vertical-align: top
+        }
+
+        tr:nth-child(even) td {
+            background: rgba(255, 255, 255, .02)
+        }
+
+        .ft {
+            background: #010409;
+            border: 1px solid #30363d;
+            border-radius: 10px;
+            padding: 15px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            line-height: 1.9;
+            margin: 12px 0
+        }
+
+        .ftf {
+            color: #e6edf3
+        }
+
+        .ftd {
+            color: #58a6ff
+        }
+
+        .fty {
+            color: #3fb950
+        }
+
+        .ftn {
+            color: #f85149
+        }
+
+        .ftm {
+            color: #8b949e
+        }
+
+        .cl {
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+            margin: 16px 0
+        }
+
+        .cs {
+            font-weight: 700;
+            color: #58a6ff;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: .5px;
+            margin-top: 8px
+        }
+
+        .ci {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 11px 15px;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all .2s;
+            user-select: none
+        }
+
+        .ci:hover {
+            border-color: #484f58
+        }
+
+        .ci.done {
+            border-color: rgba(63, 185, 80, .4);
+            background: rgba(63, 185, 80, .04)
+        }
+
+        .ci.done .ck2 {
+            background: #3fb950;
+            border-color: #3fb950
+        }
+
+        .ci.done .ck2::after {
+            content: '✓';
+            color: #fff;
+            font-size: 11px;
+            font-weight: 700
+        }
+
+        .ck2 {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #30363d;
+            border-radius: 5px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center
+        }
+
+        .cl-text {
+            font-size: 14px;
+            flex: 1
+        }
+
+        .ci.done .cl-text {
+            text-decoration: line-through;
+            color: #8b949e
+        }
+
+        .eg {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin: 12px 0
+        }
+
+        .er {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 14px 16px;
+            display: grid;
+            grid-template-columns: 200px 1fr;
+            gap: 16px;
+            align-items: start
+        }
+
+        .en {
+            color: #f85149;
+            font-weight: 600;
+            font-size: 14px
+        }
+
+        .ef {
+            font-size: 14px
+        }
+
+        .ef li {
+            margin-left: 16px;
+            color: #8b949e;
+            margin-top: 4px
+        }
+
+        .footer {
+            text-align: center;
+            padding: 32px;
+            border-top: 1px solid #30363d;
+            color: #8b949e;
+            font-size: 13px;
+            margin-top: 60px
+        }
+
+        @media(max-width:600px) {
+            .er {
+                grid-template-columns: 1fr
+            }
+
+            .arch {
+                flex-direction: column;
+                align-items: center
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">
+        <div class="badge">🚀 Deployment Guide — tradfly.com</div>
+        <h1>Namecheap Shared Hosting Setup</h1>
+        <p>Keyhost Booking System — React + Node.js + MySQL<br>সম্পূর্ণ Step-by-Step গাইড</p>
+        <div class="arch">
+            <div class="arch-box">
+                <div class="dot dot-g"></div>
+                <div>
+                    <div>tradfly.com</div><small>React Frontend → public_html/</small>
+                </div>
+            </div>
+            <div style="color:#8b949e;display:flex;align-items:center;font-size:22px">→</div>
+            <div class="arch-box">
+                <div class="dot dot-b"></div>
+                <div>
+                    <div>api.tradfly.com</div><small>Node.js Backend → nodeapp/</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+
+        <!-- PART 1 -->
+        <div class="part">
+            <div class="pnum">1</div>
+            <div>
+                <h2>Local PC তে Preparation</h2>
+                <p>Hosting এ কিছু upload করার আগে এই কাজগুলো local এ করতে হবে</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="sh">
+                <div class="sn">1</div>
+                <div class="st">📦 Frontend — Production .env তৈরি করুন</div>
+            </div>
+            <div class="sb">
+                <p><strong>কোথায় করবেন:</strong> আপনার PC তে <code>frontend/</code> folder এ</p>
+                <p><strong>কী করবেন:</strong> <code>.env.production</code> নামে একটা নতুন file তৈরি করুন এবং নিচের line
+                    টা লিখুন:</p>
+                <div class="cb">
+                    <div class="cb-h"><span>.env.production</span><button class="copy-btn"
+                            onclick="copyCode(this)">Copy</button></div>
+                    <pre><span class="ck">REACT_APP_API_URL</span>=<span class="cv">https://api.tradfly.com/api</span></pre>
+                </div>
+                <div class="alert an">
+                    <div class="ai">ℹ️</div>
+                    <div>
+                        <div class="at">কেন দরকার?</div>Development এ frontend localhost:5000 এ API call করে। Production
+                        এ এটা api.tradfly.com এ call করবে। এই file টা দিয়ে React কে বলছি কোথায় API পাবে।
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="sh">
+                <div class="sn">2</div>
+                <div class="st">🔨 React Production Build তৈরি করুন</div>
+            </div>
+            <div class="sb">
+                <p><strong>কোথায় করবেন:</strong> Terminal / Git Bash এ</p>
+                <div class="cb">
+                    <div class="cb-h"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">Copy</button>
+                    </div>
+                    <pre><span class="cm"># frontend folder এ যান</span>
+<span class="cc">cd D:/88i/booking-systme/frontend</span>
+
+<span class="cm"># production build তৈরি করুন</span>
+<span class="cc">npm run build</span></pre>
+                </div>
+                <p><strong>কতক্ষণ লাগবে:</strong> ২-৫ মিনিট। শেষ হলে <code>frontend/build/</code> folder তৈরি হবে।</p>
+                <div class="alert as">
+                    <div class="ai">✅</div>
+                    <div>
+                        <div class="at">সফল হলে দেখবেন:</div>"The build folder is ready to be deployed." এই message
+                        আসবে।
+                    </div>
+                </div>
+                <div class="alert ae">
+                    <div class="ai">❌</div>
+                    <div>
+                        <div class="at">Error হলে:</div>আগে <code>npm install</code> run করুন, তারপর আবার
+                        <code>npm run build</code> করুন।
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="sh">
+                <div class="sn">3</div>
+                <div class="st">🗄️ Local Database Export করুন</div>
+            </div>
+            <div class="sb">
+                <p><strong>কোথায় করবেন:</strong> Git Bash এ</p>
+                <div class="cb">
+                    <div class="cb-h"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">Copy</button>
+                    </div>
+                    <pre><span class="cc">mysqldump -u root keyhost_booking_system > tradfly_database.sql</span></pre>
+                </div>
+                <p>এই command টা আপনার project folder এ <code>tradfly_database.sql</code> নামে একটা file তৈরি করবে। এটা
+                    hosting এ import করতে হবে।</p>
+                <div class="alert aw">
+                    <div class="ai">⚡</div>
+                    <div>
+                        <div class="at">Password থাকলে:</div>
+                        <code>mysqldump -u root -p keyhost_booking_system > tradfly_database.sql</code> লিখুন — password
+                        চাইবে।
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="sh">
+                <div class="sn">4</div>
+                <div class="st">⚙️ Backend Production .env আপডেট করুন</div>
+            </div>
+            <div class="sb">
+                <p><strong>কোথায় করবেন:</strong> <code>backend/.env</code> file open করুন এবং নিচের মতো করে সব values
+                    আপডেট করুন।</p>
+                <p>⚠️ <strong>এই file টাই hosting এ upload করতে হবে</strong> — তাই আপডেট করে রাখুন:</p>
+                <div class="cb">
+                    <div class="cb-h"><span>backend/.env (production)</span><button class="copy-btn"
+                            onclick="copyCode(this)">Copy</button></div>
+                    <pre><span class="cm"># ===== Database (cPanel MySQL থেকে নিন) =====</span>
+<span class="ck">DB_HOST</span>=<span class="cv">localhost</span>
+<span class="ck">DB_USER</span>=<span class="cv">tradfly_khuser</span>         <span class="cm"># cPanel এ তৈরি করা user</span>
+<span class="ck">DB_PASSWORD</span>=<span class="cv">YOUR_STRONG_PASSWORD</span>  <span class="cm"># cPanel এ set করা password</span>
+<span class="ck">DB_NAME</span>=<span class="cv">tradfly_keyhost</span>          <span class="cm"># cPanel এ তৈরি করা database</span>
+<span class="ck">DB_PORT</span>=<span class="cv">3306</span>
+
+<span class="cm"># ===== JWT (random string দিন — min 64 char) =====</span>
+<span class="ck">JWT_SECRET</span>=<span class="cv">tradfly2026_very_long_random_secret_key_change_this_now_xyz</span>
+<span class="ck">JWT_EXPIRES_IN</span>=<span class="cv">7d</span>
+<span class="ck">JWT_REFRESH_SECRET</span>=<span class="cv">tradfly2026_refresh_secret_also_long_random_key_abc</span>
+<span class="ck">JWT_REFRESH_EXPIRES_IN</span>=<span class="cv">30d</span>
+
+<span class="cm"># ===== Server =====</span>
+<span class="ck">PORT</span>=<span class="cv">3001</span>
+<span class="ck">NODE_ENV</span>=<span class="cv">production</span>
+
+<span class="cm"># ===== Domain =====</span>
+<span class="ck">FRONTEND_URL</span>=<span class="cv">https://tradfly.com</span>
+
+<span class="cm"># ===== Email =====</span>
+<span class="ck">EMAIL_HOST</span>=<span class="cv">smtp.gmail.com</span>
+<span class="ck">EMAIL_PORT</span>=<span class="cv">587</span>
+<span class="ck">EMAIL_USER</span>=<span class="cv">your_email@gmail.com</span>
+<span class="ck">EMAIL_PASS</span>=<span class="cv">your_gmail_app_password</span>
+
+<span class="cm"># ===== SSLCommerz Payment =====</span>
+<span class="ck">SSLCOMMERZ_STORE_ID</span>=<span class="cv">your_store_id</span>
+<span class="ck">SSLCOMMERZ_STORE_PASSWORD</span>=<span class="cv">your_store_password</span>
+<span class="ck">SSLCOMMERZ_IS_LIVE</span>=<span class="cv">true</span>
+
+<span class="cm"># ===== Google OAuth (existing values রাখুন) =====</span>
+<span class="ck">GOOGLE_CLIENT_ID</span>=<span class="cv">your_existing_google_client_id</span>
+<span class="ck">GOOGLE_CLIENT_SECRET</span>=<span class="cv">your_existing_google_client_secret</span></pre>
+                </div>
+                <div class="alert ae">
+                    <div class="ai">🔒</div>
+                    <div>
+                        <div class="at">গুরুত্বপূর্ণ!</div>.env file কখনো GitHub এ push করবেন না।
+                        <code>.gitignore</code> এ <code>.env</code> আছে কিনা confirm করুন।
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PART 2 -->
+        <div class="part">
+            <div class="pnum">2</div>
+            <div>
+                <h2>cPanel — MySQL Database Setup</h2>
+                <p>tradfly.com hosting এ database তৈরি করুন এবং data import করুন</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="sh">
+                <div class="sn">5</div>
+                <div class="st">🌐 cPanel Login করুন</div>
+            </div>
+            <div class="sb">
+                <p>Browser এ যান: <code>https://tradfly.com/cpanel</code> অথবা Namecheap dashboard থেকে cPanel login
+                    করুন।</p>
+                <p>URL হবে এরকম: <code>https://server123.namecheaphosting.com:2083</code></p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="sh">
+                <div class="sn">6</div>
+                <div class="st">🗄️ MySQL Database তৈরি করুন</div>
+            </div>
+            <div class="sb">
+                <p><strong>cPanel → "MySQL Databases"</strong> section এ যান:</p>
+                <ol>
+                    <li><strong>Create New Database</strong> section এ type করুন: <code>keyhost</code> → <strong>Create
+                            Database</strong> click করুন<br><small style="color:#8b949e">→ Full name হবে:
+                            <code>tradfly_keyhost</code> (cPanel username automatically prefix করে)</small></li>
+                    <li><strong>Create New User</strong> section এ:
+                        <ul>
+                            <li>Username: <code>khuser</code></li>
+                            <li>Password: strong password দিন (Password Generator ব্যবহার করুন) — <strong>password টা
+                                    নোট রাখুন!</strong></li>
+                            <li><strong>Create User</strong> click করুন</li>
+                        </ul>
+                    </li>
+                    <li><strong>Add User To Database</strong> section এ:
+                        <ul>
+                            <li>User: <code>tradfly_khuser</code> select করুন</li>
+                            <li>Database: <code>tradfly_keyhost</code> select করুন</li>
+                            <li><strong>Add</strong> click করুন</li>
+                            <li>Next page এ <strong>ALL PRIVILEGES</strong> checkbox tick করুন → <strong>Make
+                                    Changes</strong></li>
+                        </ul>
+                    </li>
+                </ol>
+                <div class="alert an">
+                    <div class="ai">ℹ️</div>
+                    <div>
+                        <div class="at">Prefix সম্পর্কে জানুন</div>Namecheap এ cPanel username যদি <code>tradfly</code>
+                        হয়, তাহলে আপনি <code>keyhost</code> দিলে database name হবে <code>tradfly_keyhost</code>। এই
+                        full name টাই backend .env এ দিতে হবে।
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="sh">
+                <div class="sn">7</div>
+                <div class="st">📥 Database Import করুন (phpMyAdmin)</div>
+            </div>
+            <div class="sb">
+                <p><strong>cPanel → phpMyAdmin</strong> এ যান:</p>
+                <ol>
+                    <li>Left panel এ <code>tradfly_keyhost</code> database click করুন</li>
+                    <li>উপরে <strong>Import</strong> tab click করুন</li>
+                    <li><strong>Choose File</strong> button click করুন → আপনার <code>tradfly_database.sql</code> file
+                        select করুন</li>
+                    <li>নিচে scroll করে <strong>Go</strong> button click করুন</li>
+                    <li>কিছুক্ষণ wait করুন (file size এর উপর নির্ভর করে)</li>
+                </ol>
+                <div class="alert as">
+                    <div class="ai">✅</div>
+                    <div>
+                        <div class="at">সফল হলে:</div>"Import has been successfully finished" message দেখাবে। Left panel
+                        এ tables দেখা যাবে।
+                    </div>
+                </div>
+                <div class="alert aw">
+                    <div class="ai">⚡</div>
+                    <div>
+                        <div class="at">File বড় হলে:</div>phpMyAdmin এ file size limit থাকতে পারে। বড় file এর জন্য
+                        cPanel Terminal এ:
+                        <code>mysql -u tradfly_khuser -p tradfly_keyhost &lt; tradfly_database.sql</code>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PART 3 -->
+        <div class="part">
+            <div class="pnum">3</div>
+            <div>
+                <h2>Backend Upload ও Node.js App Setup</h2>
+                <p>api.tradfly.com এ Node.js server চালু করা</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="sh">
+                <div class="sn">8</div>
+                <div class="st">📁 nodeapp Folder তৈরি ও Files Upload</div>
+            </div>
+            <div class="sb">
+                <p><strong>cPanel → File Manager</strong> এ যান:</p>
+                <ol>
+                    <li>Left এ <code>/home/yourusername/</code> এ click করুন (public_html এর বাইরে)</li>
+                    <li>উপরে <strong>+ Folder</strong> button click করুন → name দিন: <code>nodeapp</code> → Create</li>
+                    <li><code>nodeapp</code> folder এ enter করুন</li>
+                    <li>উপরে <strong>Upload</strong> button click করুন</li>
+                </ol>
+                <p style="margin-top:12px"><strong>কী upload করবেন:</strong></p>
+                <div class="ft">
+                    <span class="ftd">nodeapp/</span>
+                    ├── <span class="ftf">server.js</span> <span class="fty">✅ upload</span>
+                    ├── <span class="ftf">package.json</span> <span class="fty">✅ upload</span>
+                    ├── <span class="ftf">package-lock.json</span> <span class="fty">✅ upload</span>
+                    ├── <span class="ftf">.env</span> <span class="fty">✅ upload (production values সহ)</span>
+                    ├── <span class="ftd">routes/</span> <span class="fty">✅ upload (পুরো folder)</span>
+                    ├── <span class="ftd">config/</span> <span class="fty">✅ upload</span>
+                    ├── <span class="ftd">middleware/</span> <span class="fty">✅ upload</span>
+                    ├── <span class="ftd">utils/</span> <span class="fty">✅ upload</span>
+                    ├── <span class="ftd">uploads/</span> <span class="fty">✅ empty folder তৈরি করুন</span>
+                    └── <span class="ftd">node_modules/</span> <span class="ftn">❌ upload করবেন না!</span>
+                </div>
+                <div class="alert aw">
+                    <div class="ai">💡</div>
+                    <div>
+                        <div class="at">সহজ উপায় — Zip করে Upload:</div>
+                        <ol style="padding-left:16px;margin-top:6px">
+                            <li>Windows Explorer এ <code>backend/</code> folder open করুন</li>
+                            <li><code>node_modules</code> folder বাদে সব select করুন (Ctrl+A, তারপর Ctrl+Click করে
+                                node_modules deselect করুন)</li>
+                            <li>Right click → Send to → Compressed (zipped) folder</li>
+                            <li>cPanel File Manager এ <code>nodeapp/</code> folder এ zip upload করুন</li>
+                            <li>Uploaded zip file এ Right click → Extract</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="sh">
+                <div class="sn">9</div>
+                <div class="st">🌐 Subdomain তৈরি — api.tradfly.com</div>
+            </div>
+            <div class="sb">
+                <p><strong>cPanel → Domains → Subdomains</strong> এ যান:</p>
+                <table>
+                    <tr>
+                        <th>Field</th>
+                        <th>Value</th>
+                        <th>Note</th>
+                    </tr>
+                    <tr>
+                        <td>Subdomain</td>
+                        <td><code>api</code></td>
+                        <td>শুধু "api" লিখুন</td>
+                    </tr>
+                    <tr>
+                        <td>Domain</td>
+                        <td><code>tradfly.com</code></td>
+                        <td>Dropdown থেকে select করুন</td>
+                    </tr>
+                    <tr>
+                        <td>Document Root</td>
+                        <td><code>/home/yourusername/nodeapp</code></td>
+                        <td>Auto-fill হবে, /nodeapp যোগ করুন</td>
+                    </tr>
+                </table>
+                <p style="margin-top:12px"><strong>Create</strong> button click করুন।</p>
+                <div class="alert an">
+                    <div class="ai">ℹ️</div>
+                    <div>Document root automatically <code>/home/yourusername/public_html/api</code> দিতে পারে। সেটা
+                        মুছে <code>/home/yourusername/nodeapp</code> লিখুন।</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="sh">
+                <div class="sn">10</div>
+                <div class="st">⚙️ Node.js Application তৈরি করুন</div>
+            </div>
+            <div class="sb">
+                <p><strong>cPanel → Software → Setup Node.js App</strong> এ যান:</p>
+                <p>উপরে <strong>"CREATE APPLICATION"</strong> button click করুন। নিচের values দিন:</p>
+                <table>
+                    <tr>
+                        <th>Setting</th>
+                        <th>Value</th>
+                    </tr>
+                    <tr>
+                        <td>Node.js version</td>
+                        <td><code>18.x</code> বা সর্বোচ্চ available version select করুন</td>
+                    </tr>
+                    <tr>
+                        <td>Application mode</td>
+                        <td><code>Production</code></td>
+                    </tr>
+                    <tr>
+                        <td>Application root</td>
+                        <td><code>nodeapp</code></td>
+                    </tr>
+                    <tr>
+                        <td>Application URL</td>
+                        <td><code>api.tradfly.com</code></td>
+                    </tr>
+                    <tr>
+                        <td>Application startup file</td>
+                        <td><code>server.js</code></td>
+                    </tr>
+                </table>
+                <p style="margin-top:12px"><strong>CREATE</strong> button click করুন।</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="sh">
+                <div class="sn">11</div>
+                <div class="st">📦 npm install চালান</div>
+            </div>
+            <div class="sb">
+                <p>App তৈরি হলে <strong>"Run NPM Install"</strong> button দেখবেন — সেটা click করুন।</p>
+                <p style="margin-top:8px">অথবা <strong>cPanel → Terminal</strong> এ:</p>
+                <div class="cb">
+                    <div class="cb-h"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">Copy</button>
+                    </div>
+                    <pre><span class="cc">cd ~/nodeapp
+npm install --omit=dev</span></pre>
+                </div>
+                <p>এটা ২-১০ মিনিট সময় নিতে পারে। সব dependencies install হবে।</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="sh">
+                <div class="sn">12</div>
+                <div class="st">▶️ Node.js App Start করুন</div>
+            </div>
+            <div class="sb">
+                <p><strong>Setup Node.js App</strong> এ আপনার app এর পাশে <strong>START</strong> button click করুন।</p>
+                <p style="margin-top:10px">Status <span style="color:#3fb950;font-weight:700">● Running</span> দেখালে
+                    সফল।</p>
+                <p style="margin-top:12px"><strong>এখনই Test করুন:</strong> Browser এ যান:</p>
+                <div class="cb">
+                    <div class="cb-h"><span>URL</span><button class="copy-btn" onclick="copyCode(this)">Copy</button>
+                    </div>
+                    <pre><span class="cv">https://api.tradfly.com/api/health</span></pre>
+                </div>
+                <div class="alert as">
+                    <div class="ai">✅</div>
+                    <div>
+                        <div class="at">সফল Response:</div>
+                        <code>{"success": true, "message": "Keyhost Homes API is running"}</code>
+                    </div>
+                </div>
+                <div class="alert ae">
+                    <div class="ai">❌</div>
+                    <div>
+                        <div class="at">Error হলে:</div>Setup Node.js App → আপনার app → <strong>Error Log</strong> link
+                        click করে error দেখুন।
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="sh">
+                <div class="sn">13</div>
+                <div class="st">📂 Uploads Folder Permission ঠিক করুন</div>
+            </div>
+            <div class="sb">
+                <p><strong>cPanel → Terminal:</strong></p>
+                <div class="cb">
+                    <div class="cb-h"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">Copy</button>
+                    </div>
+                    <pre><span class="cc">cd ~/nodeapp
+mkdir -p uploads/properties uploads/avatars uploads/documents
+chmod -R 755 uploads/</span></pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- PART 4 -->
+        <div class="part">
+            <div class="pnum">4</div>
+            <div>
+                <h2>Frontend Deploy — tradfly.com</h2>
+                <p>React build public_html এ রাখা এবং routing configure করা</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="sh">
+                <div class="sn">14</div>
+                <div class="st">📤 React Build public_html এ Upload করুন</div>
+            </div>
+            <div class="sb">
+                <p><strong>cPanel → File Manager → <code>public_html/</code></strong> folder এ যান।</p>
+                <p>যদি আগে থেকে কিছু থাকে (index.html, cgi-bin ইত্যাদি), সেগুলো delete করুন।</p>
+                <p style="margin-top:10px"><strong>Upload করার উপায়:</strong></p>
+                <ol>
+                    <li>Local <code>frontend/build/</code> folder এর সব কিছু select করুন</li>
+                    <li>Zip করুন → <code>build.zip</code></li>
+                    <li>cPanel File Manager এ <code>public_html/</code> তে upload করুন</li>
+                    <li>Upload শেষে <code>build.zip</code> এ Right click → Extract → Extract to
+                        <code>/public_html/</code></li>
+                    <li>Extract হলে <code>build.zip</code> delete করুন</li>
+                </ol>
+                <p style="margin-top:10px">শেষে <code>public_html/</code> এ এইগুলো থাকবে:</p>
+                <div class="ft">
+                    <span class="ftd">public_html/</span>
+                    ├── <span class="ftf">index.html</span> <span class="fty">✅ থাকবে</span>
+                    ├── <span class="ftd">static/</span> <span class="fty">✅ থাকবে</span>
+                    │ ├── <span class="ftd">css/</span>
+                    │ ├── <span class="ftd">js/</span>
+                    │ └── <span class="ftd">media/</span>
+                    ├── <span class="ftf">manifest.json</span> <span class="fty">✅ থাকবে</span>
+                    ├── <span class="ftf">robots.txt</span> <span class="fty">✅ থাকবে</span>
+                    └── <span class="ftf">favicon.ico</span> <span class="fty">✅ থাকবে</span>
+                </div>
+                <div class="alert ae">
+                    <div class="ai">⚠️</div>
+                    <div>
+                        <div class="at">সাবধান!</div><code>build/</code> folder নিজে upload করবেন না।
+                        <code>build/</code> এর ভেতরের contents upload করতে হবে। নইলে URL হবে
+                        <code>tradfly.com/build/</code> যেটা wrong।
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="sh">
+                <div class="sn">15</div>
+                <div class="st">📝 .htaccess তৈরি করুন</div>
+            </div>
+            <div class="sb">
+                <p><strong>cPanel → File Manager → <code>public_html/</code></strong> এ যান।</p>
+                <p>উপরে <strong>+ File</strong> click করুন → name দিন <code>.htaccess</code> → Create</p>
+                <p>File এ Right click → Edit করুন এবং নিচের code paste করুন:</p>
+                <div class="cb">
+                    <div class="cb-h"><span>public_html/.htaccess</span><button class="copy-btn"
+                            onclick="copyCode(this)">Copy</button></div>
+                    <pre>Options -MultiViews
+RewriteEngine On
+
+<span class="cm"># React Router: সব route index.html এ redirect করুন</span>
+<span class="cm"># (page refresh হলে 404 না দিয়ে React handle করবে)</span>
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.html [QSA,L]</pre>
+                </div>
+                <p style="margin-top:8px">Save করুন।</p>
+                <div class="alert an">
+                    <div class="ai">ℹ️</div>
+                    <div>এই file না থাকলে page refresh করলে 404 error আসবে। React Router এর জন্য এটা অবশ্যই দরকার।</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="sh">
+                <div class="sn">16</div>
+                <div class="st">🔍 Google OAuth Redirect URI আপডেট করুন</div>
+            </div>
+            <div class="sb">
+                <p>Project এ Google Login আছে। Production এ কাজ করতে হলে Google Console এ tradfly.com add করতে হবে।</p>
+                <ol>
+                    <li><a href="https://console.cloud.google.com" target="_blank">console.cloud.google.com</a> এ যান
+                    </li>
+                    <li>আপনার project select করুন</li>
+                    <li>APIs &amp; Services → Credentials → আপনার OAuth Client</li>
+                    <li><strong>Authorized JavaScript origins</strong> এ add করুন: <code>https://tradfly.com</code></li>
+                    <li><strong>Authorized redirect URIs</strong> এ add করুন: <code>https://tradfly.com</code></li>
+                    <li>Save করুন</li>
+                </ol>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="sh">
+                <div class="sn">17</div>
+                <div class="st">💳 SSLCommerz Production Setup</div>
+            </div>
+            <div class="sb">
+                <p>Payment gateway production এ কাজ করতে:</p>
+                <ol>
+                    <li>SSLCommerz merchant panel এ login করুন</li>
+                    <li>Settings → IPN Settings এ <code>https://tradfly.com</code> add করুন</li>
+                    <li>Backend <code>.env</code> এ <code>SSLCOMMERZ_IS_LIVE=true</code> নিশ্চিত করুন</li>
+                    <li>Backend Node.js App restart করুন (Setup Node.js App → Stop → Start)</li>
+                </ol>
+            </div>
+        </div>
+
+        <!-- CHECKLIST -->
+        <div class="part">
+            <div class="pnum">✓</div>
+            <div>
+                <h2>Final Checklist</h2>
+                <p>Click করে done mark করুন — browser close করলেও save থাকবে</p>
+            </div>
+        </div>
+        <div class="cl">
+            <div class="cs">💻 Local PC</div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text"><code>frontend/.env.production</code> এ
+                    <code>REACT_APP_API_URL=https://api.tradfly.com/api</code> সেট করা</div>
+            </div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text"><code>npm run build</code> সম্পন্ন — <code>frontend/build/</code> folder তৈরি
+                    হয়েছে</div>
+            </div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text">Database export সম্পন্ন — <code>tradfly_database.sql</code> তৈরি</div>
+            </div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text"><code>backend/.env</code> production values দিয়ে আপডেট করা (DB, JWT, FRONTEND_URL)
+                </div>
+            </div>
+
+            <div class="cs">🗄️ cPanel MySQL</div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text">Database তৈরি: <code>tradfly_keyhost</code></div>
+            </div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text">User তৈরি: <code>tradfly_khuser</code> + All Privileges দেওয়া হয়েছে</div>
+            </div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text">phpMyAdmin এ SQL import সম্পন্ন — tables দেখা যাচ্ছে</div>
+            </div>
+
+            <div class="cs">⚙️ Backend (api.tradfly.com)</div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text"><code>nodeapp/</code> folder এ backend files upload (node_modules বাদে)</div>
+            </div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text">Subdomain তৈরি: <code>api.tradfly.com</code> → <code>nodeapp/</code></div>
+            </div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text">Node.js App তৈরি (mode: Production, startup: server.js)</div>
+            </div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text">npm install সম্পন্ন</div>
+            </div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text">App Start — Status: Running ✅</div>
+            </div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text"><code>https://api.tradfly.com/api/health</code> → success response ✅</div>
+            </div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text">uploads/ folder তৈরি ও permission 755 ✅</div>
+            </div>
+
+            <div class="cs">🎨 Frontend (tradfly.com)</div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text"><code>build/</code> contents → <code>public_html/</code> upload সম্পন্ন</div>
+            </div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text"><code>public_html/.htaccess</code> তৈরি করা হয়েছে</div>
+            </div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text">Google OAuth — tradfly.com redirect URI add করা হয়েছে</div>
+            </div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text">SSLCommerz production mode চালু</div>
+            </div>
+
+            <div class="cs">🧪 Final Testing</div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text"><code>https://tradfly.com</code> homepage load হচ্ছে ✅</div>
+            </div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text">Register করা যাচ্ছে ✅</div>
+            </div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text">Login করা যাচ্ছে ✅</div>
+            </div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text">Property search কাজ করছে ✅</div>
+            </div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text">Page refresh এ 404 আসছে না ✅</div>
+            </div>
+            <div class="ci" onclick="tc(this)">
+                <div class="ck2"></div>
+                <div class="cl-text">Image upload কাজ করছে ✅</div>
+            </div>
+        </div>
+
+        <!-- ERRORS -->
+        <div class="part">
+            <div class="pnum">!</div>
+            <div>
+                <h2>Common Errors ও Solutions</h2>
+                <p>সমস্যা হলে এখানে দেখুন</p>
+            </div>
+        </div>
+        <div class="eg">
+            <div class="er">
+                <div class="en">❌ App not starting</div>
+                <div class="ef">
+                    <ul>
+                        <li>cPanel → Setup Node.js App → <strong>Error Log</strong> দেখুন</li>
+                        <li><code>.env</code> এর DB_NAME বা DB_PASSWORD ভুল কিনা check করুন</li>
+                        <li><code>npm install</code> পুরোপুরি হয়েছে কিনা দেখুন</li>
+                        <li>Node.js version mismatch? — 18.x select করুন</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="er">
+                <div class="en">❌ 502 Bad Gateway</div>
+                <div class="ef">
+                    <ul>
+                        <li>Node.js App <strong>Running</strong> status এ আছে কিনা দেখুন</li>
+                        <li>Subdomain document root সঠিক আছে কিনা দেখুন (<code>/home/user/nodeapp</code>)</li>
+                        <li>App stop করে আবার start করুন</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="er">
+                <div class="en">❌ Page refresh এ 404</div>
+                <div class="ef">
+                    <ul>
+                        <li><code>public_html/.htaccess</code> file আছে কিনা দেখুন</li>
+                        <li>File Manager এ hidden files show করুন (Settings → Show Hidden Files)</li>
+                        <li>Content সঠিক আছে কিনা দেখুন</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="er">
+                <div class="en">❌ CORS Error / API fail</div>
+                <div class="ef">
+                    <ul>
+                        <li>Backend <code>.env</code> এ <code>FRONTEND_URL=https://tradfly.com</code> আছে কিনা</li>
+                        <li>Browser Console → Network tab এ request URL দেখুন</li>
+                        <li>Backend app restart করুন</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="er">
+                <div class="en">❌ Image upload fail</div>
+                <div class="ef">
+                    <ul>
+                        <li><code>~/nodeapp/uploads/</code> folder exist করে কিনা</li>
+                        <li>Permission: <code>chmod -R 755 ~/nodeapp/uploads</code></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="er">
+                <div class="en">❌ Database connection fail</div>
+                <div class="ef">
+                    <ul>
+                        <li><code>.env</code> এ DB_NAME, DB_USER, DB_PASSWORD সঠিক আছে কিনা</li>
+                        <li>cPanel MySQL এ user টা database এ All Privileges এ add আছে কিনা</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="footer">tradfly.com — Keyhost Booking System &nbsp;·&nbsp; Namecheap Shared Hosting Deployment Guide
+    </div>
+
+    <script>
+        function tc(el) {
+            el.classList.toggle('done');
+            const k = el.querySelector('.cl-text').textContent.trim().slice(0, 40);
+            const s = JSON.parse(localStorage.getItem('td_chk') || '{}');
+            s[k] = el.classList.contains('done');
+            localStorage.setItem('td_chk', JSON.stringify(s));
+        }
+        window.addEventListener('DOMContentLoaded', () => {
+            const s = JSON.parse(localStorage.getItem('td_chk') || '{}');
+            document.querySelectorAll('.ci').forEach(el => {
+                const k = el.querySelector('.cl-text').textContent.trim().slice(0, 40);
+                if (s[k]) el.classList.add('done');
+            });
+        });
+        function copyCode(btn) {
+            const t = btn.closest('.cb').querySelector('pre').innerText;
+            navigator.clipboard.writeText(t).then(() => {
+                btn.textContent = 'Copied!'; btn.classList.add('ok');
+                setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('ok') }, 2000);
+            });
+        }
+    </script>
+</body>
+
+</html>

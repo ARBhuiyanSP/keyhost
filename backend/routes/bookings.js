@@ -5,6 +5,7 @@ const {
   generatePagination,
   generateBookingReference,
   calculateBookingTotal,
+  calculateRefundAmount,
   isPastDate,
   isValidDateRange,
   formatDate
@@ -31,7 +32,10 @@ router.post('/', verifyToken, requireGuest, validateBooking, async (req, res) =>
       number_of_children = 0,
       number_of_infants = 0,
       special_requests,
-      coupon_code
+      coupon_code,
+      hms_room_id,
+      custom_price,
+      booking_type = 'short_stay'  // 'short_stay' | 'monthly'
     } = req.body;
 
     // Validate dates
@@ -63,6 +67,26 @@ router.post('/', verifyToken, requireGuest, validateBooking, async (req, res) =>
 
     const property = properties[0];
 
+    // If HMS is enabled, handle room logic
+    let hmsRoom = null;
+    if (property.is_hms_enabled && hms_room_id) {
+      const [rooms] = await pool.execute(`
+        SELECT * FROM hms_rooms 
+        WHERE id = ? AND property_id = ?
+      `, [hms_room_id, property_id]);
+      
+      if (rooms.length === 0) {
+        return res.status(404).json(
+          formatResponse(false, 'Selected room not found in this property')
+        );
+      }
+      hmsRoom = rooms[0];
+    } else if (property.is_hms_enabled && !hms_room_id) {
+       // If it's an HMS property, we generally expect a room selection
+       // unless the entire property can be booked (we'll check business logic)
+       // For now, let's allow it but log a warning or default to base price
+    }
+
     // Check if property owner is trying to book their own property
     if (property.owner_id === req.user.id) {
       return res.status(400).json(
@@ -79,78 +103,147 @@ router.post('/', verifyToken, requireGuest, validateBooking, async (req, res) =>
 
     // Check minimum stay
     const nights = Math.ceil((new Date(check_out_date) - new Date(check_in_date)) / (1000 * 60 * 60 * 24));
-    if (nights < property.minimum_stay) {
-      return res.status(400).json(
-        formatResponse(false, `Minimum ${property.minimum_stay} nights required`)
-      );
+    const isMonthly = booking_type === 'monthly';
+
+    if (isMonthly) {
+      // Monthly booking validation
+      if (!property.monthly_rent_enabled || !property.monthly_approved) {
+        return res.status(400).json(
+          formatResponse(false, 'This property does not accept monthly bookings')
+        );
+      }
+      if (!property.monthly_rent_amount) {
+        return res.status(400).json(
+          formatResponse(false, 'Monthly rent amount not set for this property')
+        );
+      }
+      const minNights = property.monthly_min_stay_nights || 30;
+      if (nights < minNights) {
+        return res.status(400).json(
+          formatResponse(false, `Minimum ${minNights} nights required for monthly booking`)
+        );
+      }
+    } else {
+      if (nights < property.minimum_stay) {
+        return res.status(400).json(
+          formatResponse(false, `Minimum ${property.minimum_stay} nights required`)
+        );
+      }
     }
 
     // Check availability
-    // Include bookings that are confirmed/checked_in OR pending with owner acceptance and payment deadline not expired
-    const [conflicts] = await pool.execute(`
+    // Include bookings that are request_accepted, confirmed, or checked_in
+    let availabilityQuery = `
       SELECT id FROM bookings
       WHERE property_id = ? 
-      AND (
-        status IN ('confirmed', 'checked_in')
-        OR (
-          status = 'pending' 
-          AND confirmed_at IS NOT NULL 
-          AND payment_deadline IS NOT NULL 
-          AND payment_deadline > NOW()
-        )
-      )
-      AND (
-        (check_in_date <= ? AND check_out_date > ?) OR
-        (check_in_date < ? AND check_out_date >= ?) OR
-        (check_in_date >= ? AND check_out_date <= ?)
-      )
-    `, [property_id, check_out_date, check_in_date, check_out_date, check_in_date, check_in_date, check_out_date]);
+      AND status IN ('request_accepted', 'confirmed', 'checked_in')
+      AND DATE(check_in_date) < DATE(?) AND DATE(check_out_date) > DATE(?)
+    `;
+    let availabilityParams = [property_id, check_out_date, check_in_date];
+
+    // If it's a specific room booking, only check conflicts for THAT room
+    if (hms_room_id) {
+       availabilityQuery += ` AND hms_room_id = ? `;
+       availabilityParams.push(hms_room_id);
+    }
+
+    const [conflicts] = await pool.execute(availabilityQuery, availabilityParams);
 
     if (conflicts.length > 0) {
       return res.status(409).json(
-        formatResponse(false, 'Property is not available for the selected dates')
+        formatResponse(false, hms_room_id ? 'This room is not available for the selected dates' : 'Property is not available for the selected dates')
       );
     }
 
     // Calculate pricing
-    const basePrice = property.base_price;
-    const cleaningFee = property.cleaning_fee;
-    const securityDeposit = property.security_deposit;
-    const extraGuestFee = number_of_guests > 1 ? (number_of_guests - 1) * property.extra_guest_fee : 0;
-    const serviceFee = (basePrice * nights) * 0.1; // 10% service fee
-    const taxAmount = (basePrice * nights) * 0.15; // 15% tax
+    let pricing, finalTotal, totalDiscount = 0, discountAmount = 0, hostDiscount = 0;
+    let monthsCount = null, extraDays = null, monthlyRateUsed = null, advanceAmount = null;
 
-    const pricing = calculateBookingTotal(
-      basePrice, nights, cleaningFee, securityDeposit,
-      extraGuestFee, serviceFee, taxAmount
-    );
+    if (isMonthly) {
+      // ── Monthly pro-rated pricing ─────────────────────────────────────────
+      const monthlyRate = parseFloat(property.monthly_rent_amount);
+      monthsCount   = Math.floor(nights / 30);
+      extraDays     = nights % 30;
+      monthlyRateUsed = monthlyRate;
 
-    // Apply coupon if provided
-    let discountAmount = 0;
-    if (coupon_code) {
-      const [coupons] = await pool.execute(`
-        SELECT * FROM coupons 
-        WHERE code = ? AND is_active = 1 
-        AND valid_from <= CURDATE() AND valid_until >= CURDATE()
-        AND (usage_limit IS NULL OR used_count < usage_limit)
-      `, [coupon_code]);
+      const monthlySubtotal = monthsCount * monthlyRate;
+      const proratedAmount  = extraDays * (monthlyRate / 30);
+      const monthlySecDep   = parseFloat(property.monthly_security_deposit) || 0;
+      advanceAmount         = parseFloat(property.monthly_advance_amount) || 0;
 
-      if (coupons.length > 0) {
-        const coupon = coupons[0];
-        if (pricing.total >= coupon.minimum_amount) {
-          if (coupon.discount_type === 'percentage') {
-            discountAmount = (pricing.total * coupon.discount_value) / 100;
-            if (coupon.maximum_discount) {
-              discountAmount = Math.min(discountAmount, coupon.maximum_discount);
+      finalTotal = monthlySubtotal + proratedAmount + monthlySecDep;
+      totalDiscount = 0;
+
+      // Build a pricing-compatible object for response
+      pricing = {
+        basePrice: monthlyRate,
+        nights,
+        monthsCount,
+        extraDays,
+        monthlySubtotal,
+        proratedAmount,
+        monthlySecurityDeposit: monthlySecDep,
+        total: finalTotal
+      };
+    } else {
+      // ── Standard nightly pricing ──────────────────────────────────────────
+      const basePrice = hmsRoom ? parseFloat(hmsRoom.price) : (parseFloat(property.base_price) || 0);
+      const cleaningFee = parseFloat(property.cleaning_fee) || 0;
+      const securityDeposit = parseFloat(property.security_deposit) || 0;
+      const extraGuestFee = number_of_guests > 1 ? (number_of_guests - 1) * (parseFloat(property.extra_guest_fee) || 0) : 0;
+
+      // Fetch live service fee and tax percentages from settings
+      const [settingsRows] = await pool.execute(
+        `SELECT setting_key, setting_value FROM system_settings
+         WHERE setting_key IN ('service_fee_percentage', 'tax_percentage')`
+      );
+      let serviceFeePercent = 0;
+      let taxPercent = 0;
+      settingsRows.forEach(row => {
+        if (row.setting_key === 'service_fee_percentage') serviceFeePercent = parseFloat(row.setting_value) || 0;
+        if (row.setting_key === 'tax_percentage') taxPercent = parseFloat(row.setting_value) || 0;
+      });
+
+      const serviceFee = (basePrice * nights) * (serviceFeePercent / 100);
+      const taxAmount = (basePrice * nights) * (taxPercent / 100);
+
+      pricing = calculateBookingTotal(
+        basePrice, nights, cleaningFee, securityDeposit,
+        extraGuestFee, serviceFee, taxAmount
+      );
+
+      // Custom price discount
+      const parsedCustomPrice = parseFloat(custom_price);
+      if (!isNaN(parsedCustomPrice) && parsedCustomPrice > 0 && parsedCustomPrice <= pricing.total) {
+        hostDiscount = pricing.total - parsedCustomPrice;
+      }
+
+      // Apply coupon if provided
+      if (coupon_code) {
+        const [coupons] = await pool.execute(
+          `SELECT * FROM coupons
+           WHERE code = ? AND is_active = 1
+           AND valid_from <= CURDATE() AND valid_until >= CURDATE()
+           AND (usage_limit IS NULL OR used_count < usage_limit)`,
+          [coupon_code]
+        );
+        if (coupons.length > 0) {
+          const coupon = coupons[0];
+          const totalForCoupon = pricing.total - hostDiscount;
+          if (totalForCoupon >= coupon.minimum_amount) {
+            if (coupon.discount_type === 'percentage') {
+              discountAmount = (totalForCoupon * coupon.discount_value) / 100;
+              if (coupon.maximum_discount) discountAmount = Math.min(discountAmount, coupon.maximum_discount);
+            } else {
+              discountAmount = coupon.discount_value;
             }
-          } else {
-            discountAmount = coupon.discount_value;
           }
         }
       }
-    }
 
-    const finalTotal = Math.max(0, pricing.total - discountAmount);
+      finalTotal = Math.max(0, pricing.total - hostDiscount - discountAmount);
+      totalDiscount = discountAmount + hostDiscount;
+    }
 
     // Generate booking reference
     const bookingReference = generateBookingReference();
@@ -158,23 +251,32 @@ router.post('/', verifyToken, requireGuest, validateBooking, async (req, res) =>
     // Create booking
     const [result] = await pool.execute(`
       INSERT INTO bookings (
-        booking_reference, guest_id, property_id,
+        booking_reference, guest_id, property_id, hms_room_id,
         check_in_date, check_out_date, check_in_time, check_out_time,
         number_of_guests, number_of_children, number_of_infants,
         base_price, cleaning_fee, security_deposit, extra_guest_fee,
         service_fee, tax_amount, total_amount, currency,
         special_requests, coupon_code, discount_amount,
         guest_name, guest_email, guest_phone,
-        booking_source, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'website', 'pending', NOW())
+        booking_type, months_count, extra_days, monthly_rate_used, advance_amount,
+        booking_source, status, is_non_refundable, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'website', 'pending', ?, NOW())
     `, [
-      bookingReference, req.user.id, property_id,
+      bookingReference, req.user.id, property_id, hms_room_id || null,
       check_in_date, check_out_date, check_in_time, check_out_time,
       number_of_guests, number_of_children, number_of_infants,
-      basePrice, cleaningFee, securityDeposit, extraGuestFee,
-      serviceFee, taxAmount, finalTotal, property.currency,
-      special_requests, coupon_code, discountAmount,
-      `${req.user.first_name} ${req.user.last_name}`, req.user.email, req.user.phone
+      isMonthly ? (property.monthly_rent_amount || 0) : (hmsRoom ? hmsRoom.price : property.base_price),
+      isMonthly ? 0 : (parseFloat(property.cleaning_fee) || 0),
+      isMonthly ? (property.monthly_security_deposit || 0) : (parseFloat(property.security_deposit) || 0),
+      isMonthly ? 0 : (number_of_guests > 1 ? (number_of_guests - 1) * (parseFloat(property.extra_guest_fee) || 0) : 0),
+      isMonthly ? 0 : (pricing.serviceFee || 0),
+      isMonthly ? 0 : (pricing.taxAmount || 0),
+      finalTotal, property.currency,
+      special_requests, isMonthly ? null : coupon_code, totalDiscount,
+      `${req.user.first_name} ${req.user.last_name}`, req.user.email, req.user.phone,
+      booking_type,
+      monthsCount, extraDays, monthlyRateUsed, advanceAmount,
+      property.is_non_refundable || false
     ]);
 
     const bookingId = result.insertId;
@@ -199,12 +301,15 @@ router.post('/', verifyToken, requireGuest, validateBooking, async (req, res) =>
         p.title as property_title,
         p.address as property_address,
         p.city as property_city,
+        hr.room_number as hms_room_number,
+        hr.room_type as hms_room_type,
         u.first_name as owner_first_name,
         u.last_name as owner_last_name
       FROM bookings b
       JOIN properties p ON b.property_id = p.id
       JOIN property_owners po ON p.owner_id = po.id
       JOIN users u ON po.user_id = u.id
+      LEFT JOIN hms_rooms hr ON b.hms_room_id = hr.id
       WHERE b.id = ?
     `, [bookingId]);
 
@@ -248,7 +353,7 @@ router.get('/', verifyToken, validatePagination, async (req, res) => {
       queryParams.push(req.user.id);
     } else {
       // Admin can see all bookings
-      if (req.user.role === 'admin') {
+      if (req.user.user_type === 'admin') {
         whereClause = 'WHERE 1=1';
       } else {
         return res.status(403).json(formatResponse(false, 'Access denied'));
@@ -345,10 +450,13 @@ router.get('/my-bookings', verifyToken, validatePagination, async (req, res) => 
         p.address as property_address,
         p.city as property_city,
         p.base_price,
-        pi.image_url as property_image
+        pi.image_url as property_image,
+        hr.room_number as hms_room_number,
+        hr.room_type as hms_room_type
       FROM bookings b
       JOIN properties p ON b.property_id = p.id
       LEFT JOIN property_images pi ON p.id = pi.property_id AND pi.image_type = 'main' AND pi.is_active = 1
+      LEFT JOIN hms_rooms hr ON b.hms_room_id = hr.id
       ${whereClause}
       ORDER BY b.created_at DESC
       LIMIT ? OFFSET ?
@@ -388,6 +496,8 @@ router.get('/:id', verifyToken, validateId, async (req, res) => {
         p.country as property_country,
         p.check_in_time as property_check_in_time,
         p.check_out_time as property_check_out_time,
+        hr.room_number as hms_room_number,
+        hr.room_type as hms_room_type,
         u.first_name as owner_first_name,
         u.last_name as owner_last_name,
         u.email as owner_email,
@@ -396,6 +506,7 @@ router.get('/:id', verifyToken, validateId, async (req, res) => {
       JOIN properties p ON b.property_id = p.id
       JOIN property_owners po ON p.owner_id = po.id
       JOIN users u ON po.user_id = u.id
+      LEFT JOIN hms_rooms hr ON b.hms_room_id = hr.id
       WHERE b.id = ? AND (b.guest_id = ? OR u.id = ?)
     `, [id, req.user.id, req.user.id]);
 
@@ -491,17 +602,57 @@ router.patch('/:id/cancel', verifyToken, validateId, async (req, res) => {
       );
     }
 
+    // Calculate refund
+    const refundInfo = calculateRefundAmount(
+      parseFloat(booking.total_amount),
+      booking.check_in_date,
+      booking.is_non_refundable // This column might not exist yet, but I'll add it
+    );
+
     // Update booking status
     await pool.execute(
       'UPDATE bookings SET status = "cancelled", cancellation_reason = ?, cancelled_at = NOW() WHERE id = ?',
       [reason, id]
     );
 
-    // TODO: Process refund based on cancellation policy
-    // This would involve calculating refund amount and creating refund record
+    // Create refund record for admin to review
+    try {
+      const [payments] = await pool.execute(`
+        SELECT id, amount FROM payments 
+        WHERE booking_id = ? AND status IN ('completed', 'processing', 'authorized')
+        ORDER BY id DESC LIMIT 1
+      `, [id]);
+
+      if (payments.length > 0) {
+        const paymentId = payments[0].id;
+        const refundReference = `REF-${Date.now()}-${id}`;
+        let rType = parseFloat(refundInfo.refundAmount) >= parseFloat(booking.total_amount) ? 'full' : (parseFloat(refundInfo.refundAmount) > 0 ? 'partial' : 'penalty');
+
+        await pool.execute(`
+          INSERT INTO refunds (
+            booking_id, payment_id, refund_reference, original_amount, refund_amount, net_refund, 
+            refund_reason, refund_type, cancellation_policy_applied, status, requested_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())
+        `, [
+          id, 
+          paymentId,
+          refundReference,
+          parseFloat(booking.total_amount),
+          parseFloat(refundInfo.refundAmount),
+          parseFloat(refundInfo.refundAmount),
+          (refundInfo.reason || reason || 'Admin/Host Cancellation').substring(0, 255), 
+          rType,
+          `Cancelled by Host/Admin. Policy: ${refundInfo.isEligible ? 'Eligible' : 'Not Eligible (Late)'}`
+        ]);
+      }
+    } catch (refErr) {
+        console.error('Refund creation error:', refErr);
+    }
 
     res.json(
-      formatResponse(true, 'Booking cancelled successfully')
+      formatResponse(true, 'Booking cancelled successfully', {
+        refund: refundInfo
+      })
     );
 
   } catch (error) {
@@ -572,7 +723,7 @@ router.get('/availability/check', async (req, res) => {
     }
 
     // Check for conflicts
-    // Include bookings that are confirmed/checked_in OR pending with owner acceptance and payment deadline not expired
+    // Include bookings that are request_accepted, confirmed, or checked_in
     const [conflicts] = await pool.execute(`
       SELECT 
         b.id, b.booking_reference, b.check_in_date, b.check_out_date, b.status,
@@ -580,21 +731,9 @@ router.get('/availability/check', async (req, res) => {
       FROM bookings b
       JOIN users u ON b.guest_id = u.id
       WHERE b.property_id = ? 
-      AND (
-        b.status IN ('confirmed', 'checked_in')
-        OR (
-          b.status = 'pending' 
-          AND b.confirmed_at IS NOT NULL 
-          AND b.payment_deadline IS NOT NULL 
-          AND b.payment_deadline > NOW()
-        )
-      )
-      AND (
-        (b.check_in_date <= ? AND b.check_out_date > ?) OR
-        (b.check_in_date < ? AND b.check_out_date >= ?) OR
-        (b.check_in_date >= ? AND b.check_out_date <= ?)
-      )
-    `, [property_id, check_out_date, check_in_date, check_out_date, check_in_date, check_in_date, check_out_date]);
+      AND b.status IN ('request_accepted', 'confirmed', 'checked_in')
+      AND DATE(b.check_in_date) < DATE(?) AND DATE(b.check_out_date) > DATE(?)
+    `, [property_id, check_out_date, check_in_date]);
 
     const isAvailable = conflicts.length === 0;
 

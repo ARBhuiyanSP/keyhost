@@ -13,19 +13,24 @@ export const addToRecentlyViewed = (property) => {
 
     // Get existing recently viewed properties
     const existing = getRecentlyViewed();
-    
+
     // Remove the property if it already exists (to avoid duplicates)
     const filtered = existing.filter(p => p.id !== property.id);
-    
+
     // Add the new property at the beginning
     const updated = [
       {
         id: property.id,
+        slug: property.slug,
         title: property.title,
         base_price: property.base_price,
         city: property.city,
         state: property.state,
-        main_image: property.main_image || property.images?.[0]?.image_url || null,
+        // Properly extract image regardless if it's an object or a string url
+        main_image: property.main_image ||
+          (property.images?.[0] ?
+            (typeof property.images[0] === 'string' ? property.images[0] : property.images[0].image_url || property.images[0].url)
+            : null),
         average_rating: property.average_rating,
         total_reviews: property.total_reviews,
         viewedAt: new Date().toISOString()
@@ -35,7 +40,7 @@ export const addToRecentlyViewed = (property) => {
 
     // Save to localStorage
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    
+
     // Dispatch custom event to notify other components
     window.dispatchEvent(new CustomEvent('recentlyViewedUpdated', { detail: updated }));
   } catch (error) {
@@ -52,7 +57,7 @@ export const getRecentlyViewed = (limit = 10) => {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (!stored) return [];
-    
+
     const properties = JSON.parse(stored);
     return properties.slice(0, limit);
   } catch (error) {

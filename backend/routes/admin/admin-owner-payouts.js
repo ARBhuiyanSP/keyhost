@@ -2,6 +2,8 @@ const express = require('express');
 const { pool } = require('../../config/database');
 const { formatResponse, generatePagination } = require('../../utils/helpers');
 const { validatePagination } = require('../../middleware/validation');
+const BkashPaymentGateway = require('../../utils/bkash-gateway');
+const NagadPaymentGateway = require('../../utils/nagad-gateway');
 
 const router = express.Router();
 
@@ -81,8 +83,13 @@ router.get('/balances/:ownerId', async (req, res) => {
       SELECT 
         b.id as booking_id,
         b.booking_reference,
-        b.total_amount,
-        b.property_owner_earnings,
+        GREATEST(
+          b.property_owner_earnings,
+          COALESCE((
+            SELECT SUM(cr_amount) FROM payments 
+            WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online')
+          ), 0) - COALESCE(b.admin_commission_amount, 0)
+        ) as property_owner_earnings,
         ae.commission_amount,
         ae.payment_status as commission_status,
         b.payment_status as booking_payment_status,
@@ -160,6 +167,8 @@ router.post('/payouts', async (req, res) => {
       LEFT JOIN admin_earnings ae ON b.id = ae.booking_id
       WHERE p.owner_id = ? 
         AND b.payment_status = 'paid'
+        AND (b.booking_source = 'website' OR b.source = 'Internal' OR b.payment_method = 'sslcommerz')
+        AND b.property_owner_earnings > 0
         AND DATE(b.created_at) BETWEEN ? AND ?
         AND b.id NOT IN (
           SELECT booking_id FROM owner_payout_items opi
@@ -178,7 +187,7 @@ router.post('/payouts', async (req, res) => {
     const totalEarnings = eligibleBookings.reduce((sum, booking) => sum + parseFloat(booking.property_owner_earnings), 0);
     const totalCommissionPaid = eligibleBookings.reduce((sum, booking) => 
       sum + (booking.commission_status === 'paid' ? parseFloat(booking.commission_amount) : 0), 0);
-    const netPayout = totalEarnings - totalCommissionPaid;
+    const netPayout = totalEarnings;
 
     if (netPayout <= 0) {
       return res.status(400).json(
@@ -269,6 +278,9 @@ router.get('/payouts', validatePagination, async (req, res) => {
       SELECT 
         op.*,
         po.business_name,
+        po.mfs_provider,
+        po.mfs_wallet_number,
+        po.mfs_account_name,
         u.first_name,
         u.last_name,
         COUNT(opi.id) as items_count
@@ -367,6 +379,9 @@ router.get('/payouts/:id', async (req, res) => {
       SELECT 
         op.*,
         po.business_name,
+        po.mfs_provider,
+        po.mfs_wallet_number,
+        po.mfs_account_name,
         u.first_name,
         u.last_name,
         u.email
@@ -387,6 +402,7 @@ router.get('/payouts/:id', async (req, res) => {
         opi.*,
         b.booking_reference,
         b.guest_name,
+        b.created_at as booking_date,
         p.title as property_title
       FROM owner_payout_items opi
       JOIN bookings b ON opi.booking_id = b.id
@@ -405,6 +421,128 @@ router.get('/payouts/:id', async (req, res) => {
     res.status(500).json(
       formatResponse(false, 'Failed to retrieve payout details', null, error.message)
     );
+  }
+});
+
+// =============================================
+// DISBURSE PAYOUT VIA GATEWAY (bKash / Nagad)
+// =============================================
+router.post('/payouts/:id/disburse-gateway', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const { id } = req.params;
+    const { payment_method: reqMethod, mobile_number: reqMobile } = req.body;
+
+    // 1. Fetch payout
+    const [payoutRows] = await connection.execute(`
+      SELECT op.*, po.business_name, po.mfs_provider, po.mfs_wallet_number, po.mfs_account_name, u.first_name, u.last_name, u.email
+      FROM owner_payouts op
+      JOIN property_owners po ON op.property_owner_id = po.id
+      JOIN users u ON po.user_id = u.id
+      WHERE op.id = ?
+    `, [id]);
+
+    if (payoutRows.length === 0) {
+      return res.status(404).json(formatResponse(false, 'Payout not found'));
+    }
+
+    const payout = payoutRows[0];
+
+    // 2. Validate status — only pending or failed can be retried
+    if (!['pending', 'processing', 'failed'].includes(payout.payment_status)) {
+      return res.status(400).json(
+        formatResponse(false, `Cannot disburse a payout that is already '${payout.payment_status}'`)
+      );
+    }
+
+    // 3. Resolve gateway method and mobile number (allow overriding request details)
+    const targetGateway = reqMethod || payout.payment_method;
+    const mobileNumber = reqMobile || payout.mobile_number;
+
+    if (!['bkash', 'nagad'].includes(targetGateway)) {
+      return res.status(400).json(
+        formatResponse(false, `Gateway disbursement is only supported for bKash and Nagad, not '${targetGateway}'`)
+      );
+    }
+
+    // 4. Validate mobile number
+    if (!mobileNumber) {
+      return res.status(400).json(
+        formatResponse(false, 'Host mobile number is required for gateway disbursement')
+      );
+    }
+
+    const amount = parseFloat(payout.net_payout);
+    if (!amount || amount <= 0) {
+      return res.status(400).json(formatResponse(false, 'Invalid payout amount'));
+    }
+
+    // 5. Mark as processing first, updating any modified payment method / number
+    await connection.execute(`
+      UPDATE owner_payouts 
+      SET payment_status = 'processing', 
+          payment_method = ?, 
+          mobile_number = ?, 
+          updated_at = NOW() 
+      WHERE id = ?
+    `, [targetGateway, mobileNumber, id]);
+
+    // 6. Call the appropriate gateway
+    let disburseResult;
+    if (targetGateway === 'bkash') {
+      const bkashGateway = new BkashPaymentGateway();
+      await bkashGateway.initialize();
+      disburseResult = await bkashGateway.disbursePayout(amount, mobileNumber, payout.payout_reference);
+    } else {
+      const nagadGateway = new NagadPaymentGateway();
+      await nagadGateway.initialize();
+      disburseResult = await nagadGateway.disbursePayout(amount, mobileNumber, payout.payout_reference);
+    }
+
+    if (!disburseResult.success) {
+      // Roll back to failed
+      await connection.execute(
+        `UPDATE owner_payouts SET payment_status = 'failed', notes = ?, updated_at = NOW() WHERE id = ?`,
+        [`Gateway error: ${disburseResult.error}`, id]
+      );
+      return res.status(400).json(
+        formatResponse(false, `Disbursement failed: ${disburseResult.error}`)
+      );
+    }
+
+    // 7. Update payout to completed with the real transaction ID and final credentials
+    await connection.execute(`
+      UPDATE owner_payouts
+      SET payment_status = 'completed',
+          payment_reference = ?,
+          payment_date = NOW(),
+          notes = ?,
+          updated_at = NOW()
+      WHERE id = ?
+    `, [
+      disburseResult.transactionID,
+      disburseResult.isDemo
+        ? `[Demo] ${disburseResult.statusMessage}`
+        : `Disbursed via ${targetGateway === 'bkash' ? 'bKash' : 'Nagad'}. TxnID: ${disburseResult.transactionID}`,
+      id
+    ]);
+
+    return res.json(formatResponse(true, 'Payout disbursed successfully', {
+      transactionID: disburseResult.transactionID,
+      amount: disburseResult.amount,
+      receiver: mobileNumber,
+      gateway: targetGateway,
+      statusMessage: disburseResult.statusMessage,
+      isDemo: disburseResult.isDemo || false
+    }));
+
+  } catch (error) {
+    console.error('Disburse gateway error:', error);
+    res.status(500).json(
+      formatResponse(false, 'Failed to process gateway disbursement', null, error.message)
+    );
+  } finally {
+    connection.release();
   }
 });
 

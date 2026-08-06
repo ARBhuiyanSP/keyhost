@@ -25,7 +25,8 @@ const validateUserRegistration = [
     .withMessage('Last name must be between 2 and 100 characters'),
   body('email')
     .isEmail()
-    .normalizeEmail()
+    .trim()
+    .toLowerCase()
     .withMessage('Please provide a valid email address'),
   body('phone')
     .isMobilePhone('any')
@@ -44,7 +45,8 @@ const validateUserRegistration = [
 const validateUserLogin = [
   body('email')
     .isEmail()
-    .normalizeEmail()
+    .trim()
+    .toLowerCase()
     .withMessage('Please provide a valid email address'),
   body('password')
     .notEmpty()
@@ -63,8 +65,13 @@ const validateProperty = [
     .isLength({ min: 20 })
     .withMessage('Description must be at least 20 characters long'),
   body('property_type')
-    .isIn(['room', 'villa', 'apartment', 'house'])
+    .isIn(['room', 'villa', 'apartment', 'house', 'hotel', 'hotels'])
     .withMessage('Invalid property type'),
+  body('is_single_unit')
+    .optional()
+    .toBoolean()
+    .isBoolean()
+    .withMessage('is_single_unit must be a boolean'),
   body('address')
     .trim()
     .isLength({ min: 10 })
@@ -106,12 +113,33 @@ const validateReview = [
     .withMessage('Valid booking ID is required'),
   body('rating')
     .isInt({ min: 1, max: 5 })
-    .withMessage('Rating must be between 1 and 5'),
-  body('comment')
-    .optional()
+    .withMessage('Overall rating must be between 1 and 5'),
+  body('title')
     .trim()
-    .isLength({ min: 10, max: 1000 })
-    .withMessage('Comment must be between 10 and 1000 characters'),
+    .isLength({ min: 2, max: 255 })
+    .withMessage('Title must be between 2 and 255 characters'),
+  body('comment')
+    .trim()
+    .isLength({ min: 3, max: 1000 })
+    .withMessage('Review comment must be between 3 and 1000 characters'),
+  body('cleanliness_rating')
+    .optional()
+    .isInt({ min: 0, max: 5 }),
+  body('communication_rating')
+    .optional()
+    .isInt({ min: 0, max: 5 }),
+  body('check_in_rating')
+    .optional()
+    .isInt({ min: 0, max: 5 }),
+  body('accuracy_rating')
+    .optional()
+    .isInt({ min: 0, max: 5 }),
+  body('location_rating')
+    .optional()
+    .isInt({ min: 0, max: 5 }),
+  body('value_rating')
+    .optional()
+    .isInt({ min: 0, max: 5 }),
   handleValidationErrors
 ];
 

@@ -34,7 +34,7 @@ const GoToTop = () => {
   return (
     <button
       onClick={scrollToTop}
-      className="fixed bottom-20 md:bottom-6 right-6 z-50 bg-[#E41D57] hover:bg-[#C01A4A] text-white p-3 rounded-full shadow-lg transition-all duration-300 hover:shadow-xl transform hover:scale-105 border border-white"
+      className="fixed bottom-40 md:bottom-24 right-6 z-50 bg-[#E41D57] hover:bg-[#C01A4A] text-white p-3 rounded-full shadow-lg transition-all duration-300 hover:shadow-xl transform hover:scale-105 border border-white print:hidden"
       aria-label="Go to top"
     >
       <FiChevronUp className="w-6 h-6" />

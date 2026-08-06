@@ -1,15 +1,22 @@
 const express = require('express');
 const { pool } = require('../config/database');
 const { formatResponse } = require('../utils/helpers');
-const { verifyToken, requirePropertyOwner } = require('../middleware/auth');
+const { verifyToken, requirePropertyOwner, requireHMSPermission } = require('../middleware/auth');
 
 const router = express.Router();
 
 // Get property owner analytics
-router.get('/owner', verifyToken, requirePropertyOwner, async (req, res) => {
+router.get('/owner', verifyToken, requirePropertyOwner, requireHMSPermission('view_analytics'), async (req, res) => {
   try {
     const { days = 30 } = req.query;
     const userId = req.user.id;
+
+    // Get property owner ID
+    const [ownerRows] = await pool.execute('SELECT id FROM property_owners WHERE user_id = ?', [userId]);
+    if (ownerRows.length === 0) {
+      return res.status(404).json(formatResponse(false, 'Property owner profile not found'));
+    }
+    const ownerId = ownerRows[0].id;
 
     // Calculate date range
     const endDate = new Date();
@@ -26,7 +33,7 @@ router.get('/owner', verifyToken, requirePropertyOwner, async (req, res) => {
       WHERE p.owner_id = ? 
         AND b.status IN ('confirmed', 'checked_in', 'checked_out')
         AND b.created_at >= ?
-    `, [userId, startDate]);
+    `, [ownerId, startDate]);
 
     // Get previous period for comparison
     const prevStartDate = new Date(startDate);
@@ -41,7 +48,7 @@ router.get('/owner', verifyToken, requirePropertyOwner, async (req, res) => {
       WHERE p.owner_id = ? 
         AND b.status IN ('confirmed', 'checked_in', 'checked_out')
         AND b.created_at >= ? AND b.created_at < ?
-    `, [userId, prevStartDate, startDate]);
+    `, [ownerId, prevStartDate, startDate]);
 
     // Get average rating
     const [ratingResult] = await pool.execute(`
@@ -51,7 +58,7 @@ router.get('/owner', verifyToken, requirePropertyOwner, async (req, res) => {
       FROM reviews r
       JOIN properties p ON r.property_id = p.id
       WHERE p.owner_id = ?
-    `, [userId]);
+    `, [ownerId]);
 
     // Get occupancy rate
     const [occupancyResult] = await pool.execute(`
@@ -63,7 +70,7 @@ router.get('/owner', verifyToken, requirePropertyOwner, async (req, res) => {
       WHERE p.owner_id = ? 
         AND b.status IN ('confirmed', 'checked_in', 'checked_out')
         AND b.check_in_date >= ?
-    `, [parseInt(days), userId, startDate]);
+    `, [parseInt(days), ownerId, startDate]);
 
     // Get top performing properties
     const [topPropertiesResult] = await pool.execute(`
@@ -81,7 +88,7 @@ router.get('/owner', verifyToken, requirePropertyOwner, async (req, res) => {
       GROUP BY p.id, p.title, p.city
       ORDER BY revenue DESC
       LIMIT 5
-    `, [startDate, userId]);
+    `, [startDate, ownerId]);
 
     // Get recent bookings
     const [recentBookingsResult] = await pool.execute(`
@@ -97,7 +104,7 @@ router.get('/owner', verifyToken, requirePropertyOwner, async (req, res) => {
       WHERE p.owner_id = ?
       ORDER BY b.created_at DESC
       LIMIT 10
-    `, [userId]);
+    `, [ownerId]);
 
     // Get revenue chart data
     const [revenueChartResult] = await pool.execute(`
@@ -111,7 +118,7 @@ router.get('/owner', verifyToken, requirePropertyOwner, async (req, res) => {
         AND b.created_at >= ?
       GROUP BY DATE(b.created_at)
       ORDER BY date
-    `, [userId, startDate]);
+    `, [ownerId, startDate]);
 
     // Get booking chart data
     const [bookingChartResult] = await pool.execute(`
@@ -124,7 +131,7 @@ router.get('/owner', verifyToken, requirePropertyOwner, async (req, res) => {
         AND b.created_at >= ?
       GROUP BY DATE(b.created_at)
       ORDER BY date
-    `, [userId, startDate]);
+    `, [ownerId, startDate]);
 
     // Calculate changes
     const currentRevenue = revenueResult[0].total_revenue || 0;

@@ -76,19 +76,19 @@ const Messages = () => {
                 </div>
 
                 {conversations.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-20 bg-gray-50 rounded-2xl border border-gray-100 border-dashed">
-                        <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mb-6 shadow-sm border border-gray-100">
-                            <FiMessageSquare className="w-8 h-8 text-gray-300" />
+                    <div className="text-center py-20 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center">
+                        <div className="bg-indigo-50 w-24 h-24 rounded-full flex items-center justify-center mb-6">
+                            <FiMessageSquare className="h-12 w-12 text-indigo-500" />
                         </div>
-                        <h3 className="text-xl font-bold text-gray-900 mb-2">No messages yet</h3>
-                        <p className="text-gray-500 text-center max-w-sm mb-8">
+                        <h3 className="text-2xl font-bold text-gray-900 mb-2">No messages yet</h3>
+                        <p className="text-gray-500 mb-8 max-w-sm text-center">
                             When you contact a host or receive a message regarding your bookings, it will appear here.
                         </p>
                         <Link
-                            to="/"
-                            className="px-6 py-3 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors font-medium"
+                            to="/properties"
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-8 rounded-xl shadow-md transition-all duration-200 transform hover:-translate-y-1"
                         >
-                            Explore properties
+                            Explore Properties
                         </Link>
                     </div>
                 ) : filteredConversations.length === 0 ? (

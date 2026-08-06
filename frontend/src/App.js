@@ -1,86 +1,187 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, Suspense, lazy } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import useAuthStore from './store/authStore';
 import useSettingsStore from './store/settingsStore';
+import useConnectionStore from './store/connectionStore';
+import ConnectionErrorScreen from './components/common/ConnectionErrorScreen';
 
-// Layouts
-import PublicLayout from './components/layout/PublicLayout';
-import DashboardLayout from './components/layout/DashboardLayout';
-
-// Components
+// Always-loaded core (tiny, needed immediately)
 import LoadingSpinner from './components/common/LoadingSpinner';
+import ProtectedRoute from './components/auth/ProtectedRoute';
+import SupportWidget from './components/common/SupportWidget';
+
+// Layouts — lazy loaded (each contains Navbar/Sidebar which are heavy)
+const PublicLayout = lazy(() => import('./components/layout/PublicLayout'));
+const DashboardLayout = lazy(() => import('./components/layout/DashboardLayout'));
 
 // Public Pages
-import Home from './pages/Home';
-import Properties from './pages/Properties';
-import PropertyDetail from './pages/PropertyDetail';
-import SearchResults from './pages/SearchResults';
-import FlightResultsPage from './pages/FlightResultsPage';
-import CarBooking from './pages/CarBooking';
-import FlightBooking from './components/booking/FlightBooking';
-import BookingSuccess from './components/booking/BookingSuccess';
-import TicketIssuePage from './components/booking/TicketIssuePage';
-import Help from './pages/Help';
-import Contact from './pages/Contact';
-import About from './pages/About';
-import FAQ from './pages/FAQ';
-import Terms from './pages/Terms';
-import Privacy from './pages/Privacy';
-import Login from './pages/auth/Login';
-import Register from './pages/auth/Register';
-import ForgotPassword from './pages/auth/ForgotPassword';
-import NotFound from './pages/NotFound';
-import ContactHost from './pages/ContactHost';
-import Messages from './pages/Messages';
-import ConversationDetail from './pages/ConversationDetail';
+const Home = lazy(() => import('./pages/Home'));
+const Properties = lazy(() => import('./pages/Properties'));
+const PropertyDetail = lazy(() => import('./pages/PropertyDetail'));
+const SearchResults = lazy(() => import('./pages/SearchResults'));
+const FlightResultsPage = lazy(() => import('./pages/FlightResultsPage'));
+const CarBooking = lazy(() => import('./pages/CarBooking'));
+const FlightBooking = lazy(() => import('./components/booking/FlightBooking'));
+const BookingSuccess = lazy(() => import('./components/booking/BookingSuccess'));
+const TicketIssuePage = lazy(() => import('./components/booking/TicketIssuePage'));
+const Help = lazy(() => import('./pages/Help'));
+const Contact = lazy(() => import('./pages/Contact'));
+const About = lazy(() => import('./pages/About'));
+const Terms = lazy(() => import('./pages/Terms'));
+const Privacy = lazy(() => import('./pages/Privacy'));
+const RefundPolicy = lazy(() => import('./pages/RefundPolicy'));
+const Cookies = lazy(() => import('./pages/Cookies'));
+const Login = lazy(() => import('./pages/auth/Login'));
+const Register = lazy(() => import('./pages/auth/Register'));
+const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword'));
+const ResetPassword = lazy(() => import('./pages/auth/ResetPassword'));
+const VerifyEmail = lazy(() => import('./pages/auth/VerifyEmail'));
+const NotFound = lazy(() => import('./pages/NotFound'));
+const ContactHost = lazy(() => import('./pages/ContactHost'));
+const Messages = lazy(() => import('./pages/Messages'));
+const ConversationDetail = lazy(() => import('./pages/ConversationDetail'));
+const SupportTickets = lazy(() => import('./pages/support/SupportTickets'));
+const TicketChat = lazy(() => import('./pages/support/TicketChat'));
+
+const BecomeHost = lazy(() => import('./pages/auth/BecomeHost'));
 
 // Admin Pages
-import AdminDashboard from './pages/admin/AdminDashboard';
-import AdminUsers from './pages/admin/AdminUsers';
-import AdminProperties from './pages/admin/AdminProperties';
-import AdminAmenities from './pages/admin/AdminAmenities';
-import AdminDisplayCategories from './pages/admin/AdminDisplayCategories';
-import AdminPropertyTypes from './pages/admin/AdminPropertyTypes';
-import AdminBookings from './pages/admin/AdminBookings';
-import AdminReviews from './pages/admin/AdminReviews';
-import AdminAnalytics from './pages/admin/AdminAnalytics';
-import AdminSettings from './pages/admin/AdminSettings';
-import AdminAccounting from './pages/admin/AdminAccounting';
-import AdminEarnings from './pages/admin/AdminEarnings';
-import AdminRewardsPoints from './pages/admin/AdminRewardsPoints';
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
+const AdminUsers = lazy(() => import('./pages/admin/AdminUsers'));
+const AdminContactMessages = lazy(() => import('./pages/admin/AdminContactMessages'));
+const AdminProperties = lazy(() => import('./pages/admin/AdminProperties'));
+const AdminAmenities = lazy(() => import('./pages/admin/AdminAmenities'));
+const AdminCoupons = lazy(() => import('./pages/admin/AdminCoupons'));
+const AdminDisplayCategories = lazy(() => import('./pages/admin/AdminDisplayCategories'));
+const AdminPropertyTypes = lazy(() => import('./pages/admin/AdminPropertyTypes'));
+const AdminBookings = lazy(() => import('./pages/admin/AdminBookings'));
+const AdminReviews = lazy(() => import('./pages/admin/AdminReviews'));
+const AdminAnalytics = lazy(() => import('./pages/admin/AdminAnalytics'));
+const AdminSettings = lazy(() => import('./pages/admin/AdminSettings'));
+const AdminAccounting = lazy(() => import('./pages/admin/AdminAccounting'));
+const AdminEarnings = lazy(() => import('./pages/admin/AdminEarnings'));
+const AdminRewardsPoints = lazy(() => import('./pages/admin/AdminRewardsPoints'));
+const AdminReports = lazy(() => import('./pages/admin/AdminReports'));
+const AdminRefunds = lazy(() => import('./pages/admin/AdminRefunds'));
+const AdminSecurityDeposits = lazy(() => import('./pages/admin/AdminSecurityDeposits'));
+const AdminHMSSettings = lazy(() => import('./pages/admin/AdminHMSSettings'));
+
+// Shared Reports Pages
+const BookingReports = lazy(() => import('./pages/shared/reports/BookingReports'));
+const FinancialReports = lazy(() => import('./pages/shared/reports/FinancialReports'));
+const PropertyPerformance = lazy(() => import('./pages/shared/reports/PropertyPerformance'));
+const CancellationReports = lazy(() => import('./pages/shared/reports/CancellationReports'));
+const PayoutReports = lazy(() => import('./pages/shared/reports/PayoutReports'));
+const UserReports = lazy(() => import('./pages/admin/UserReports'));
+const UserAnalyticsReport = lazy(() => import('./pages/admin/UserAnalyticsReport'));
+const PropertyAnalyticsReport = lazy(() => import('./pages/admin/PropertyAnalyticsReport'));
 
 // Property Owner Pages
-import PropertyOwnerDashboard from './pages/property-owner/PropertyOwnerDashboard';
-import MyProperties from './pages/property-owner/MyProperties';
-import AddProperty from './pages/property-owner/AddProperty';
-import EditProperty from './pages/property-owner/EditProperty';
-import PropertyOwnerBookings from './pages/property-owner/PropertyOwnerBookings';
-import Analytics from './pages/property-owner/Analytics';
-import EarningsSummary from './pages/property-owner/EarningsSummary';
-import PropertyOwnerEarnings from './pages/property-owner/PropertyOwnerEarnings';
-import PropertyOwnerProfile from './pages/property-owner/PropertyOwnerProfile';
+const PropertyOwnerDashboard = lazy(() => import('./pages/property-owner/PropertyOwnerDashboard'));
+const MyProperties = lazy(() => import('./pages/property-owner/MyProperties'));
+const AddProperty = lazy(() => import('./pages/property-owner/AddProperty'));
+const EditProperty = lazy(() => import('./pages/property-owner/EditProperty'));
+const PropertyOwnerBookings = lazy(() => import('./pages/property-owner/PropertyOwnerBookings'));
+const Analytics = lazy(() => import('./pages/property-owner/Analytics'));
+const EarningsSummary = lazy(() => import('./pages/property-owner/EarningsSummary'));
+const PropertyOwnerEarnings = lazy(() => import('./pages/property-owner/PropertyOwnerEarnings'));
+const PropertyOwnerProfile = lazy(() => import('./pages/property-owner/PropertyOwnerProfile'));
+const PropertyOwnerCalendar = lazy(() => import('./pages/property-owner/PropertyOwnerCalendar'));
+const PropertyOwnerReports = lazy(() => import('./pages/property-owner/PropertyOwnerReports'));
+const HMSPricing = lazy(() => import('./pages/property-owner/HMSPricing'));
+const HMSRooms = lazy(() => import('./pages/property-owner/HMSRooms'));
+const HMSStaff = lazy(() => import('./pages/property-owner/HMSStaff'));
+const HMSBilling = lazy(() => import('./pages/property-owner/HMSBilling'));
+const HMSReservations = lazy(() => import('./pages/property-owner/HMSReservations'));
+const HMSCalendar = lazy(() => import('./pages/property-owner/HMSCalendar'));
+const HMSMaintenance = lazy(() => import('./pages/property-owner/HMSMaintenance'));
+const HMSEmployees = lazy(() => import('./pages/property-owner/hms/hr/Employees'));
+const HMSDepartments = lazy(() => import('./pages/property-owner/hms/hr/Departments'));
+const HMSDesignations = lazy(() => import('./pages/property-owner/hms/hr/Designations'));
+const HMSShifts = lazy(() => import('./pages/property-owner/hms/hr/Shifts'));
+const HMSPayroll = lazy(() => import('./pages/property-owner/hms/hr/Payroll'));
+const HMSAllowances = lazy(() => import('./pages/property-owner/hms/hr/Allowances'));
+const HMSDeductions = lazy(() => import('./pages/property-owner/hms/hr/Deductions'));
+const HMSRoster = lazy(() => import('./pages/property-owner/hms/hr/Roster'));
+const HMSAttendance = lazy(() => import('./pages/property-owner/hms/hr/Attendance'));
+const HMSAccountsDashboard = lazy(() => import('./pages/property-owner/hms/accounts/AccountsDashboard'));
+const HMSVouchers = lazy(() => import('./pages/property-owner/hms/accounts/Vouchers'));
+const HMSTransactions = lazy(() => import('./pages/property-owner/hms/accounts/Transactions'));
+const HMSPublicPayment = lazy(() => import('./pages/HMSPublicPayment'));
+const HMSInvoice = lazy(() => import('./pages/HMSInvoice'));
+const HMSReceipt = lazy(() => import('./pages/HMSReceipt'));
+const HMSHousekeeping = lazy(() => import('./pages/property-owner/HMSHousekeeping'));
+const HMSFoodBeverage = lazy(() => import('./pages/property-owner/HMSFoodBeverage'));
+const HMSReservationDetail = lazy(() => import('./pages/property-owner/HMSReservationDetail'));
+const HMSRoomRevenueReport = lazy(() => import('./pages/property-owner/hms/reports/HMSRoomRevenueReport'));
+const HMSFinancialReports = lazy(() => import('./pages/property-owner/hms/reports/HMSFinancialReports'));
+const HMSGuests = lazy(() => import('./pages/property-owner/HMSGuests'));
+const HMSGuestAnalytics = lazy(() => import('./pages/property-owner/HMSGuestAnalytics'));
+
+
+// Staff Pages
+const StaffAttendance = lazy(() => import('./pages/staff/StaffAttendance'));
 
 // Guest Pages
-import GuestDashboard from './pages/guest/GuestDashboard';
-import GuestBookings from './pages/guest/GuestBookings';
-import GuestFavorites from './pages/guest/GuestFavorites';
-import GuestBooking from './pages/guest/GuestBooking';
-import GuestBookingDetail from './pages/guest/GuestBookingDetail';
-import GuestProfile from './pages/guest/GuestProfile';
-import RewardsPoints from './pages/guest/RewardsPoints';
-import Payment from './pages/Payment';
+const GuestDashboard = lazy(() => import('./pages/guest/GuestDashboard'));
+const GuestBookings = lazy(() => import('./pages/guest/GuestBookings'));
+const GuestFavorites = lazy(() => import('./pages/guest/GuestFavorites'));
+const GuestBooking = lazy(() => import('./pages/guest/GuestBooking'));
+const GuestBookingDetail = lazy(() => import('./pages/guest/GuestBookingDetail'));
+const GuestProfile = lazy(() => import('./pages/guest/GuestProfile'));
+const RewardsPoints = lazy(() => import('./pages/guest/RewardsPoints'));
+const Payment = lazy(() => import('./pages/Payment'));
+const BookingConfirmation = lazy(() => import('./pages/BookingConfirmation'));
+const GuestRefunds = lazy(() => import('./pages/guest/GuestRefunds'));
+const GuestReports = lazy(() => import('./pages/guest/GuestReports'));
 
 // Protected Route Component
-import ProtectedRoute from './components/auth/ProtectedRoute';
+
 
 function App() {
-  const { isLoading, user, isAdmin } = useAuthStore();
+  const { user, isAdmin } = useAuthStore();
   const { settings, isMaintenanceMode, loadPublicSettings } = useSettingsStore();
+  const { isServerUnreachable } = useConnectionStore();
 
-  // Load public settings on app initialization
+  // Load public settings and authenticate on app initialization
   useEffect(() => {
     loadPublicSettings();
+    if (useAuthStore.getState().isAuthenticated) {
+      useAuthStore.getState().fetchProfile();
+    }
+
+    // Automated client-side version check to clear cache and force updates
+    const checkVersion = async () => {
+      try {
+        const response = await fetch(`/version.json?t=${Date.now()}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        
+        const localVersion = localStorage.getItem('app_version');
+        if (localVersion && localVersion !== data.version) {
+          console.log(`New version detected: ${data.version}. Clearing cache and reloading...`);
+          localStorage.setItem('app_version', data.version);
+          
+          if ('caches' in window) {
+            const cacheNames = await caches.keys();
+            await Promise.all(cacheNames.map(name => caches.delete(name)));
+          }
+          
+          window.location.reload(true);
+        } else if (!localVersion) {
+          localStorage.setItem('app_version', data.version);
+        }
+      } catch (err) {
+        console.error('Error checking app version:', err);
+      }
+    };
+
+    checkVersion();
   }, [loadPublicSettings]);
+
+  if (isServerUnreachable) {
+    return <ConnectionErrorScreen />;
+  }
 
   // Check for maintenance mode
   if (isMaintenanceMode() && !isAdmin()) {
@@ -106,199 +207,496 @@ function App() {
     );
   }
 
-  if (isLoading) {
-    return <LoadingSpinner />;
-  }
+  // NOTE: Do NOT block the entire app on isLoading — that unmounts the whole
+  // React tree during login and causes a full re-render (looks like page refresh).
+  // Auth loading is handled locally inside AuthModal and individual components.
 
   return (
-    <Routes>
-      {/* Public Layout Routes */}
-      <Route element={<PublicLayout />}>
-        <Route path="/" element={<Home />} />
-        <Route path="/properties" element={<Properties />} />
-        <Route path="/property/:id" element={<PropertyDetail />} />
-        <Route path="/properties/:id/contact-host" element={<ContactHost />} />
-        <Route path="/search" element={<SearchResults />} />
-        <Route path="/flight/results" element={<FlightResultsPage />} />
-        <Route path="/booking" element={<FlightBooking />} />
-        <Route path="/booking-success" element={<BookingSuccess />} />
-        <Route path="/ticket-issue" element={<TicketIssuePage />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/car-booking" element={<CarBooking />} />
-        <Route path="/payment/:bookingId" element={<Payment />} />
-        <Route path="/help" element={<Help />} />
-        <Route path="/contact" element={<Contact />} />
-        <Route path="/about" element={<About />} />
-        <Route path="/faq" element={<FAQ />} />
-        <Route path="/faqs" element={<FAQ />} />
-        <Route path="/terms" element={<Terms />} />
-        <Route path="/privacy" element={<Privacy />} />
-        <Route path="*" element={<NotFound />} />
+    <Suspense fallback={<LoadingSpinner />}>
+      <Routes>
+        {/* Public Layout Routes */}
+        <Route element={<PublicLayout />}>
+          <Route path="/" element={<Home />} />
+          <Route path="/properties" element={<Properties />} />
+          <Route path="/property/:slug" element={<PropertyDetail />} />
+          <Route path="/properties/:id/contact-host" element={<ContactHost />} />
+          <Route path="/search" element={<SearchResults />} />
+          <Route path="/flight/results" element={<FlightResultsPage />} />
+          <Route path="/booking" element={<FlightBooking />} />
+          <Route path="/booking-success" element={<BookingSuccess />} />
+          <Route path="/ticket-issue" element={<TicketIssuePage />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password/:token" element={<ResetPassword />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
+          <Route path="/car-booking" element={<CarBooking />} />
+          <Route path="/payment/:bookingId" element={<Payment />} />
+          <Route path="/booking-confirmation/:bookingId" element={<BookingConfirmation />} />
+          <Route path="/help" element={<Help />} />
+          <Route path="/contact" element={<Contact />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/faq" element={<Help />} />
+          <Route path="/faqs" element={<Help />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/privacy" element={<Privacy />} />
+          <Route path="/refund-policy" element={<RefundPolicy />} />
+          <Route path="/cookies" element={<Cookies />} />
+          <Route path="/hms/pay/:token" element={<HMSPublicPayment />} />
+          <Route path="/hms/invoice/:id" element={<HMSInvoice />} />
+          <Route path="/hms/receipt/:id" element={<HMSReceipt />} />
+          <Route path="*" element={<NotFound />} />
 
-        {/* Messages Routes - kept in Public Layout */}
-        <Route path="/messages" element={
-          <ProtectedRoute requireAuth>
-            <Messages />
-          </ProtectedRoute>
-        } />
-        <Route path="/messages/:id" element={
-          <ProtectedRoute requireAuth>
-            <ConversationDetail />
-          </ProtectedRoute>
-        } />
-      </Route>
+          <Route path="/become-host" element={
+            <ProtectedRoute requireAuth>
+              <BecomeHost />
+            </ProtectedRoute>
+          } />
 
-      {/* Dashboard Layout Routes */}
-      <Route element={<DashboardLayout />}>
-        {/* Admin Routes */}
-        <Route path="/admin" element={
-          <ProtectedRoute requireAuth requireRole="admin">
-            <AdminDashboard />
-          </ProtectedRoute>
-        } />
-        <Route path="/admin/users" element={
-          <ProtectedRoute requireAuth requireRole="admin">
-            <AdminUsers />
-          </ProtectedRoute>
-        } />
-        <Route path="/admin/properties" element={
-          <ProtectedRoute requireAuth requireRole="admin">
-            <AdminProperties />
-          </ProtectedRoute>
-        } />
-        <Route path="/admin/amenities" element={
-          <ProtectedRoute requireAuth requireRole="admin">
-            <AdminAmenities />
-          </ProtectedRoute>
-        } />
-        <Route path="/admin/property-types" element={
-          <ProtectedRoute requireAuth requireRole="admin">
-            <AdminPropertyTypes />
-          </ProtectedRoute>
-        } />
-        <Route path="/admin/display-categories" element={
-          <ProtectedRoute requireAuth requireRole="admin">
-            <AdminDisplayCategories />
-          </ProtectedRoute>
-        } />
-        <Route path="/admin/bookings" element={
-          <ProtectedRoute requireAuth requireRole="admin">
-            <AdminBookings />
-          </ProtectedRoute>
-        } />
-        <Route path="/admin/reviews" element={
-          <ProtectedRoute requireAuth requireRole="admin">
-            <AdminReviews />
-          </ProtectedRoute>
-        } />
-        <Route path="/admin/rewards-points" element={
-          <ProtectedRoute requireAuth requireRole="admin">
-            <AdminRewardsPoints />
-          </ProtectedRoute>
-        } />
-        <Route path="/admin/analytics" element={
-          <ProtectedRoute requireAuth requireRole="admin">
-            <AdminAnalytics />
-          </ProtectedRoute>
-        } />
-        <Route path="/admin/settings" element={
-          <ProtectedRoute requireAuth requireRole="admin">
-            <AdminSettings />
-          </ProtectedRoute>
-        } />
-        <Route path="/admin/earnings" element={
-          <ProtectedRoute requireAuth requireRole="admin">
-            <AdminEarnings />
-          </ProtectedRoute>
-        } />
-        <Route path="/admin/accounting" element={
-          <ProtectedRoute requireAuth requireRole="admin">
-            <AdminAccounting />
-          </ProtectedRoute>
-        } />
 
-        {/* Property Owner Routes */}
-        <Route path="/property-owner" element={
-          <ProtectedRoute requireAuth requireRole="property_owner">
-            <PropertyOwnerDashboard />
-          </ProtectedRoute>
-        } />
-        <Route path="/property-owner/properties" element={
-          <ProtectedRoute requireAuth requireRole="property_owner">
-            <MyProperties />
-          </ProtectedRoute>
-        } />
-        <Route path="/property-owner/properties/new" element={
-          <ProtectedRoute requireAuth requireRole="property_owner">
-            <AddProperty />
-          </ProtectedRoute>
-        } />
-        <Route path="/property-owner/properties/:id/edit" element={
-          <ProtectedRoute requireAuth requireRole="property_owner">
-            <EditProperty />
-          </ProtectedRoute>
-        } />
-        <Route path="/property-owner/bookings" element={
-          <ProtectedRoute requireAuth requireRole="property_owner">
-            <PropertyOwnerBookings />
-          </ProtectedRoute>
-        } />
-        <Route path="/property-owner/analytics" element={
-          <ProtectedRoute requireAuth requireRole="property_owner">
-            <Analytics />
-          </ProtectedRoute>
-        } />
-        <Route path="/property-owner/earnings" element={
-          <ProtectedRoute requireAuth requireRole="property_owner">
-            <PropertyOwnerEarnings />
-          </ProtectedRoute>
-        } />
-        <Route path="/property-owner/profile" element={
-          <ProtectedRoute requireAuth requireRole="property_owner">
-            <PropertyOwnerProfile />
-          </ProtectedRoute>
-        } />
+        </Route>
 
-        {/* Guest Routes */}
-        <Route path="/guest" element={
-          <ProtectedRoute requireAuth requireRole="guest">
-            <GuestDashboard />
-          </ProtectedRoute>
-        } />
-        <Route path="/guest/bookings" element={
-          <ProtectedRoute requireAuth requireRole="guest">
-            <GuestBookings />
-          </ProtectedRoute>
-        } />
-        <Route path="/guest/favorites" element={
-          <ProtectedRoute requireAuth requireRole="guest">
-            <GuestFavorites />
-          </ProtectedRoute>
-        } />
-        <Route path="/guest/rewards-points" element={
-          <ProtectedRoute requireAuth requireRole="guest">
-            <RewardsPoints />
-          </ProtectedRoute>
-        } />
-        <Route path="/guest/booking/new/:propertyId" element={
-          <ProtectedRoute requireAuth requireRole="guest">
-            <GuestBooking />
-          </ProtectedRoute>
-        } />
-        <Route path="/guest/bookings/:id" element={
-          <ProtectedRoute requireAuth requireRole="guest">
-            <GuestBookingDetail />
-          </ProtectedRoute>
-        } />
-        <Route path="/guest/profile" element={
-          <ProtectedRoute requireAuth requireRole="guest">
-            <GuestProfile />
-          </ProtectedRoute>
-        } />
-      </Route>
-    </Routes>
+        {/* Dashboard Layout Routes */}
+        <Route element={<DashboardLayout />}>
+          {/* Admin Routes */}
+          <Route path="/admin" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminDashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/users" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminUsers />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/contact-messages" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminContactMessages />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/properties" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminProperties />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/amenities" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminAmenities />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/coupons" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminCoupons />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/property-types" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminPropertyTypes />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/display-categories" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminDisplayCategories />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/bookings" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminBookings />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/reviews" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminReviews />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/rewards-points" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminRewardsPoints />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/analytics" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminAnalytics />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/settings" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminSettings />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/earnings" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminEarnings />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/accounting" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminAccounting />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/hms-settings" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminHMSSettings />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/reports" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminReports />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/refunds" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminRefunds />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/security-deposits" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminSecurityDeposits />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/reports/bookings" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <BookingReports userRole="admin" />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/reports/financials" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <FinancialReports userRole="admin" />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/reports/performance" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <PropertyPerformance userRole="admin" />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/reports/payouts" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <PayoutReports />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/reports/cancellations" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <CancellationReports userRole="admin" />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/reports/users" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <UserReports />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/reports/user-analytics" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <UserAnalyticsReport />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/reports/property-analytics" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <PropertyAnalyticsReport />
+            </ProtectedRoute>
+          } />
+
+          {/* Messages Routes — inside DashboardLayout for sidebar */}
+          <Route path="/messages" element={
+            <ProtectedRoute>
+              <Messages />
+            </ProtectedRoute>
+          } />
+          <Route path="/messages/:id" element={
+            <ProtectedRoute>
+              <ConversationDetail />
+            </ProtectedRoute>
+          } />
+
+          {/* Property Owner Routes */}
+          <Route path="/property-owner" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <PropertyOwnerDashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/properties" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <MyProperties />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/properties/new" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <AddProperty />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/properties/:id/edit" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <EditProperty />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/bookings" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <PropertyOwnerBookings />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/calendar" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <PropertyOwnerCalendar />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/analytics" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <Analytics />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/earnings" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <PropertyOwnerEarnings />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/profile" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <PropertyOwnerProfile />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/reports" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <PropertyOwnerReports />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/pricing" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSPricing />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/rooms" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSRooms />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/staff" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSStaff />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/hr/employees" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSEmployees />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/hr/departments" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSDepartments />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/hr/designations" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSDesignations />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/hr/shifts" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSShifts />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/hr/payroll" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSPayroll />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/hr/allowances" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSAllowances />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/hr/deductions" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSDeductions />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/hr/roster" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSRoster />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/hr/attendance" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSAttendance />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/accounts" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSAccountsDashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/accounts/vouchers" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSVouchers />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/accounts/transactions" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSTransactions />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/billing" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSBilling />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/reservations" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSReservations />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/guests" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSGuests />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/analytics/guests" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSGuestAnalytics />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/reservations/:id" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSReservationDetail />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/calendar" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSCalendar />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/housekeeping" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSHousekeeping />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/food-beverage" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSFoodBeverage />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/maintenance" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSMaintenance />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/reports/room-revenue" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSRoomRevenueReport />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/reports/financials" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <HMSFinancialReports />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/reports/bookings" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <BookingReports userRole="property_owner" />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/reports/financials" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <FinancialReports userRole="property_owner" />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/reports/performance" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <PropertyPerformance userRole="property_owner" />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/reports/cancellations" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <CancellationReports userRole="property_owner" />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/reports/user-analytics" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <UserAnalyticsReport userRole="property_owner" />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/reports/user-analytics" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <UserAnalyticsReport userRole="property_owner" />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/reports/property-analytics" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <PropertyAnalyticsReport userRole="property_owner" />
+            </ProtectedRoute>
+          } />
+          <Route path="/property-owner/hms/reports/property-analytics" element={
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+              <PropertyAnalyticsReport userRole="property_owner" />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/staff/attendance" element={
+            <ProtectedRoute requireAuth requireRole="staff">
+              <StaffAttendance />
+            </ProtectedRoute>
+          } />
+
+          {/* Guest Routes */}
+          <Route path="/guest" element={
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
+              <GuestDashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/guest/bookings" element={
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
+              <GuestBookings />
+            </ProtectedRoute>
+          } />
+          <Route path="/guest/favorites" element={
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
+              <GuestFavorites />
+            </ProtectedRoute>
+          } />
+          <Route path="/guest/rewards-points" element={
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
+              <RewardsPoints />
+            </ProtectedRoute>
+          } />
+          <Route path="/guest/booking/new/:propertyId" element={
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
+              <GuestBooking />
+            </ProtectedRoute>
+          } />
+          <Route path="/guest/bookings/:id" element={
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
+              <GuestBookingDetail />
+            </ProtectedRoute>
+          } />
+          <Route path="/guest/refunds" element={
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
+              <GuestRefunds />
+            </ProtectedRoute>
+          } />
+          <Route path="/guest/profile" element={
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
+              <GuestProfile />
+            </ProtectedRoute>
+          } />
+          <Route path="/guest/reports" element={
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
+              <GuestReports />
+            </ProtectedRoute>
+          } />
+
+          {/* Support Routes */}
+          <Route path="/support" element={
+            <ProtectedRoute>
+              <SupportTickets />
+            </ProtectedRoute>
+          } />
+          <Route path="/support/ticket/:id" element={
+            <ProtectedRoute>
+              <TicketChat />
+            </ProtectedRoute>
+          } />
+        </Route>
+      </Routes>
+      <SupportWidget />
+    </Suspense>
   );
 }
 

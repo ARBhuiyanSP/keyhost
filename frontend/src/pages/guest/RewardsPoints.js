@@ -3,6 +3,7 @@ import { useQuery } from 'react-query';
 import { FiAward, FiTrendingUp, FiClock, FiCheckCircle, FiXCircle, FiGift } from 'react-icons/fi';
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
+import { formatPrice } from '../../utils/textUtils';
 
 const RewardsPoints = () => {
   const [selectedTab, setSelectedTab] = useState('overview');
@@ -185,7 +186,7 @@ const RewardsPoints = () => {
                         <h4 className="font-semibold text-gray-900">Redeem Points</h4>
                       </div>
                       <p className="text-sm text-gray-600">
-                        Use your points to get discounts on future bookings. {settings.points_per_taka && `1 point = ${(1 / settings.points_per_taka).toFixed(2)} BDT`}
+                        Use your points to get discounts on future bookings. {settings.points_per_taka && `1 point = ${formatPrice(1 / settings.points_per_taka)} BDT`}
                       </p>
                     </div>
                   </div>

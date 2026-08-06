@@ -1,14 +1,25 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { FiSearch, FiUser, FiLogOut, FiSettings, FiHeart, FiBookOpen, FiChevronDown, FiDollarSign, FiChevronLeft, FiMinus, FiPlus, FiMapPin, FiX } from 'react-icons/fi';
+import React, { useState, useRef, useEffect, lazy, Suspense } from 'react';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { FiSearch, FiUser, FiLogOut, FiSettings, FiHeart, FiBookOpen, FiChevronDown, FiDollarSign, FiChevronLeft, FiMinus, FiPlus, FiMapPin, FiX, FiGlobe, FiCalendar, FiGrid } from 'react-icons/fi';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { useQuery } from 'react-query';
 import useSettingsStore from '../../store/settingsStore';
 import useAuthStore from '../../store/authStore';
 import api from '../../utils/api';
-import FlightSearchForm from '../search/FlightSearchForm';
-import { sanitizeText } from '../../utils/textUtils';
+import { sanitizeText, getLocationSubtitle } from '../../utils/textUtils';
+import AuthModal from '../auth/AuthModal';
+import useLocationAutocomplete from '../../hooks/useLocationAutocomplete';
+
+// Lazy load FlightSearchForm — only downloaded when Flight is enabled
+const FlightSearchForm = lazy(() => import('../search/FlightSearchForm'));
+
+
+const TakaIcon = ({ className = "w-4 h-4" }) => (
+  <span className={`${className} font-bold font-sans flex items-center justify-center select-none leading-none`} style={{ fontSize: '1.2em' }}>
+    ৳
+  </span>
+);
 
 const StickySearchHeader = ({
   alwaysSticky = false,
@@ -19,12 +30,16 @@ const StickySearchHeader = ({
 
   isVisible = true,
   showBackButton = false,
-  initialPropertyType = ''
+  initialPropertyType = '',
+  onShowFilters = null
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [showMobileSearch, setShowMobileSearch] = useState(false);
   const [showDesktopExpanded, setShowDesktopExpanded] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState('login');
   const [desktopActiveSection, setDesktopActiveSection] = useState(null);
   const [desktopHoverSection, setDesktopHoverSection] = useState(null);
   const [desktopActivePillStyle, setDesktopActivePillStyle] = useState({ x: 0, w: 0, visible: false });
@@ -45,20 +60,39 @@ const StickySearchHeader = ({
   const propertyTypesStickyRef = useRef(null);
   const mobilePropertyTypesRef = useRef(null);
   const { settings } = useSettingsStore();
-  const { user, isAuthenticated, isAdmin, isPropertyOwner, logout } = useAuthStore();
+  const { user, isAuthenticated, isAdmin, isPropertyOwner, logout, becomeHost } = useAuthStore();
+
+  const handleBecomeHost = async (e) => {
+    e.preventDefault();
+    if (isAuthenticated) {
+      if (isAdmin() || isPropertyOwner()) {
+        navigate('/property-owner');
+      } else {
+        navigate('/become-host');
+      }
+    } else {
+      setAuthModalMode('register');
+      setAuthModalOpen(true);
+    }
+    setIsProfileOpen(false);
+  };
 
   // Load search state from localStorage on mount
   const loadSearchState = () => {
     try {
       const saved = localStorage.getItem('searchState');
+      const isHomePage = window.location.pathname === '/';
       if (saved) {
         const parsed = JSON.parse(saved);
         return {
-          location: parsed.location || '',
-          checkIn: parsed.checkIn ? new Date(parsed.checkIn) : null,
-          checkOut: parsed.checkOut ? new Date(parsed.checkOut) : null,
+          location: isHomePage ? '' : (parsed.location || ''),
+          checkIn: (!isHomePage && parsed.checkIn) ? new Date(parsed.checkIn) : null,
+          checkOut: (!isHomePage && parsed.checkOut) ? new Date(parsed.checkOut) : null,
           guests: parsed.guests || 1,
-          propertyType: parsed.propertyType || ''
+          propertyType: parsed.propertyType || '',
+          monthlySearchMode: parsed.monthlySearchMode || 'duration',
+          moveInDate: (!isHomePage && parsed.moveInDate) ? new Date(parsed.moveInDate) : null,
+          durationMonths: parsed.durationMonths || 1
         };
       }
     } catch (error) {
@@ -69,13 +103,67 @@ const StickySearchHeader = ({
       checkIn: null,
       checkOut: null,
       guests: 1,
-      propertyType: ''
+      propertyType: '',
+      monthlySearchMode: 'duration',
+      moveInDate: null,
+      durationMonths: 1
     };
   };
 
   const [searchData, setSearchData] = useState(loadSearchState);
   const [activePropertyType, setActivePropertyType] = useState(initialPropertyType || searchData.propertyType || '');
+
+  // Google Places Autocomplete search hook integration
+  const { placePredictions, handlePlaceSelect } = useLocationAutocomplete(
+    searchData.location,
+    activePropertyType,
+    ({ location, latitude, longitude }) => {
+      setSearchData(prev => {
+        const updated = {
+          ...prev,
+          location,
+          latitude,
+          longitude
+        };
+        
+        // Save to localStorage for persistence
+        const searchState = {
+          ...updated,
+          checkIn: prev.checkIn ? formatDateLocal(prev.checkIn) : null,
+          checkOut: prev.checkOut ? formatDateLocal(prev.checkOut) : null,
+          propertyType: activePropertyType
+        };
+        localStorage.setItem('searchState', JSON.stringify(searchState));
+        window.dispatchEvent(new CustomEvent('searchStateUpdated', { detail: searchState }));
+        
+        return updated;
+      });
+
+      if (location) {
+        setMobileSearchStep('dates');
+      }
+    }
+  );
+  
+  // Sync activePropertyType with prop updates
+  useEffect(() => {
+    if (typeof initialPropertyType === 'string') {
+      setActivePropertyType(initialPropertyType);
+    }
+  }, [initialPropertyType]);
+
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
+  const [showLangMenu, setShowLangMenu] = useState(false);
+  const [langSearchQuery, setLangSearchQuery] = useState('');
+  const [currentLangCode, setCurrentLangCode] = useState('EN');
+
+  useEffect(() => {
+    // Check googtrans cookie on mount
+    const match = document.cookie.match(/googtrans=\/en\/([a-z]{2})/i);
+    if (match) {
+      setCurrentLangCode(match[1].toUpperCase());
+    }
+  }, []);
 
   // Flight Search State
   const [flightSearchData, setFlightSearchData] = useState({
@@ -93,16 +181,6 @@ const StickySearchHeader = ({
   });
   const [flightActiveSection, setFlightActiveSection] = useState(null); // 'from', 'to', 'depart', 'return', 'travelers'
   const [airportList, setAirportList] = useState([]);
-
-  // Fetch airport list from public directory
-  useEffect(() => {
-    fetch('/data/airportlist.json')
-      .then(res => res.json())
-      .then(data => {
-        setAirportList(Object.values(data));
-      })
-      .catch(err => console.error('Failed to load airports:', err));
-  }, []);
 
   const getAirportSuggestions = (input) => {
     if (!input || typeof input !== 'string' || input.length < 2) return [];
@@ -130,33 +208,52 @@ const StickySearchHeader = ({
     }
   );
 
-  // Fetch property types
+  // Fetch property types — fully DB-driven, admin controls Flight on/off too
   const { data: propertyTypes } = useQuery(
     'home-property-types',
     () => api.get('/properties/property-types/list'),
     {
-      select: (response) => {
-        const types = (response.data?.data?.propertyTypes || []).filter(pt => pt.is_active !== false);
-        // Manually inject Flight if not present
-        if (!types.find(t => t.name.toLowerCase() === 'flight')) {
-          types.push({ id: 9999, name: 'Flight', is_active: true });
-        }
-        return types;
-      },
+      staleTime: 0,
+      cacheTime: 0,
+      refetchOnWindowFocus: true,
+      refetchOnMount: true,
+      select: (response) =>
+        (response.data?.data?.propertyTypes || []).filter(pt => pt.is_active !== false),
     }
   );
 
-  const getTypeIcon = (typeName, isActive = false) => {
+  // Derive flight enabled state from DB (computed after propertyTypes loads)
+  const isFlightEnabled = Array.isArray(propertyTypes) &&
+    propertyTypes.some(t => (t.name || '').toLowerCase() === 'flight');
+
+  // Load airport list ONLY when Flight is enabled by admin — saves bandwidth
+  useEffect(() => {
+    if (!isFlightEnabled) {
+      setAirportList([]);
+      return;
+    }
+    fetch('/data/airportlist.json')
+      .then(res => res.json())
+      .then(data => setAirportList(Object.values(data)))
+      .catch(err => console.error('Failed to load airports:', err));
+  }, [isFlightEnabled]);
+
+  const getTypeIcon = (typeName, isActive = false, iconUrl = '') => {
     const normalized = (typeName || '').toLowerCase();
 
-    let imgSrc = '/images/nav-icon-room.png'; // Default fallback
+    // Use admin-set icon first, then smart-detect
+    let imgSrc = iconUrl || '/images/nav-icon-room.png';
 
-    if (normalized.includes('apartment') || normalized.includes('villa') || normalized.includes('house') || normalized.includes('home')) {
-      imgSrc = '/images/nav-icon-apartment.png';
-    } else if (normalized.includes('hotel')) {
-      imgSrc = '/images/nav-icon-hotel.png';
-    } else if (normalized.includes('flight')) {
-      imgSrc = '/images/flight.png';
+    if (!iconUrl) {
+      if (normalized.includes('apartment') || normalized.includes('villa') || normalized.includes('house') || normalized.includes('home')) {
+        imgSrc = '/images/nav-icon-apartment.png';
+      } else if (normalized.includes('hotel')) {
+        imgSrc = '/images/nav-icon-hotel.png';
+      } else if (normalized.includes('flight')) {
+        imgSrc = '/images/flight.png';
+      } else if (normalized.includes('monthly') || normalized.includes('rent')) {
+        imgSrc = '/images/nav-icon-monthly.png';
+      }
     }
 
     return (
@@ -167,6 +264,7 @@ const StickySearchHeader = ({
           ? 'opacity-100 grayscale-0 scale-110'
           : 'opacity-70 grayscale'
           }`}
+        onError={(e) => { e.target.src = '/images/nav-icon-room.png'; }}
       />
     );
   };
@@ -261,8 +359,8 @@ const StickySearchHeader = ({
         { name: 'Bookings', path: '/admin/bookings', icon: FiBookOpen },
         { name: 'Reviews', path: '/admin/reviews', icon: FiHeart },
         { name: 'Analytics', path: '/admin/analytics', icon: FiSettings },
-        { name: 'Accounting', path: '/admin/accounting', icon: FiDollarSign },
-        { name: 'Earnings', path: '/admin/earnings', icon: FiDollarSign },
+        { name: 'Accounting', path: '/admin/accounting', icon: TakaIcon },
+        { name: 'Earnings', path: '/admin/earnings', icon: TakaIcon },
         { name: 'Settings', path: '/admin/settings', icon: FiSettings },
       ];
     } else if (isPropertyOwner()) {
@@ -270,8 +368,9 @@ const StickySearchHeader = ({
         { name: 'Owner Dashboard', path: '/property-owner', icon: FiSettings },
         { name: 'My Properties', path: '/property-owner/properties', icon: FiBookOpen },
         { name: 'Bookings', path: '/property-owner/bookings', icon: FiBookOpen },
+        { name: 'Calendar Sync', path: '/property-owner/calendar', icon: FiCalendar },
         { name: 'Analytics', path: '/property-owner/analytics', icon: FiSettings },
-        { name: 'Earnings', path: '/property-owner/earnings', icon: FiDollarSign },
+        { name: 'Earnings', path: '/property-owner/earnings', icon: TakaIcon },
         { name: 'Profile', path: '/property-owner/profile', icon: FiUser },
       ];
     } else if (isAuthenticated) {
@@ -301,9 +400,60 @@ const StickySearchHeader = ({
     return `${year}-${month}-${day}`;
   };
 
+  const calculateCheckOutDate = (startDate, months) => {
+    if (!startDate) return null;
+    const d = new Date(startDate);
+    d.setMonth(d.getMonth() + parseInt(months));
+    return d;
+  };
+
+  const handleNearbyClick = (e) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    if (navigator.geolocation) {
+      setSearchData(prev => ({ ...prev, location: 'Locating...' }));
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          setSearchData(prev => ({
+            ...prev,
+            location: 'Nearby',
+            latitude: lat,
+            longitude: lng
+          }));
+          
+          // Save to localStorage for persistence
+          const searchState = {
+            ...searchData,
+            location: 'Nearby',
+            latitude: lat,
+            longitude: lng,
+            checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
+            checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
+            guests: searchData.guests,
+            propertyType: activePropertyType
+          };
+          localStorage.setItem('searchState', JSON.stringify(searchState));
+          setDesktopActiveSection('dates');
+        },
+        (error) => {
+          console.error("Geolocation error:", error);
+          setSearchData(prev => ({ ...prev, location: 'Nearby' }));
+          setDesktopActiveSection('dates');
+        }
+      );
+    } else {
+      setSearchData(prev => ({ ...prev, location: 'Nearby' }));
+      setDesktopActiveSection('dates');
+    }
+  };
+
   const handleSearch = (e) => {
     e.preventDefault();
     const params = new URLSearchParams();
+    const isMonthly = activePropertyType === 'monthly rent' || (activePropertyType && activePropertyType.includes('monthly'));
 
     const extractCode = (val) => {
       if (!val) return '';
@@ -323,9 +473,29 @@ const StickySearchHeader = ({
 
       if (flightSearchData.flightClass) params.append('class', flightSearchData.flightClass);
     } else {
-      if (searchData.location) params.append('city', searchData.location);
-      if (searchData.checkIn) params.append('check_in_date', formatDateLocal(searchData.checkIn));
-      if (searchData.checkOut) params.append('check_out_date', formatDateLocal(searchData.checkOut));
+      if (searchData.latitude && searchData.longitude) {
+        params.append('city', searchData.location || '');
+        params.append('latitude', searchData.latitude);
+        params.append('longitude', searchData.longitude);
+      } else if (searchData.location) {
+        params.append('city', searchData.location);
+      }
+      if (isMonthly) {
+        params.append('booking_type', 'monthly');
+        if (searchData.monthlySearchMode === 'duration') {
+          if (searchData.moveInDate) {
+            params.append('check_in_date', formatDateLocal(searchData.moveInDate));
+            const computedCheckOut = calculateCheckOutDate(searchData.moveInDate, searchData.durationMonths || 1);
+            params.append('check_out_date', formatDateLocal(computedCheckOut));
+          }
+        } else {
+          if (searchData.checkIn) params.append('check_in_date', formatDateLocal(searchData.checkIn));
+          if (searchData.checkOut) params.append('check_out_date', formatDateLocal(searchData.checkOut));
+        }
+      } else {
+        if (searchData.checkIn) params.append('check_in_date', formatDateLocal(searchData.checkIn));
+        if (searchData.checkOut) params.append('check_out_date', formatDateLocal(searchData.checkOut));
+      }
       if (searchData.guests) params.append('min_guests', searchData.guests);
     }
 
@@ -333,17 +503,31 @@ const StickySearchHeader = ({
 
     // Save search state to localStorage for persistence
     const searchState = {
+      ...searchData,
       location: searchData.location,
+      latitude: searchData.latitude || null,
+      longitude: searchData.longitude || null,
       checkIn: searchData.checkIn ? formatDateLocal(searchData.checkIn) : null,
       checkOut: searchData.checkOut ? formatDateLocal(searchData.checkOut) : null,
       guests: searchData.guests,
       propertyType: activePropertyType,
       flightSearchData: flightSearchData,
-      tripType: flightSearchData.tripType
+      tripType: flightSearchData.tripType,
+      monthlySearchMode: searchData.monthlySearchMode,
+      moveInDate: searchData.moveInDate ? formatDateLocal(searchData.moveInDate) : null,
+      durationMonths: searchData.durationMonths
     };
     localStorage.setItem('searchState', JSON.stringify(searchState));
 
-    navigate(`${activePropertyType === 'flight' ? '/flight/results' : '/search'}?${params.toString()}`);
+    if (activePropertyType === 'flight') {
+      navigate(`/flight/results?${params.toString()}`);
+    } else {
+      if (location.pathname === '/properties') {
+        navigate(`/properties?${params.toString()}`);
+      } else {
+        navigate(`/search?${params.toString()}`);
+      }
+    }
   };
 
   const handleInputChange = (field, value) => {
@@ -370,20 +554,25 @@ const StickySearchHeader = ({
       }
     }
 
-    const parsedCheckIn = initialCheckInDate ? new Date(initialCheckInDate) : (parsedSaved?.checkIn ? new Date(parsedSaved.checkIn) : null);
-    const parsedCheckOut = initialCheckOutDate ? new Date(initialCheckOutDate) : (parsedSaved?.checkOut ? new Date(parsedSaved.checkOut) : null);
+    const isHomePage = location.pathname === '/';
+    const parsedCheckIn = initialCheckInDate ? new Date(initialCheckInDate) : ((!isHomePage && parsedSaved?.checkIn) ? new Date(parsedSaved.checkIn) : null);
+    const parsedCheckOut = initialCheckOutDate ? new Date(initialCheckOutDate) : ((!isHomePage && parsedSaved?.checkOut) ? new Date(parsedSaved.checkOut) : null);
+    const parsedMoveIn = (!isHomePage && parsedSaved?.moveInDate) ? new Date(parsedSaved.moveInDate) : null;
 
     setSearchData({
-      location: initialLocation || parsedSaved?.location || '',
+      location: isHomePage ? '' : (initialLocation || parsedSaved?.location || ''),
       checkIn: parsedCheckIn,
       checkOut: parsedCheckOut,
-      guests: initialGuests ? parseInt(initialGuests) : (parsedSaved?.guests || 1)
+      guests: isHomePage ? 1 : (initialGuests ? parseInt(initialGuests) : (parsedSaved?.guests || 1)),
+      monthlySearchMode: parsedSaved?.monthlySearchMode || 'duration',
+      moveInDate: parsedMoveIn,
+      durationMonths: parsedSaved?.durationMonths || 1
     });
 
     if (initialPropertyType !== undefined) {
       setActivePropertyType(initialPropertyType);
     }
-  }, [initialLocation, initialCheckInDate, initialCheckOutDate, initialGuests, initialPropertyType]);
+  }, [initialLocation, initialCheckInDate, initialCheckOutDate, initialGuests, initialPropertyType, location.pathname]);
 
   // Listen for search state changes from other components (Navbar, Home)
   useEffect(() => {
@@ -393,21 +582,29 @@ const StickySearchHeader = ({
         try {
           const parsed = JSON.parse(saved);
           setSearchData(prev => {
+            const isHomePage = window.location.pathname === '/';
             // Only update if different to avoid unnecessary re-renders
-            const newCheckIn = parsed.checkIn ? new Date(parsed.checkIn) : null;
-            const newCheckOut = parsed.checkOut ? new Date(parsed.checkOut) : null;
-            const newLocation = parsed.location || '';
-            const newGuests = parsed.guests || 1;
+            const newCheckIn = (!isHomePage && parsed.checkIn) ? new Date(parsed.checkIn) : null;
+            const newCheckOut = (!isHomePage && parsed.checkOut) ? new Date(parsed.checkOut) : null;
+            const newLocation = isHomePage ? '' : (parsed.location || '');
+            const newGuests = isHomePage ? 1 : (parsed.guests || 1);
+            const newMoveInDate = (!isHomePage && parsed.moveInDate) ? new Date(parsed.moveInDate) : null;
 
             if (prev.location !== newLocation ||
               prev.checkIn?.getTime() !== newCheckIn?.getTime() ||
               prev.checkOut?.getTime() !== newCheckOut?.getTime() ||
-              prev.guests !== newGuests) {
+              prev.guests !== newGuests ||
+              prev.monthlySearchMode !== parsed.monthlySearchMode ||
+              prev.moveInDate?.getTime() !== newMoveInDate?.getTime() ||
+              prev.durationMonths !== parsed.durationMonths) {
               return {
                 location: newLocation,
                 checkIn: newCheckIn,
                 checkOut: newCheckOut,
-                guests: newGuests
+                guests: newGuests,
+                monthlySearchMode: parsed.monthlySearchMode || 'duration',
+                moveInDate: newMoveInDate,
+                durationMonths: parsed.durationMonths || 1
               };
             }
             return prev;
@@ -530,13 +727,16 @@ const StickySearchHeader = ({
 
   const getGuestsDisplay = () => {
     const totalGuests = searchData.guests || 1;
-    return totalGuests > 1 ? `${totalGuests} guests` : 'Add guests';
+    return `${totalGuests} guest${totalGuests > 1 ? 's' : ''}`;
   };
 
   const handlePropertyTypeClick = (typeName) => {
     const normalized = (typeName || '').toLowerCase();
     const newVal = activePropertyType === normalized ? '' : normalized;
     setActivePropertyType(newVal);
+
+    // Notify other components (Navbar, Home, etc.)
+    window.dispatchEvent(new CustomEvent('setActivePropertyType', { detail: newVal }));
 
     if (newVal === 'flight') {
       setFlightActiveSection('from');
@@ -561,7 +761,15 @@ const StickySearchHeader = ({
     };
     localStorage.setItem('searchState', JSON.stringify(searchState));
 
-    navigate(`${activePropertyType === 'flight' ? '/flight/results' : '/search'}?${params.toString()}`);
+    if (activePropertyType === 'flight') {
+      navigate(`/flight/results?${params.toString()}`);
+    } else {
+      if (location.pathname === '/properties') {
+        navigate(`/properties?${params.toString()}`);
+      } else {
+        navigate(`/search?${params.toString()}`);
+      }
+    }
   };
 
   return (
@@ -578,14 +786,18 @@ const StickySearchHeader = ({
       >
         <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 h-full flex items-center py-1.5 md:py-0 md:h-20 relative" ref={desktopSearchRef}>
           {/* Mobile: back + search pill */}
-          <div className="md:hidden w-full flex items-center justify-center px-4">
-            <div className="flex items-center gap-2 w-full max-w-sm">
+          <div className="md:hidden w-full flex items-center justify-center px-2">
+            <div className="flex items-center gap-1 w-full max-w-sm">
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  navigate(-1);
+                  if (window.history.length > 2) {
+                    navigate(-1);
+                  } else {
+                    navigate('/');
+                  }
                 }}
-                className="p-2 rounded-full bg-white border border-gray-200 shadow hover:bg-gray-50 transition"
+                className="p-1 sm:p-2 rounded-full bg-white border border-gray-200 shadow hover:bg-gray-50 transition"
                 aria-label="Go back"
               >
                 <FiChevronLeft className="w-5 h-5 text-gray-700" />
@@ -593,14 +805,44 @@ const StickySearchHeader = ({
               {/* Search button - pill shaped */}
               <button
                 onClick={() => setShowMobileSearch(true)}
-                className="flex-1 flex items-center justify-start gap-3 bg-white rounded-full px-4 py-2.5 shadow-md text-left hover:bg-gray-50 transition-colors"
+                className="flex-1 flex items-center justify-start gap-2 bg-white rounded-full px-3 py-2 shadow-md text-left hover:bg-gray-50 transition-colors min-w-0"
               >
                 <FiSearch className="w-4 h-4 text-gray-900 flex-shrink-0" />
-                <div className="flex flex-col items-start leading-tight">
-                  <span className="text-sm font-semibold text-gray-900">{summaryTitle}</span>
-                  <span className="text-xs text-gray-500">{summarySubtitle()}</span>
+                <div className="flex flex-col items-start leading-tight min-w-0">
+                  <span className="text-[11px] sm:text-sm font-semibold text-gray-900 truncate max-w-[120px] sm:max-w-[160px]">{summaryTitle}</span>
+                  <span className="text-[10px] sm:text-xs text-gray-500 truncate max-w-[120px]">{summarySubtitle()}</span>
                 </div>
               </button>
+
+              {/* Mobile CTA */}
+              <div className="flex-shrink-0 flex items-center gap-2">
+                {onShowFilters && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onShowFilters();
+                    }}
+                    className="p-2 border border-gray-300 rounded-full bg-white shadow-sm hover:border-gray-900 transition-colors"
+                  >
+                    <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" role="presentation" focusable="false" style={{display: 'block', height: '14px', width: '14px', fill: 'currentcolor'}}><path d="M5 8a3 3 0 0 1 2.83 2H14v2H7.83A3 3 0 1 1 5 8zm0 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm6-8a3 3 0 1 1-2.83 4H2V4h6.17A3 3 0 0 1 11 2zm0 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"></path></svg>
+                  </button>
+                )}
+                {isAuthenticated ? (
+                  (!isAdmin() && !isPropertyOwner()) ? (
+                    <button onClick={handleBecomeHost} className="text-[10px] sm:text-xs font-bold text-gray-800 bg-gray-100 hover:bg-gray-200 px-2 py-1.5 rounded-full whitespace-nowrap">
+                      Host
+                    </button>
+                  ) : (
+                    <Link to={isAdmin() ? '/admin' : '/property-owner'} className="text-[10px] sm:text-xs font-bold text-gray-800 bg-gray-100 border border-gray-200 shadow-sm hover:bg-gray-200 px-2 py-1.5 rounded-full whitespace-nowrap shadow-sm">
+                      {isPropertyOwner() ? 'Switch to host' : 'Dashboard'}
+                    </Link>
+                  )
+                ) : (
+                  <button onClick={handleBecomeHost} className="text-[10px] sm:text-xs font-bold text-gray-800 bg-gray-100 hover:bg-gray-200 px-2 py-1.5 rounded-full whitespace-nowrap">
+                    Host
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -615,7 +857,21 @@ const StickySearchHeader = ({
                 >
                   <FiX className="w-4 h-4 text-black" />
                 </button>
-                <div ref={mobilePropertyTypesRef} className="flex items-center justify-center gap-6 overflow-x-auto scrollbar-hide px-10 w-full">
+                <div ref={mobilePropertyTypesRef} className="flex items-center justify-center gap-3 overflow-x-auto scrollbar-hide px-10 w-full">
+                  {/* All Property Tab */}
+                  <button
+                    onClick={() => handlePropertyTypeClick('')}
+                    className="flex flex-col items-center gap-2 min-w-[64px] flex-shrink-0 group cursor-pointer"
+                  >
+                    <div className={`transition-opacity duration-200 ${!activePropertyType ? 'opacity-100' : 'opacity-60 group-hover:opacity-80'}`}>
+                      <FiGrid className="w-8 h-8" />
+                    </div>
+                    <span className={`text-xs font-semibold whitespace-nowrap pb-2 border-b-2 transition-all duration-200 ${!activePropertyType ? 'text-black border-black' : 'text-gray-500 border-transparent group-hover:text-gray-800'
+                      }`}>
+                      All
+                    </span>
+                  </button>
+
                   {(propertyTypes?.length ? propertyTypes : [{ id: 'def-stays', name: 'Stays' }, { id: 'def-flight', name: 'Flight' }]).map((type) => {
                     const isActive = activePropertyType === (type.name || '').toLowerCase();
                     return (
@@ -625,7 +881,7 @@ const StickySearchHeader = ({
                         className="flex flex-col items-center gap-2 min-w-[64px] flex-shrink-0 group cursor-pointer"
                       >
                         <div className={`transition-opacity duration-200 ${isActive ? 'opacity-100' : 'opacity-60 group-hover:opacity-80'}`}>
-                          {getTypeIcon(type.name, isActive)}
+                          {getTypeIcon(type.name, isActive, type.icon_url)}
                         </div>
                         <span className={`text-xs font-semibold whitespace-nowrap pb-2 border-b-2 transition-all duration-200 ${isActive ? 'text-black border-black' : 'text-gray-500 border-transparent group-hover:text-gray-800'
                           }`}>
@@ -705,35 +961,76 @@ const StickySearchHeader = ({
                             ))}
                           </div>
                         ) : (
-                          locationSuggestionsData && locationSuggestionsData.length > 0 && (
+                          searchData.location && searchData.location.trim().length >= 2 && placePredictions.length > 0 ? (
                             <>
-                              <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Suggested destinations</div>
-                              <div className="space-y-4">
-                                <button className="flex items-center gap-4 w-full text-left" onClick={() => handleInputChange('location', 'Nearby')}>
-                                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center"><FiMapPin className="w-5 h-5" /></div>
-                                  <div className="font-semibold text-gray-700">Nearby</div>
-                                </button>
-                                {locationSuggestionsData.slice(0, 5).map((loc, idx) => (
+                              <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Search locations</div>
+                              <div className="space-y-3.5 mt-2">
+                                {placePredictions.map((pred, idx) => (
                                   <button
-                                    key={idx}
+                                    key={pred.place_id || idx}
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      handleInputChange('location', loc.city);
-                                      setMobileSearchStep('dates');
+                                      handlePlaceSelect(pred);
                                     }}
-                                    className="flex items-center gap-4 w-full text-left"
+                                    className="flex items-center gap-3.5 w-full text-left group"
                                   >
-                                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                                      <FiMapPin className="w-5 h-5 text-gray-500" />
+                                    <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 text-gray-500 group-hover:bg-pink-100 group-hover:text-[#E41D57] transition-all duration-300">
+                                      <FiMapPin className="w-5 h-5" />
                                     </div>
-                                    <div>
-                                      <div className="font-semibold text-gray-900">{loc.city}</div>
-                                      <div className="text-sm text-gray-500">{loc.country}</div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-bold text-gray-900 group-hover:text-black transition-colors truncate">
+                                        {pred.structured_formatting?.main_text || pred.description}
+                                      </div>
+                                      <div className="text-xs text-gray-400 group-hover:text-gray-500 transition-colors truncate mt-0.5">
+                                        {pred.structured_formatting?.secondary_text || ''}
+                                      </div>
                                     </div>
                                   </button>
                                 ))}
                               </div>
                             </>
+                          ) : (
+                            locationSuggestionsData && locationSuggestionsData.length > 0 && (
+                              <>
+                                <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Suggested destinations</div>
+                                <div className="space-y-3.5 mt-2">
+                                  <button className="flex items-center gap-3.5 w-full text-left group" onClick={handleNearbyClick}>
+                                    <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 text-gray-500 group-hover:bg-pink-100 group-hover:text-[#E41D57] transition-all duration-300">
+                                      <FiMapPin className="w-5 h-5" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-bold text-gray-900 group-hover:text-black transition-colors">Nearby</div>
+                                      <div className="text-[10px] text-gray-400 group-hover:text-gray-500 transition-colors italic font-normal mt-0.5">Find what's around you using GPS</div>
+                                    </div>
+                                  </button>
+                                  {locationSuggestionsData.slice(0, 5).map((loc, idx) => (
+                                    <button
+                                      key={idx}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSearchData(prev => ({
+                                          ...prev,
+                                          location: loc.city,
+                                          latitude: null,
+                                          longitude: null
+                                        }));
+                                        setMobileSearchStep('dates');
+                                      }}
+                                      className="flex items-center gap-3.5 w-full text-left group"
+                                    >
+                                      <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 text-gray-500 group-hover:bg-pink-100 group-hover:text-[#E41D57] transition-all duration-300">
+                                        <FiMapPin className="w-5 h-5" />
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-bold text-gray-900 group-hover:text-black transition-colors truncate">{loc.city}</div>
+                                        <div className="text-xs text-gray-400 group-hover:text-gray-500 transition-colors truncate mt-0.5">{loc.country}</div>
+                                        <div className="text-[10px] text-gray-400 group-hover:text-gray-500 transition-colors italic font-normal mt-0.5 truncate">{getLocationSubtitle(loc.city)}</div>
+                                      </div>
+                                    </button>
+                                  ))}
+                                </div>
+                              </>
+                            )
                           )
                         )}
                       </div>
@@ -811,7 +1108,13 @@ const StickySearchHeader = ({
                 >
                   {mobileSearchStep === 'dates' ? (
                     <div className="animate-fadeIn">
-                      <h3 className="text-2xl font-bold text-black mb-4">When's your trip?</h3>
+                      <h3 className="text-2xl font-bold text-black mb-4">
+                        {activePropertyType === 'flight'
+                          ? "When's your trip?"
+                          : (activePropertyType === 'monthly rent' || (activePropertyType && activePropertyType.includes('monthly')))
+                            ? 'Select move-in & duration'
+                            : "When's your trip?"}
+                      </h3>
 
                       {activePropertyType === 'flight' && (
                         <div className="flex bg-gray-100 p-1 rounded-lg mb-4">
@@ -828,35 +1131,108 @@ const StickySearchHeader = ({
                         </div>
                       )}
 
-                      <DatePicker
-                        selected={activePropertyType === 'flight' ? flightSearchData.departDate : searchData.checkIn}
-                        onChange={(dates) => {
-                          if (activePropertyType === 'flight') {
-                            if (flightSearchData.tripType === 'roundTrip') {
-                              const [start, end] = dates;
-                              setFlightSearchData(prev => ({ ...prev, departDate: start, returnDate: end }));
-                              if (end) setTimeout(() => setMobileSearchStep('guests'), 300);
+                      {(activePropertyType === 'monthly rent' || (activePropertyType && activePropertyType.includes('monthly'))) ? (
+                        <div className="space-y-4 animate-fadeIn" onClick={(e) => e.stopPropagation()}>
+                          {/* Mode Toggle */}
+                          <div className="flex bg-gray-100 p-1 rounded-xl">
+                            <button
+                              type="button"
+                              onClick={() => handleInputChange('monthlySearchMode', 'duration')}
+                              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${searchData.monthlySearchMode === 'duration' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                            >
+                              Duration (Months)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleInputChange('monthlySearchMode', 'range')}
+                              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${searchData.monthlySearchMode === 'range' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                            >
+                              Custom Range
+                            </button>
+                          </div>
+
+                          {searchData.monthlySearchMode === 'duration' ? (
+                            <div className="space-y-4">
+                              <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Move-in Date</label>
+                                <DatePicker
+                                  selected={searchData.moveInDate || new Date()}
+                                  onChange={(date) => handleInputChange('moveInDate', date)}
+                                  minDate={new Date()}
+                                  inline
+                                  calendarClassName="mobile-date-picker-calendar w-full"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Stay Duration</label>
+                                <div className="flex gap-2 overflow-x-auto pb-2">
+                                  {[1, 2, 3, 4, 5, 6, 9, 12].map((m) => (
+                                    <button
+                                      key={m}
+                                      type="button"
+                                      onClick={() => {
+                                        handleInputChange('durationMonths', m);
+                                        setTimeout(() => setMobileSearchStep('guests'), 300);
+                                      }}
+                                      className={`px-4 py-2 text-sm font-bold rounded-xl whitespace-nowrap border ${searchData.durationMonths === m ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'}`}
+                                    >
+                                      {m} {m === 1 ? 'Month' : 'Months'}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <DatePicker
+                              selected={searchData.checkIn}
+                              onChange={(dates) => {
+                                const [start, end] = dates;
+                                handleInputChange('checkIn', start);
+                                handleInputChange('checkOut', end);
+                                if (end) {
+                                  setTimeout(() => setMobileSearchStep('guests'), 300);
+                                }
+                              }}
+                              startDate={searchData.checkIn}
+                              endDate={searchData.checkOut}
+                              selectsRange
+                              minDate={new Date()}
+                              inline
+                              calendarClassName="mobile-date-picker-calendar w-full"
+                            />
+                          )}
+                        </div>
+                      ) : (
+                        <DatePicker
+                          selected={activePropertyType === 'flight' ? flightSearchData.departDate : searchData.checkIn}
+                          onChange={(dates) => {
+                            if (activePropertyType === 'flight') {
+                              if (flightSearchData.tripType === 'roundTrip') {
+                                const [start, end] = dates;
+                                setFlightSearchData(prev => ({ ...prev, departDate: start, returnDate: end }));
+                                if (end) setTimeout(() => setMobileSearchStep('guests'), 300);
+                              } else {
+                                setFlightSearchData(prev => ({ ...prev, departDate: dates, returnDate: null }));
+                                setTimeout(() => setMobileSearchStep('guests'), 300);
+                              }
                             } else {
-                              setFlightSearchData(prev => ({ ...prev, departDate: dates, returnDate: null }));
-                              setTimeout(() => setMobileSearchStep('guests'), 300);
+                              const [start, end] = dates;
+                              handleInputChange('checkIn', start);
+                              handleInputChange('checkOut', end);
+                              if (end) {
+                                setTimeout(() => setMobileSearchStep('guests'), 300);
+                              }
                             }
-                          } else {
-                            const [start, end] = dates;
-                            handleInputChange('checkIn', start);
-                            handleInputChange('checkOut', end);
-                            if (end) {
-                              setTimeout(() => setMobileSearchStep('guests'), 300);
-                            }
-                          }
-                        }}
-                        startDate={activePropertyType === 'flight' ? flightSearchData.departDate : searchData.checkIn}
-                        endDate={activePropertyType === 'flight' ? flightSearchData.returnDate : searchData.checkOut}
-                        selectsRange={activePropertyType === 'flight' ? flightSearchData.tripType === 'roundTrip' : true}
-                        minDate={new Date()}
-                        inline
-                        monthsShown={1}
-                        className="w-full"
-                      />
+                          }}
+                          startDate={activePropertyType === 'flight' ? flightSearchData.departDate : searchData.checkIn}
+                          endDate={activePropertyType === 'flight' ? flightSearchData.returnDate : searchData.checkOut}
+                          selectsRange={activePropertyType === 'flight' ? flightSearchData.tripType === 'roundTrip' : true}
+                          minDate={new Date()}
+                          inline
+                          monthsShown={1}
+                          className="w-full"
+                        />
+                      )}
                     </div>
                   ) : (
                     <div className="flex justify-between items-center">
@@ -864,7 +1240,13 @@ const StickySearchHeader = ({
                       <span className="text-black font-bold text-sm">
                         {activePropertyType === 'flight'
                           ? (flightSearchData.departDate ? `${formatDateDisplay(flightSearchData.departDate)}${flightSearchData.returnDate ? ' - ' + formatDateDisplay(flightSearchData.returnDate) : ''}` : 'Add dates')
-                          : (getDateRangeDisplay() || 'Add dates')}
+                          : (activePropertyType === 'monthly rent' || (activePropertyType && activePropertyType.includes('monthly')))
+                            ? (searchData.monthlySearchMode === 'duration'
+                                ? (searchData.moveInDate
+                                    ? `${searchData.moveInDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} (${searchData.durationMonths || 1} ${searchData.durationMonths === 1 ? 'month' : 'months'})`
+                                    : 'Add date & duration')
+                                : (getDateRangeDisplay() || 'Add dates'))
+                            : (getDateRangeDisplay() || 'Add dates')}
                       </span>
                     </div>
                   )}
@@ -1119,33 +1501,137 @@ const StickySearchHeader = ({
               {/* Animated dropdown form removed; sticky search now routes to main header */}
             </div>
 
+            {/* Filter Button */}
+            {onShowFilters && (
+              <div className="hidden md:flex items-center ml-2 mr-4">
+                <button
+                  onClick={onShowFilters}
+                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-full hover:border-gray-900 transition-colors shadow-sm bg-white"
+                >
+                  <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" role="presentation" focusable="false" style={{display: 'block', height: '14px', width: '14px', fill: 'currentcolor'}}><path d="M5 8a3 3 0 0 1 2.83 2H14v2H7.83A3 3 0 1 1 5 8zm0 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm6-8a3 3 0 1 1-2.83 4H2V4h6.17A3 3 0 0 1 11 2zm0 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"></path></svg>
+                  <span className="text-sm font-medium text-gray-900">Filters</span>
+                </button>
+              </div>
+            )}
+
             {/* Airbnb-style User menu */}
             <div className="hidden md:flex items-center gap-2 flex-shrink-0">
-              {/* Become a host button */}
-              <Link
-                to="/register"
-                className="text-sm font-semibold text-gray-800 hover:bg-gray-100 px-3 py-2 rounded-full transition-colors"
-              >
-                Become a host
-              </Link>
-
-              {/* Globe icon */}
-              <button
-                className="p-3 hover:bg-gray-100 rounded-full transition-colors"
-                aria-label="Choose language"
-              >
-                <svg
-                  viewBox="0 0 16 16"
-                  xmlns="http://www.w3.org/2000/svg"
-                  aria-hidden="true"
-                  role="presentation"
-                  focusable="false"
-                  className="w-4 h-4"
-                  style={{ display: 'block', fill: 'none', stroke: 'currentColor', strokeWidth: '2', overflow: 'visible' }}
+              {/* Become a host / Switch to dashboard button */}
+              {isAuthenticated ? (
+                (!isAdmin() && !isPropertyOwner() && user?.user_type !== 'staff') ? (
+                  <button
+                    onClick={handleBecomeHost}
+                    className="text-sm font-semibold text-gray-800 hover:bg-gray-100 px-3 py-2 rounded-full transition-colors whitespace-nowrap"
+                  >
+                    Become a host
+                  </button>
+                ) : (isAdmin() || isPropertyOwner()) ? (
+                  <Link
+                    to={isAdmin() ? '/admin' : '/property-owner'}
+                    className="text-sm font-semibold text-gray-800 hover:bg-gray-100 px-3 py-2 rounded-full transition-colors whitespace-nowrap"
+                  >
+                    {isPropertyOwner() ? 'Switch to host' : 'Switch to dashboard'}
+                  </Link>
+                ) : null
+              ) : (
+                <button
+                  onClick={handleBecomeHost}
+                  className="text-sm font-semibold text-gray-800 hover:bg-gray-100 px-3 py-2 rounded-full transition-colors whitespace-nowrap"
                 >
-                  <path d="M8 .25a7.77 7.77 0 0 1 7.75 7.78 7.75 7.75 0 0 1-7.52 7.72h-.25A7.75 7.75 0 0 1 .25 8.24v-.25A7.75 7.75 0 0 1 8 .25zm1.95 8.5h-3.9c.15 2.9 1.17 5.34 1.88 5.5H8c.68 0 1.72-2.37 1.93-5.23zm4.26 0h-2.76c-.09 1.96-.53 3.78-1.18 5.08A6.26 6.26 0 0 0 14.17 9zm-9.67 0H1.8a6.26 6.26 0 0 0 3.94 5.08 12.59 12.59 0 0 1-1.16-4.7l-.03-.38zm1.2-6.58-.12.05a6.26 6.26 0 0 0-3.83 5.03h2.75c.09-1.83.48-3.54 1.06-4.81zm2.25-.42c-.7 0-1.78 2.51-1.94 5.5h3.9c-.15-2.9-1.18-5.34-1.89-5.5h-.07zm2.28.43.03.05a12.95 12.95 0 0 1 1.15 5.02h2.75a6.28 6.28 0 0 0-3.93-5.07z"></path>
-                </svg>
-              </button>
+                  Become a host
+                </button>
+              )}
+
+              {/* Globe icon and Custom Language Menu */}
+              <div className="relative">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowLangMenu(!showLangMenu);
+                    if (!showLangMenu) setLangSearchQuery('');
+                  }}
+                  className="p-0 bg-transparent border-none appearance-none cursor-pointer"
+                  aria-label="Choose language"
+                >
+                  <div className="flex items-center gap-2 hover:bg-gray-100 px-3 py-2 rounded-full transition-all duration-200">
+                    <FiGlobe className="w-[18px] h-[18px] text-gray-700" />
+                    <span className="text-sm font-semibold text-gray-800">{currentLangCode}</span>
+                    <FiChevronDown className="w-4 h-4 text-gray-600" />
+                  </div>
+                </button>
+
+                {showLangMenu && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-[999998]"
+                      onClick={() => setShowLangMenu(false)}
+                    ></div>
+                    <div className="absolute top-full right-0 mt-3 w-64 bg-white rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.15)] border border-gray-100 overflow-hidden z-[999999] py-2 flex flex-col">
+                      <div className="px-3 pb-2 mb-2 border-b border-gray-100">
+                        <div className="relative">
+                          <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                          <input
+                            type="text"
+                            placeholder="Search language..."
+                            value={langSearchQuery}
+                            onChange={(e) => setLangSearchQuery(e.target.value)}
+                            className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500 transition-colors"
+                            onClick={(e) => e.stopPropagation()}
+                            autoFocus
+                          />
+                        </div>
+                      </div>
+
+                      <div className="max-h-64 overflow-y-auto">
+                        {[
+                          { code: 'en', name: 'English', flag: '🇬🇧' },
+                          { code: 'bn', name: 'Bengali', flag: '🇧🇩' },
+                          { code: 'ar', name: 'Arabic', flag: '🇸🇦' },
+                          { code: 'fr', name: 'French', flag: '🇫🇷' },
+                          { code: 'es', name: 'Spanish', flag: '🇪🇸' },
+                        ].filter(l => l.name.toLowerCase().includes(langSearchQuery.toLowerCase())).map((lang) => (
+                          <button
+                            key={lang.code}
+                            onClick={() => {
+                              const langCode = lang.code;
+                              const select = document.querySelector('.goog-te-combo');
+                              if (select) {
+                                select.value = langCode;
+                                select.dispatchEvent(new Event('change', { bubbles: true }));
+                              }
+                              // Robust pattern for Google Translate
+                              document.cookie = `googtrans=/en/${langCode}; path=/;`;
+                              document.cookie = `googtrans=/en/${langCode}; domain=.${window.location.hostname}; path=/;`;
+
+                              setTimeout(() => {
+                                window.location.reload();
+                              }, 100);
+
+                              setShowLangMenu(false);
+                            }}
+                            className="w-full text-left px-5 py-2.5 hover:bg-gray-50 flex items-center gap-3 transition-colors"
+                          >
+                            <span className="text-xl leading-none">{lang.flag}</span>
+                            <span className="font-medium text-gray-700 text-sm">{lang.name}</span>
+                          </button>
+                        ))}
+                        {/* Show message if no results */}
+                        {[
+                          { code: 'en', name: 'English', flag: '🇬🇧' },
+                          { code: 'bn', name: 'Bengali', flag: '🇧🇩' },
+                          { code: 'ar', name: 'Arabic', flag: '🇸🇦' },
+                          { code: 'fr', name: 'French', flag: '🇫🇷' },
+                          { code: 'es', name: 'Spanish', flag: '🇪🇸' },
+                        ].filter(l => l.name.toLowerCase().includes(langSearchQuery.toLowerCase())).length === 0 && (
+                            <div className="px-5 py-3 text-sm text-gray-500 text-center">
+                              No languages found
+                            </div>
+                          )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
 
               {/* Menu button with 3 bars and profile icon - wrapped in relative container */}
               <div className="relative" ref={dropdownRef}>
@@ -1195,6 +1681,15 @@ const StickySearchHeader = ({
                           <p className="text-sm font-semibold text-gray-900">{user?.first_name} {user?.last_name}</p>
                           <p className="text-xs text-gray-500 mt-1">{user?.email}</p>
                         </div>
+                        {/* Become a host button for guests */}
+                        {!isPropertyOwner() && !isAdmin() && user?.user_type !== 'staff' && (
+                          <button
+                            onClick={handleBecomeHost}
+                            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                          >
+                            Become a host
+                          </button>
+                        )}
                         <div className="py-2">
                           {getRoleBasedMenu().map((item) => (
                             <Link
@@ -1240,10 +1735,9 @@ const StickySearchHeader = ({
                             </div>
                           </button>
 
-                          <Link
-                            to="/register"
-                            onClick={() => setIsProfileOpen(false)}
-                            className="block px-4 py-3 text-sm hover:bg-gray-50 transition-colors"
+                          <button
+                            onClick={handleBecomeHost}
+                            className="block w-full text-left px-4 py-3 text-sm hover:bg-gray-50 transition-colors"
                           >
                             <div className="flex items-start gap-3">
                               <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center">
@@ -1254,7 +1748,7 @@ const StickySearchHeader = ({
                                 <div className="text-xs text-gray-500 mt-0.5">It's easy to start hosting and earn extra income.</div>
                               </div>
                             </div>
-                          </Link>
+                          </button>
 
                           <button className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                             Refer a Host
@@ -1270,20 +1764,26 @@ const StickySearchHeader = ({
                         </div>
 
                         <div className="border-t border-gray-200 pt-2">
-                          <Link
-                            to="/login"
-                            onClick={() => setIsProfileOpen(false)}
-                            className="block px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50 transition-colors"
+                          <button
+                            onClick={() => {
+                              setIsProfileOpen(false);
+                              setAuthModalMode('login');
+                              setAuthModalOpen(true);
+                            }}
+                            className="block w-full text-left px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50 transition-colors"
                           >
                             Log in
-                          </Link>
-                          <Link
-                            to="/register"
-                            onClick={() => setIsProfileOpen(false)}
-                            className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                          </button>
+                          <button
+                            onClick={() => {
+                              setIsProfileOpen(false);
+                              setAuthModalMode('register');
+                              setAuthModalOpen(true);
+                            }}
+                            className="block w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                           >
                             Sign up
-                          </Link>
+                          </button>
                         </div>
                       </>
                     )}
@@ -1296,7 +1796,20 @@ const StickySearchHeader = ({
           {desktopActiveSection && (
             <div className="hidden md:block border-t border-gray-100 bg-white animate-fadeIn">
               <div className="max-w-7xl mx-auto px-4 lg:px-8">
-                <div ref={propertyTypesStickyRef} className="flex items-center gap-8 py-3 overflow-x-auto scrollbar-hide">
+                <div ref={propertyTypesStickyRef} className="flex items-center gap-4 py-3 overflow-x-auto scrollbar-hide">
+                  {/* All Property Tab */}
+                  <button
+                    onClick={() => handlePropertyTypeClick('')}
+                    className={`flex flex-col items-center gap-1 min-w-max group cursor-pointer transition-all duration-200 ${!activePropertyType ? 'opacity-100' : 'opacity-60 hover:opacity-80'}`}
+                  >
+                    <div className={`w-6 h-6 object-contain flex items-center justify-center transition-all duration-300 ${!activePropertyType ? 'grayscale-0' : 'grayscale'}`}>
+                      <FiGrid className="w-5 h-5" />
+                    </div>
+                    <span className={`text-xs font-semibold whitespace-nowrap pb-1 border-b-2 transition-all duration-200 ${!activePropertyType ? 'text-black border-black' : 'text-gray-500 border-transparent hover:text-gray-800'}`}>
+                      All
+                    </span>
+                  </button>
+
                   {propertyTypes && propertyTypes.map((type) => {
                     const isActive = activePropertyType === (type.name || '').toLowerCase();
                     return (
@@ -1306,7 +1819,7 @@ const StickySearchHeader = ({
                         className={`flex flex-col items-center gap-2 min-w-max group cursor-pointer transition-all duration-200 ${isActive ? 'opacity-100' : 'opacity-60 hover:opacity-80'}`}
                       >
                         <div className={`w-6 h-6 object-contain transition-all duration-300 ${isActive ? 'grayscale-0' : 'grayscale'}`}>
-                          {getTypeIcon(type.name, isActive)}
+                          {getTypeIcon(type.name, isActive, type.icon_url)}
                         </div>
                         <span className={`text-xs font-semibold whitespace-nowrap pb-1 border-b-2 transition-all duration-200 ${isActive ? 'text-black border-black' : 'text-gray-500 border-transparent hover:text-gray-800'}`}>
                           {type.name}
@@ -1319,7 +1832,8 @@ const StickySearchHeader = ({
             </div>
           )}
         </div>
-      </div>
+      </div >
+      <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} defaultMode={authModalMode} />
     </>
   );
 };

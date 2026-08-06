@@ -42,7 +42,7 @@ router.get('/dashboard', async (req, res) => {
       WHERE YEAR(ae.created_at) = ? 
         AND MONTH(ae.created_at) = ? 
         AND ae.status = 'active'
-        AND b.status != 'cancelled'
+        AND b.status != 'cancelled' AND b.payment_status = 'paid'
     `, [currentYear, currentMonth]);
 
     // Get total lifetime earnings with payable amount calculation
@@ -71,7 +71,7 @@ router.get('/dashboard', async (req, res) => {
         WHERE op.payment_status IN ('pending', 'processing', 'completed')
       ) payout_bookings ON ae.booking_id = payout_bookings.booking_id
       WHERE ae.status = 'active'
-        AND b.status != 'cancelled'
+        AND b.status != 'cancelled' AND b.payment_status = 'paid'
     `);
 
     // Get monthly earnings for the last 12 months (calculated directly from admin_earnings to exclude cancelled bookings)
@@ -86,7 +86,7 @@ router.get('/dashboard', async (req, res) => {
       FROM admin_earnings ae
       JOIN bookings b ON ae.booking_id = b.id
       WHERE ae.status = 'active'
-        AND b.status != 'cancelled'
+        AND b.status != 'cancelled' AND b.payment_status = 'paid'
         AND (
           (YEAR(ae.created_at) = ? AND MONTH(ae.created_at) >= ?) 
           OR (YEAR(ae.created_at) = ? AND MONTH(ae.created_at) <= ?)
@@ -99,7 +99,10 @@ router.get('/dashboard', async (req, res) => {
     // Get recent earnings (last 10)
     const [recentEarnings] = await pool.execute(`
       SELECT 
-        ae.*,
+        ae.id, ae.booking_id, ae.property_id, ae.property_owner_id,
+        ae.booking_total as booking_total,
+        ae.commission_rate, ae.commission_amount, ae.net_commission, ae.payment_status,
+        ae.payment_method, ae.payment_reference, ae.payment_date, ae.status, ae.created_at, ae.updated_at,
         b.booking_reference,
         b.guest_name,
         b.guest_email,
@@ -114,7 +117,7 @@ router.get('/dashboard', async (req, res) => {
       JOIN property_owners po ON ae.property_owner_id = po.id
       JOIN users u ON po.user_id = u.id
       WHERE ae.status = 'active'
-        AND b.status != 'cancelled'
+        AND b.status != 'cancelled' AND b.payment_status = 'paid'
       ORDER BY ae.created_at DESC
       LIMIT 10
     `);
@@ -169,7 +172,7 @@ router.get('/dashboard', async (req, res) => {
       const completed = parseFloat(completedAmount || 0);
       const locked = parseFloat(lockedAmount || 0);
       const base = parseFloat(ownerDue || 0);
-      const adjustedPayable = Math.max(locked, 0);
+      const adjustedPayable = Math.max(base - completed, 0);
       return {
         ...summary,
         owner_due_total: base,
@@ -236,6 +239,182 @@ router.get('/dashboard', async (req, res) => {
     console.error('Admin earnings dashboard error:', error);
     res.status(500).json(
       formatResponse(false, 'Failed to retrieve admin earnings dashboard', null, error.message)
+    );
+  }
+});
+
+// =============================================
+// ADMIN FINANCIAL REPORTS
+// =============================================
+router.get('/financial-reports', async (req, res) => {
+  try {
+    const { dateRange = 'this_month', startDate, endDate } = req.query;
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth() + 1;
+
+    // Build date filter based on dateRange parameter
+    let dateWhere = '';
+    const dateParams = [];
+
+    if (dateRange === 'this_month') {
+      dateWhere = 'AND YEAR(ae.created_at) = ? AND MONTH(ae.created_at) = ?';
+      dateParams.push(currentYear, currentMonth);
+    } else if (dateRange === 'last_month') {
+      const lastMonth = currentMonth === 1 ? 12 : currentMonth - 1;
+      const lastMonthYear = currentMonth === 1 ? currentYear - 1 : currentYear;
+      dateWhere = 'AND YEAR(ae.created_at) = ? AND MONTH(ae.created_at) = ?';
+      dateParams.push(lastMonthYear, lastMonth);
+    } else if (dateRange === 'this_year') {
+      dateWhere = 'AND YEAR(ae.created_at) = ?';
+      dateParams.push(currentYear);
+    } else if (dateRange === 'last_year') {
+      dateWhere = 'AND YEAR(ae.created_at) = ?';
+      dateParams.push(currentYear - 1);
+    } else if (dateRange === 'custom') {
+      if (startDate && endDate) {
+        dateWhere = 'AND DATE(ae.created_at) BETWEEN ? AND ?';
+        dateParams.push(startDate, endDate);
+      }
+    }
+    // 'all_time' has no date filter
+
+    // Main financial summary
+    const [summary] = await pool.execute(`
+      SELECT
+        COALESCE(COUNT(DISTINCT ae.booking_id), 0) as total_bookings,
+        COALESCE(SUM(ae.booking_total), 0) as gross_revenue,
+        COALESCE(SUM(ae.commission_amount), 0) as total_commission,
+        COALESCE(SUM(ae.tax_amount), 0) as total_tax,
+        COALESCE(SUM(ae.net_commission), 0) as net_platform_earnings,
+        COALESCE(SUM(ae.booking_total - ae.commission_amount), 0) as owner_payable_total,
+        COALESCE(SUM(CASE WHEN ae.payment_status = 'pending' THEN ae.net_commission ELSE 0 END), 0) as pending_commission,
+        COALESCE(SUM(CASE WHEN ae.payment_status = 'paid' THEN ae.net_commission ELSE 0 END), 0) as collected_commission,
+        COALESCE(AVG(ae.commission_rate), 0) as avg_commission_rate,
+        COALESCE(AVG(ae.booking_total), 0) as avg_booking_value
+      FROM admin_earnings ae
+      JOIN bookings b ON ae.booking_id = b.id
+      WHERE ae.status = 'active'
+        AND b.status != 'cancelled'
+        AND b.payment_status = 'paid'
+        ${dateWhere}
+    `, dateParams);
+
+    // Monthly trend (last 12 months for chart)
+    const [monthlyTrend] = await pool.execute(`
+      SELECT
+        YEAR(ae.created_at) as year,
+        MONTH(ae.created_at) as month,
+        DATE_FORMAT(ae.created_at, '%b %Y') as label,
+        COUNT(DISTINCT ae.booking_id) as total_bookings,
+        COALESCE(SUM(ae.booking_total), 0) as gross_revenue,
+        COALESCE(SUM(ae.commission_amount), 0) as total_commission,
+        COALESCE(SUM(ae.net_commission), 0) as net_platform_earnings
+      FROM admin_earnings ae
+      JOIN bookings b ON ae.booking_id = b.id
+      WHERE ae.status = 'active'
+        AND b.status != 'cancelled'
+        AND b.payment_status = 'paid'
+        AND ae.created_at >= DATE_SUB(CURDATE(), INTERVAL 11 MONTH)
+      GROUP BY YEAR(ae.created_at), MONTH(ae.created_at)
+      ORDER BY year ASC, month ASC
+    `);
+
+    // Top performing properties
+    const [topProperties] = await pool.execute(`
+      SELECT
+        p.id, p.title, p.city,
+        COUNT(DISTINCT ae.booking_id) as total_bookings,
+        COALESCE(SUM(ae.booking_total), 0) as gross_revenue,
+        COALESCE(SUM(ae.commission_amount), 0) as commission_earned
+      FROM admin_earnings ae
+      JOIN bookings b ON ae.booking_id = b.id
+      JOIN properties p ON ae.property_id = p.id
+      WHERE ae.status = 'active'
+        AND b.status != 'cancelled'
+        AND b.payment_status = 'paid'
+        ${dateWhere}
+      GROUP BY p.id, p.title, p.city
+      ORDER BY gross_revenue DESC
+      LIMIT 5
+    `, dateParams);
+
+    // Payment method breakdown
+    const [paymentMethods] = await pool.execute(`
+      SELECT
+        COALESCE(b.payment_method, 'Unknown') as method,
+        COUNT(DISTINCT ae.booking_id) as count,
+        COALESCE(SUM(ae.booking_total), 0) as total_amount
+      FROM admin_earnings ae
+      JOIN bookings b ON ae.booking_id = b.id
+      WHERE ae.status = 'active'
+        AND b.status != 'cancelled'
+        AND b.payment_status = 'paid'
+        ${dateWhere}
+      GROUP BY b.payment_method
+      ORDER BY total_amount DESC
+    `, dateParams);
+
+    // Commission status breakdown
+    const [commissionStatus] = await pool.execute(`
+      SELECT
+        ae.payment_status,
+        COUNT(*) as count,
+        COALESCE(SUM(ae.net_commission), 0) as amount
+      FROM admin_earnings ae
+      JOIN bookings b ON ae.booking_id = b.id
+      WHERE ae.status = 'active'
+        AND b.status != 'cancelled'
+        AND b.payment_status = 'paid'
+        ${dateWhere}
+      GROUP BY ae.payment_status
+    `, dateParams);
+
+    // Fetch detailed transactions for the period
+    const [bookings] = await pool.execute(`
+      SELECT
+        b.booking_reference,
+        p.title as property_title,
+        ae.booking_total as gross_revenue,
+        ae.commission_amount as commission,
+        ae.net_commission as net_commission,
+        DATE_FORMAT(ae.created_at, '%Y-%m-%d') as date
+      FROM admin_earnings ae
+      JOIN bookings b ON ae.booking_id = b.id
+      JOIN properties p ON ae.property_id = p.id
+      WHERE ae.status = 'active'
+        AND b.status != 'cancelled'
+        AND b.payment_status = 'paid'
+        ${dateWhere}
+      ORDER BY ae.created_at DESC
+      LIMIT 150
+    `, dateParams);
+
+    res.json(formatResponse(true, 'Financial reports retrieved successfully', {
+      summary: summary[0] || {
+        total_bookings: 0,
+        gross_revenue: 0,
+        total_commission: 0,
+        total_tax: 0,
+        net_platform_earnings: 0,
+        owner_payable_total: 0,
+        pending_commission: 0,
+        collected_commission: 0,
+        avg_commission_rate: 0,
+        avg_booking_value: 0
+      },
+      monthlyTrend,
+      topProperties,
+      paymentMethods,
+      commissionStatus,
+      bookings,
+      dateRange
+    }));
+
+  } catch (error) {
+    console.error('Admin financial reports error:', error);
+    res.status(500).json(
+      formatResponse(false, 'Failed to retrieve financial reports', null, error.message)
     );
   }
 });
@@ -327,7 +506,10 @@ router.get('/earnings', validatePagination, async (req, res) => {
     // Get earnings with pagination
     const [earnings] = await pool.execute(`
       SELECT 
-        ae.*,
+        ae.id, ae.booking_id, ae.property_id, ae.property_owner_id,
+        ae.booking_total as booking_total,
+        ae.commission_rate, ae.commission_amount, ae.net_commission, ae.payment_status,
+        ae.payment_method, ae.payment_reference, ae.payment_date, ae.status, ae.created_at, ae.updated_at,
         b.booking_reference,
         b.guest_name,
         b.guest_email,
@@ -344,7 +526,7 @@ router.get('/earnings', validatePagination, async (req, res) => {
       JOIN property_owners po ON ae.property_owner_id = po.id
       JOIN users u ON po.user_id = u.id
       ${whereClause}
-        AND b.status != 'cancelled'
+        AND b.status != 'cancelled' AND b.payment_status = 'paid'
       ORDER BY ae.created_at DESC
       LIMIT ? OFFSET ?
     `, [...queryParams, parseInt(limit), parseInt(offset)]);
@@ -355,7 +537,7 @@ router.get('/earnings', validatePagination, async (req, res) => {
       FROM admin_earnings ae
       JOIN bookings b ON ae.booking_id = b.id
       ${whereClause}
-        AND b.status != 'cancelled'
+        AND b.status != 'cancelled' AND b.payment_status = 'paid'
     `, queryParams);
 
     const total = countResult[0].total;
@@ -421,7 +603,7 @@ router.get('/monthly-summary', async (req, res) => {
       FROM admin_earnings ae
       JOIN bookings b ON ae.booking_id = b.id
       ${summaryWhereClause}
-        AND b.status != 'cancelled'
+        AND b.status != 'cancelled' AND b.payment_status = 'paid'
       GROUP BY YEAR(ae.created_at), MONTH(ae.created_at)
       ORDER BY year DESC, month DESC
     `, summaryQueryParams);
@@ -470,7 +652,7 @@ router.post('/payouts', async (req, res) => {
       WHERE DATE(b.created_at) BETWEEN ? AND ?
       AND ae.status = 'active'
       AND ae.payment_status = 'paid'
-      AND b.status != 'cancelled'
+      AND b.status != 'cancelled' AND b.payment_status = 'paid'
     `, [start_date, end_date]);
 
     const { total_earnings, total_tax } = earningsData[0];
@@ -625,7 +807,7 @@ router.get('/analytics', async (req, res) => {
       JOIN bookings b ON ae.booking_id = b.id
       WHERE ae.created_at >= DATE_SUB(NOW(), INTERVAL ? MONTH)
       AND ae.status = 'active'
-      AND b.status != 'cancelled'
+      AND b.status != 'cancelled' AND b.payment_status = 'paid'
       GROUP BY DATE_FORMAT(ae.created_at, '%Y-%m')
       ORDER BY month DESC
     `, [parseInt(period)]);
@@ -643,13 +825,13 @@ router.get('/analytics', async (req, res) => {
       JOIN properties p ON ae.property_id = p.id
       WHERE ae.created_at >= DATE_SUB(NOW(), INTERVAL ? MONTH)
       AND ae.status = 'active'
-      AND b.status != 'cancelled'
+      AND b.status != 'cancelled' AND b.payment_status = 'paid'
       GROUP BY p.id, p.title, p.city
       ORDER BY total_commission DESC
       LIMIT 10
     `, [parseInt(period)]);
 
-    // Get payment status breakdown
+    // Get commission payment status breakdown (admin_earnings level)
     const [paymentBreakdown] = await pool.execute(`
       SELECT 
         ae.payment_status as payment_status,
@@ -663,10 +845,23 @@ router.get('/analytics', async (req, res) => {
       GROUP BY ae.payment_status
     `, [parseInt(period)]);
 
+    // Get booking payment status breakdown (booking level — what guests paid)
+    const [bookingPaymentBreakdown] = await pool.execute(`
+      SELECT 
+        b.payment_status as payment_status,
+        COUNT(*) as count,
+        COALESCE(SUM(b.total_amount), 0) as total_amount
+      FROM bookings b
+      WHERE b.created_at >= DATE_SUB(NOW(), INTERVAL ? MONTH)
+      AND b.status != 'cancelled'
+      GROUP BY b.payment_status
+    `, [parseInt(period)]);
+
     res.json(formatResponse(true, 'Earnings analytics retrieved successfully', {
       earningsTrend,
       topProperties,
-      paymentBreakdown
+      paymentBreakdown,
+      bookingPaymentBreakdown
     }));
 
   } catch (error) {
@@ -701,7 +896,7 @@ router.post('/:bookingId/collect-commission', async (req, res) => {
       SELECT ae.id, ae.net_commission, ae.payment_status
       FROM admin_earnings ae
       JOIN bookings b ON ae.booking_id = b.id
-      WHERE ae.booking_id = ? AND ae.status = 'active' AND b.status != 'cancelled'
+      WHERE ae.booking_id = ? AND ae.status = 'active' AND b.status != 'cancelled' AND b.payment_status = 'paid'
       LIMIT 1
     `, [bookingId]);
 
@@ -762,10 +957,15 @@ router.get('/:bookingId', async (req, res) => {
     const { bookingId } = req.params;
 
     const [rows] = await pool.execute(`
-      SELECT *
-      FROM admin_earnings
-      WHERE booking_id = ?
-      ORDER BY created_at DESC
+      SELECT 
+        ae.id, ae.booking_id, ae.property_id, ae.property_owner_id,
+        ae.booking_total as booking_total,
+        ae.commission_rate, ae.commission_amount, ae.net_commission, ae.payment_status,
+        ae.payment_method, ae.payment_reference, ae.payment_date, ae.status, ae.created_at, ae.updated_at
+      FROM admin_earnings ae
+      JOIN bookings b ON ae.booking_id = b.id
+      WHERE ae.booking_id = ?
+      ORDER BY ae.created_at DESC
       LIMIT 1
     `, [bookingId]);
 

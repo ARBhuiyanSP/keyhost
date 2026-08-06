@@ -6,7 +6,7 @@ import { toast } from 'react-toastify';
 import useAuthStore from '../../store/authStore';
 import useSettingsStore from '../../store/settingsStore';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
-import { GoogleLogin } from '@react-oauth/google';
+import { GoogleLogin, GoogleOAuthProvider } from '@react-oauth/google';
 import api from '../../utils/api';
 
 const Register = () => {
@@ -91,6 +91,32 @@ const Register = () => {
           version: 0
         }));
 
+        // Check if there's a pending booking in localStorage
+        const pendingBooking = localStorage.getItem('pendingBooking');
+        if (pendingBooking && (userData?.user_type === 'guest' || !userData?.user_type)) {
+          try {
+            const bookingData = JSON.parse(pendingBooking);
+            const params = new URLSearchParams();
+            if (bookingData.booking_type) params.set('booking_type', bookingData.booking_type);
+            if (bookingData.check_in_date) params.set('check_in_date', bookingData.check_in_date);
+            if (bookingData.check_out_date) params.set('check_out_date', bookingData.check_out_date);
+            if (bookingData.number_of_guests) params.set('guests', bookingData.number_of_guests.toString());
+            if (bookingData.hms_room_id) params.set('hms_room_id', bookingData.hms_room_id.toString());
+            if (bookingData.months_count) params.set('duration_months', bookingData.months_count.toString());
+            if (bookingData.extra_days) params.set('extra_days', bookingData.extra_days.toString());
+            const queryString = params.toString();
+
+            const bookingUrl = `/guest/booking/new/${bookingData.property_id}${queryString ? `?${queryString}` : ''}`;
+
+            setTimeout(() => {
+              navigate(bookingUrl);
+            }, 100);
+            return;
+          } catch (error) {
+            console.error('Error parsing pending booking during Google Login:', error);
+          }
+        }
+
         const redirectPath = buildRedirectPath(userData);
         navigate(redirectPath, { replace: true });
       } else {
@@ -143,9 +169,13 @@ const Register = () => {
           // Keep localStorage data intact - GuestBooking page will read from there
           // Just redirect with URL params for backup
           const params = new URLSearchParams();
+          if (bookingData.booking_type) params.set('booking_type', bookingData.booking_type);
           if (bookingData.check_in_date) params.set('check_in_date', bookingData.check_in_date);
           if (bookingData.check_out_date) params.set('check_out_date', bookingData.check_out_date);
           if (bookingData.number_of_guests) params.set('guests', bookingData.number_of_guests.toString());
+          if (bookingData.hms_room_id) params.set('hms_room_id', bookingData.hms_room_id.toString());
+          if (bookingData.months_count) params.set('duration_months', bookingData.months_count.toString());
+          if (bookingData.extra_days) params.set('extra_days', bookingData.extra_days.toString());
           const queryString = params.toString();
 
           const bookingUrl = `/guest/booking/new/${bookingData.property_id}${queryString ? `?${queryString}` : ''}`;
@@ -179,8 +209,9 @@ const Register = () => {
     <div className="min-h-screen flex bg-white">
       {/* Left Decoration Section */}
       <div className="hidden lg:flex lg:w-1/2 relative bg-gray-900 justify-center items-center overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-[#E73367] to-[#be123c] opacity-90"></div>
-        <div className="absolute inset-0" style={{ backgroundImage: "url('https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?auto=format&fit=crop&w=1000&q=80')", backgroundSize: 'cover', backgroundPosition: 'center', mixBlendMode: 'overlay' }}></div>
+        <div className="absolute inset-0" style={{ backgroundImage: "url('https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?auto=format&fit=crop&w=1000&q=80')", backgroundSize: 'cover', backgroundPosition: 'center' }}></div>
+        {/* Soft dark overlay for text readability */}
+        <div className="absolute inset-0 bg-black/40"></div>
 
         <div className="relative z-10 p-12 text-white max-w-lg">
           <div className="mb-8">
@@ -443,13 +474,21 @@ const Register = () => {
               </div>
 
               <div className="mt-6 flex justify-center">
-                <GoogleLogin
-                  onSuccess={handleGoogleSuccess}
-                  onError={() => {
-                    toast.error('Google Registration Failed');
-                  }}
-                  useOneTap
-                />
+                {(() => {
+                  const googleClientId = settings?.google_client_id || process.env.REACT_APP_GOOGLE_CLIENT_ID;
+                  if (!googleClientId) return null;
+                  return (
+                    <GoogleOAuthProvider clientId={googleClientId}>
+                      <GoogleLogin
+                        onSuccess={handleGoogleSuccess}
+                        onError={() => {
+                          toast.error('Google Registration Failed');
+                        }}
+                        useOneTap
+                      />
+                    </GoogleOAuthProvider>
+                  );
+                })()}
               </div>
             </div>
 

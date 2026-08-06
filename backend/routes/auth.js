@@ -12,6 +12,9 @@ const {
   validateUserRegistration,
   validateUserLogin
 } = require('../middleware/validation');
+const jwt = require('jsonwebtoken');
+const { verifyToken } = require('../middleware/auth');
+const { sendEmail } = require('../utils/email');
 
 const router = express.Router();
 
@@ -309,21 +312,48 @@ router.post('/register', validateUserRegistration, async (req, res) => {
 });
 
 const { OAuth2Client } = require('google-auth-library');
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Google Sign-In
 router.post('/google', async (req, res) => {
   try {
     const { token } = req.body;
 
+    // Fetch Google Client ID from database settings
+    const [settingsResult] = await pool.execute(
+      'SELECT setting_value FROM system_settings WHERE setting_key = ?',
+      ['google_client_id']
+    );
+
+    const dbClientId = settingsResult.length > 0 ? settingsResult[0].setting_value : null;
+    const googleClientId = (dbClientId || process.env.GOOGLE_CLIENT_ID)?.trim();
+
+    if (!googleClientId) {
+      console.error('GOOGLE AUTH FAILED: Client ID missing');
+      return res.status(500).json(
+        formatResponse(false, 'Google Client ID is not configured on the server')
+      );
+    }
+
+    console.log('Verifying Google token with Client ID:', googleClientId.substring(0, 10) + '...');
+    const googleClient = new OAuth2Client(googleClientId);
+
     // Verify Google Token
-    const ticket = await googleClient.verifyIdToken({
-      idToken: token,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
+    let ticket;
+    try {
+      ticket = await googleClient.verifyIdToken({
+        idToken: token,
+        audience: googleClientId,
+      });
+    } catch (verifyError) {
+      console.error('Google token verification error:', verifyError.message);
+      return res.status(401).json(
+        formatResponse(false, 'Invalid Google token', null, verifyError.message)
+      );
+    }
 
     const payload = ticket.getPayload();
-    const { sub: google_id, email, given_name, family_name, picture } = payload;
+    const { sub: google_id, email: rawEmail, given_name, family_name, picture } = payload;
+    const email = rawEmail ? String(rawEmail).toLowerCase() : null;
 
     // Check if user exists by google_id or email
     const [existingUsers] = await pool.execute(
@@ -368,6 +398,8 @@ router.post('/google', async (req, res) => {
       // Create new user record
       const defaultPassword = await hashPassword(generateRandomString(16)); // Random unseen password
 
+      const dummyPhone = `G-${Date.now()}`;
+
       const insertParams = [
         given_name || 'Google',
         family_name || 'User',
@@ -375,21 +407,22 @@ router.post('/google', async (req, res) => {
         picture || null,
         google_id,
         defaultPassword,
-        'guest' // default user type
+        'guest', // default user type
+        dummyPhone
       ];
 
       const [result] = await pool.execute(
         `INSERT INTO users (
           first_name, last_name, email, profile_image, google_id, password, user_type,
           email_verified_at, created_at, phone
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), '')`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?)`,
         insertParams
       );
 
       userId = result.insertId;
 
       const [newUsers] = await pool.execute(
-        `SELECT * FROM users WHERE id = ?`,
+        `SELECT id, first_name, last_name, email, phone, user_type, host_id, profile_image, is_active FROM users WHERE id = ?`,
         [userId]
       );
       user = newUsers[0];
@@ -444,7 +477,7 @@ router.post('/login', validateUserLogin, async (req, res) => {
 
     // Find user
     const [users] = await pool.execute(
-      `SELECT id, first_name, last_name, email, phone, password, user_type, 
+      `SELECT id, first_name, last_name, email, phone, password, user_type, host_id,
               is_active, last_login_at, login_attempts, locked_until
        FROM users WHERE email = ?`,
       [email]
@@ -530,6 +563,34 @@ router.post('/login', validateUserLogin, async (req, res) => {
     delete user.locked_until;
 
     console.log('Login process completed successfully.');
+
+    if (user.user_type === 'property_owner' || user.user_type === 'staff') {
+      try {
+        const hostId = user.user_type === 'staff' ? user.host_id : user.id;
+        if (hostId) {
+          const [hmsSub] = await pool.execute('SELECT status FROM hms_subscriptions WHERE host_id = ?', [hostId]);
+          user.hms_status = hmsSub.length > 0 ? hmsSub[0].status : 'inactive';
+          
+          if (user.user_type === 'staff') {
+            const [staffProfile] = await pool.execute('SELECT permissions FROM hms_employees WHERE user_id = ?', [user.id]);
+            let permissions = staffProfile.length > 0 ? staffProfile[0].permissions : {};
+            if (typeof permissions === 'string') {
+              try {
+                permissions = JSON.parse(permissions);
+              } catch (e) {
+                permissions = {};
+              }
+            }
+            user.permissions = permissions;
+          }
+        } else {
+          user.hms_status = 'inactive';
+        }
+      } catch (err) {
+        console.error('Failed to append HMS status at login:', err);
+        user.hms_status = 'inactive';
+      }
+    }
 
     res.json(
       formatResponse(true, 'Login successful', {
@@ -662,14 +723,34 @@ router.post('/forgot-password', async (req, res) => {
 
     const user = users[0];
 
-    // Generate reset token (in a real app, you'd send this via email)
+    // Generate reset token
     const resetToken = generateRandomString(32);
 
-    // Store reset token (you'd typically store this with expiration)
-    // For now, we'll just return success
+    // Store reset token 
+    await pool.execute(
+      'INSERT INTO password_resets (email, token, created_at) VALUES (?, ?, NOW())',
+      [user.email, resetToken]
+    );
 
-    // TODO: Send email with reset link
-    // await sendPasswordResetEmail(user.email, resetToken);
+    // Try to get frontend URL from headers or use default localhost
+    const frontendUrl = req.headers.origin || process.env.FRONTEND_URL || 'http://localhost:3000';
+    const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
+
+    const message = `Halo ${user.first_name},\n\nYou requested a password reset. Please click on the following link or paste it in your browser to reset your password:\n\n${resetUrl}\n\nThis link will expire in 1 hour. If you did not request this, please ignore this email.`;
+
+    // Send email with reset link
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: 'Password Reset Request - Keyhost Homes',
+        message
+      });
+    } catch (emailError) {
+      console.error('Failed to send reset email:', emailError);
+      return res.status(500).json(
+        formatResponse(false, 'There was an error sending the reset email. Try again later.')
+      );
+    }
 
     res.json(
       formatResponse(true, 'If the email exists, a password reset link has been sent')
@@ -683,23 +764,215 @@ router.post('/forgot-password', async (req, res) => {
   }
 });
 
+// Reset password
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json(
+        formatResponse(false, 'Token and new password are required')
+      );
+    }
+
+    // Verify token (Valid for 1 hour)
+    const [validTokens] = await pool.execute(
+      `SELECT email FROM password_resets 
+       WHERE token = ? AND created_at >= NOW() - INTERVAL 1 HOUR 
+       ORDER BY created_at DESC LIMIT 1`,
+      [token]
+    );
+
+    if (validTokens.length === 0) {
+      return res.status(400).json(
+        formatResponse(false, 'Password reset token is invalid or has expired')
+      );
+    }
+
+    const email = validTokens[0].email;
+
+    // Hash new password
+    const hashedPassword = await hashPassword(password);
+
+    // Update user's password
+    await pool.execute(
+      'UPDATE users SET password = ? WHERE email = ?',
+      [hashedPassword, email]
+    );
+
+    // Clear all reset tokens for this user
+    await pool.execute(
+      'DELETE FROM password_resets WHERE email = ?',
+      [email]
+    );
+
+    res.json(
+      formatResponse(true, 'Password has been successfully updated')
+    );
+
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json(
+      formatResponse(false, 'Password reset failed', null, error.message)
+    );
+  }
+});
+
+// Send email verification link
+router.post('/send-verification-email', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const email = req.user.email;
+
+    // Generate verification token (signed JWT) valid for 24h
+    const token = jwt.sign(
+      { userId, email },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const verifyUrl = `${frontendUrl}/verify-email?token=${token}`;
+
+    const message = `Hello ${req.user.first_name},\n\nPlease click on the following link to verify your email address:\n\n${verifyUrl}\n\nThis link will expire in 24 hours. If you did not request this verification, please ignore this email.`;
+
+    await sendEmail({
+      email,
+      subject: 'Verify Your Email Address - Keyhost Homes',
+      message
+    });
+
+    res.json(formatResponse(true, 'Verification email sent successfully'));
+  } catch (error) {
+    console.error('Send verification email error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to send verification email', null, error.message));
+  }
+});
+
 // Verify email
 router.post('/verify-email', async (req, res) => {
   try {
     const { token } = req.body;
 
-    // In a real app, you'd verify the token and update email_verified_at
-    // For now, we'll just return success
+    if (!token) {
+      return res.status(400).json(formatResponse(false, 'Token is required'));
+    }
 
-    res.json(
-      formatResponse(true, 'Email verified successfully')
+    // Verify JWT token
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(400).json(formatResponse(false, 'Invalid or expired verification token'));
+    }
+
+    // Update email_verified_at
+    await pool.execute(
+      'UPDATE users SET email_verified_at = NOW() WHERE id = ?',
+      [decoded.userId]
     );
 
+    // Fetch updated user to return
+    const [users] = await pool.execute(
+      'SELECT id, first_name, last_name, email, phone, user_type, email_verified_at, phone_verified_at, is_active FROM users WHERE id = ?',
+      [decoded.userId]
+    );
+
+    res.json(formatResponse(true, 'Email verified successfully', { user: users[0] }));
   } catch (error) {
     console.error('Email verification error:', error);
-    res.status(500).json(
-      formatResponse(false, 'Email verification failed', null, error.message)
+    res.status(500).json(formatResponse(false, 'Email verification failed', null, error.message));
+  }
+});
+
+// Send SMS OTP verification
+router.post('/send-verification-otp', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const phone = req.user.phone;
+
+    if (!phone) {
+      return res.status(400).json(formatResponse(false, 'No phone number linked to this account'));
+    }
+
+    // Generate a 6-digit numeric OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Set expiration to 5 minutes from now
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+    // Save to users table
+    await pool.execute(
+      'UPDATE users SET phone_verification_otp = ?, phone_verification_expires_at = ? WHERE id = ?',
+      [otp, expiresAt, userId]
     );
+
+    // Send OTP via SMS
+    const { sendSMS } = require('../utils/sms');
+    const message = `Your Keyhost Homes verification code is ${otp}. Valid for 5 minutes.`;
+
+    try {
+      await sendSMS({ to: phone, message });
+    } catch (smsError) {
+      console.error('Failed to send SMS OTP:', smsError);
+    }
+
+    res.json(formatResponse(true, 'Verification code sent via SMS successfully'));
+  } catch (error) {
+    console.error('Send verification OTP error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to send verification code', null, error.message));
+  }
+});
+
+// Verify phone using OTP
+router.post('/verify-phone', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { otp } = req.body;
+
+    if (!otp) {
+      return res.status(400).json(formatResponse(false, 'Verification code (OTP) is required'));
+    }
+
+    // Check if OTP matches and is not expired
+    const [users] = await pool.execute(
+      'SELECT phone_verification_otp, phone_verification_expires_at FROM users WHERE id = ?',
+      [userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json(formatResponse(false, 'User not found'));
+    }
+
+    const user = users[0];
+    
+    if (!user.phone_verification_otp || user.phone_verification_otp !== otp) {
+      return res.status(400).json(formatResponse(false, 'Invalid verification code'));
+    }
+
+    const now = new Date();
+    const expiresAt = new Date(user.phone_verification_expires_at);
+
+    if (now > expiresAt) {
+      return res.status(400).json(formatResponse(false, 'Verification code has expired'));
+    }
+
+    // Update phone_verified_at and clear OTP columns
+    await pool.execute(
+      'UPDATE users SET phone_verified_at = NOW(), phone_verification_otp = NULL, phone_verification_expires_at = NULL WHERE id = ?',
+      [userId]
+    );
+
+    // Fetch updated user to return
+    const [updatedUsers] = await pool.execute(
+      'SELECT id, first_name, last_name, email, phone, user_type, email_verified_at, phone_verified_at, is_active FROM users WHERE id = ?',
+      [userId]
+    );
+
+    res.json(formatResponse(true, 'Phone number verified successfully', { user: updatedUsers[0] }));
+  } catch (error) {
+    console.error('Phone verification error:', error);
+    res.status(500).json(formatResponse(false, 'Phone verification failed', null, error.message));
   }
 });
 

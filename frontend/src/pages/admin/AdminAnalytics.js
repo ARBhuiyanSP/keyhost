@@ -115,22 +115,27 @@ const AdminAnalytics = () => {
         {/* Charts and Detailed Analytics */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           {/* Revenue Chart */}
-          <div className="bg-white rounded-lg shadow p-6">
+          <div className="bg-white rounded-lg shadow p-6 overflow-hidden">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Revenue Trend</h3>
             {analytics?.data?.revenueChart?.length > 0 ? (
-              <div className="h-64 flex items-end justify-between space-x-2">
-                {analytics.data.revenueChart.map((item, index) => (
-                  <div key={index} className="flex flex-col items-center flex-1">
-                    <div
-                      className="bg-blue-500 rounded-t w-full mb-2"
-                      style={{ height: `${Math.max(4, (item.amount / Math.max(...analytics.data.revenueChart.map(r => r.amount))) * 200)}px` }}
-                    ></div>
-                    <span className="text-xs text-gray-500 truncate w-full text-center">{item.date}</span>
-                    <span className="text-[10px] font-bold text-gray-900" title={`BDT ${item.amount}`}>
-                      {item.amount < 1000 ? item.amount : (item.amount / 1000).toFixed(1) + 'k'}
-                    </span>
-                  </div>
-                ))}
+              <div className="overflow-x-auto pb-2 scrollbar-thin">
+                <div 
+                  className="h-64 flex items-end justify-between space-x-2 pb-1 w-full"
+                  style={{ minWidth: `${analytics.data.revenueChart.length * 36}px` }}
+                >
+                  {analytics.data.revenueChart.map((item, index) => (
+                    <div key={index} className="flex flex-col items-center w-8 shrink-0">
+                      <div
+                        className="bg-blue-500 rounded-t w-full mb-2 hover:bg-blue-600 transition-colors"
+                        style={{ height: `${Math.max(4, (item.amount / Math.max(...analytics.data.revenueChart.map(r => r.amount))) * 180)}px` }}
+                      ></div>
+                      <span className="text-[10px] text-gray-500 truncate w-full text-center">{item.date}</span>
+                      <span className="text-[10px] font-bold text-gray-900" title={`BDT ${item.amount}`}>
+                        {item.amount < 1000 ? item.amount : (item.amount / 1000).toFixed(1) + 'k'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : (
               <div className="h-64 flex items-center justify-center text-gray-500">
@@ -140,20 +145,25 @@ const AdminAnalytics = () => {
           </div>
 
           {/* User Growth Chart */}
-          <div className="bg-white rounded-lg shadow p-6">
+          <div className="bg-white rounded-lg shadow p-6 overflow-hidden">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">User Growth</h3>
             {analytics?.data?.userChart?.length > 0 ? (
-              <div className="h-64 flex items-end justify-between space-x-2">
-                {analytics.data.userChart.map((item, index) => (
-                  <div key={index} className="flex flex-col items-center flex-1">
-                    <div
-                      className="bg-green-500 rounded-t w-full mb-2"
-                      style={{ height: `${Math.max(4, (item.count / Math.max(...analytics.data.userChart.map(r => r.count))) * 200)}px` }}
-                    ></div>
-                    <span className="text-xs text-gray-500 truncate w-full text-center">{item.date}</span>
-                    <span className="text-[10px] font-bold text-gray-900">{item.count}</span>
-                  </div>
-                ))}
+              <div className="overflow-x-auto pb-2 scrollbar-thin">
+                <div 
+                  className="h-64 flex items-end justify-between space-x-2 pb-1 w-full"
+                  style={{ minWidth: `${analytics.data.userChart.length * 36}px` }}
+                >
+                  {analytics.data.userChart.map((item, index) => (
+                    <div key={index} className="flex flex-col items-center w-8 shrink-0">
+                      <div
+                        className="bg-green-500 rounded-t w-full mb-2 hover:bg-green-600 transition-colors"
+                        style={{ height: `${Math.max(4, (item.count / Math.max(...analytics.data.userChart.map(r => r.count))) * 180)}px` }}
+                      ></div>
+                      <span className="text-[10px] text-gray-500 truncate w-full text-center">{item.date}</span>
+                      <span className="text-[10px] font-bold text-gray-900">{item.count}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : (
               <div className="h-64 flex items-center justify-center text-gray-500">

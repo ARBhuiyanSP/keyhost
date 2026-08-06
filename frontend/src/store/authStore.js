@@ -18,7 +18,7 @@ const useAuthStore = create(
         try {
           const response = await api.post('/auth/login', credentials);
           const { user, token, refreshToken } = response.data.data;
-          
+
           set({
             user,
             token,
@@ -29,13 +29,13 @@ const useAuthStore = create(
 
           // Set token in API headers
           api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-          
+
           return { success: true, data: response.data };
         } catch (error) {
           set({ isLoading: false });
-          return { 
-            success: false, 
-            error: error.response?.data?.message || 'Login failed' 
+          return {
+            success: false,
+            error: error.response?.data?.message || 'Login failed'
           };
         }
       },
@@ -45,7 +45,7 @@ const useAuthStore = create(
         try {
           const response = await api.post('/auth/register', userData);
           const { user, token, refreshToken } = response.data.data;
-          
+
           set({
             user,
             token,
@@ -56,13 +56,13 @@ const useAuthStore = create(
 
           // Set token in API headers
           api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-          
+
           return { success: true, data: response.data };
         } catch (error) {
           set({ isLoading: false });
-          return { 
-            success: false, 
-            error: error.response?.data?.message || 'Registration failed' 
+          return {
+            success: false,
+            error: error.response?.data?.message || 'Registration failed'
           };
         }
       },
@@ -82,7 +82,7 @@ const useAuthStore = create(
             isAuthenticated: false,
             isLoading: false,
           });
-          
+
           // Remove token from API headers
           delete api.defaults.headers.common['Authorization'];
         }
@@ -98,7 +98,7 @@ const useAuthStore = create(
         try {
           const response = await api.post('/auth/refresh', { refreshToken });
           const { token, refreshToken: newRefreshToken } = response.data.data;
-          
+
           set({
             token,
             refreshToken: newRefreshToken,
@@ -119,18 +119,18 @@ const useAuthStore = create(
         try {
           const response = await api.put('/users/profile', profileData);
           const { user } = response.data.data;
-          
+
           set({
             user,
             isLoading: false,
           });
-          
+
           return { success: true, data: response.data };
         } catch (error) {
           set({ isLoading: false });
-          return { 
-            success: false, 
-            error: error.response?.data?.message || 'Profile update failed' 
+          return {
+            success: false,
+            error: error.response?.data?.message || 'Profile update failed'
           };
         }
       },
@@ -140,13 +140,13 @@ const useAuthStore = create(
         try {
           const response = await api.put('/users/change-password', passwordData);
           set({ isLoading: false });
-          
+
           return { success: true, data: response.data };
         } catch (error) {
           set({ isLoading: false });
-          return { 
-            success: false, 
-            error: error.response?.data?.message || 'Password change failed' 
+          return {
+            success: false,
+            error: error.response?.data?.message || 'Password change failed'
           };
         }
       },
@@ -156,14 +156,63 @@ const useAuthStore = create(
         try {
           const response = await api.post('/auth/forgot-password', { email });
           set({ isLoading: false });
-          
+
           return { success: true, data: response.data };
         } catch (error) {
           set({ isLoading: false });
-          return { 
-            success: false, 
-            error: error.response?.data?.message || 'Password reset request failed' 
+          return {
+            success: false,
+            error: error.response?.data?.message || 'Password reset request failed'
           };
+        }
+      },
+
+      resetPassword: async (token, password) => {
+        set({ isLoading: true });
+        try {
+          const response = await api.post('/auth/reset-password', { token, password });
+          set({ isLoading: false });
+
+          return { success: true, data: response.data };
+        } catch (error) {
+          set({ isLoading: false });
+          return {
+            success: false,
+            error: error.response?.data?.message || 'Password reset failed'
+          };
+        }
+      },
+
+      becomeHost: async () => {
+        set({ isLoading: true });
+        try {
+          const response = await api.put('/users/become-host');
+          const { user } = response.data.data;
+
+          set({
+            user,
+            isLoading: false,
+          });
+
+          return { success: true, data: response.data };
+        } catch (error) {
+          set({ isLoading: false });
+          return {
+            success: false,
+            error: error.response?.data?.message || 'Failed to become a host'
+          };
+        }
+      },
+
+
+      fetchProfile: async () => {
+        try {
+          const response = await api.get('/users/profile');
+          if (response.data?.data?.user) {
+            set({ user: response.data.data.user });
+          }
+        } catch (error) {
+          console.error("Failed to fetch fresh profile context:", error);
         }
       },
 
@@ -172,6 +221,7 @@ const useAuthStore = create(
         if (token) {
           api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
           set({ isAuthenticated: true });
+          get().fetchProfile();
         }
         set({ isLoading: false });
       },

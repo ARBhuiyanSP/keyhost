@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Keyhost24.com Namecheap Deployment Guide</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; max-width: 900px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; }
+        h1, h2, h3 { color: #E41D57; border-bottom: 2px solid #E41D57; padding-bottom: 10px; margin-top: 30px; }
+        .step-container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 25px; }
+        code { background-color: #e8e8e8; padding: 2px 6px; border-radius: 4px; font-family: 'Courier New', Courier, monospace; font-size: 14px; font-weight: bold; color: #d63031; }
+        pre { background-color: #2d3436; color: #fdfdfd; padding: 15px; border-radius: 8px; overflow-x: auto; box-shadow: inset 0 0 10px rgba(0,0,0,0.5); font-family: 'Courier New', Courier, monospace;}
+        pre code { background-color: transparent; color: inherit; padding: 0; font-weight: normal; }
+        .success { background-color: #dff0d8; border-color: #d6e9c6; color: #3c763d; padding: 15px; margin-bottom: 20px; border-radius: 4px; }
+        ul { margin-left: left; }
+        li { margin-bottom: 10px; }
+        .important { color: #c0392b; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div style="text-align: center; margin-bottom: 40px;">
+        <h1 style="border:none;">🚀 Keyhost24.com - Namecheap Deployment Guide</h1>
+        <p style="font-size: 1.2em; color: #555;">Complete Step-by-Step Guide for the Booking System Project</p>
+    </div>
+
+    <div class="step-container">
+        <h2>Phase 1: Local Preparation (Your PC)</h2>
+        
+        <h3>1. Prepare the Backend</h3>
+        <ul>
+            <li>Open the <code>backend/.env</code> file on your computer.</li>
+            <li>Change the environment strictly for production:
+<pre>NODE_ENV=production
+FRONTEND_URL=https://keyhost24.com
+PORT=5000</pre>
+            </li>
+            <li>Zip the entire <code>backend</code> folder into a file named <code>backend.zip</code>. <span class="important">Do NOT include the `node_modules` folder inside your zip to save upload time.</span></li>
+        </ul>
+
+        <h3>2. Prepare the Frontend</h3>
+        <ul>
+            <li>Open your <code>frontend/.env</code> file and ensure you update your REACT_APP_API_URL if needed, but the current configuration is self-hosted so just proceed.</li>
+            <li>Open your terminal, go to your <code>frontend</code> folder, and run:
+<pre>npm run build</pre>
+            </li>
+            <li>After it succeeds, go inside the newly created <code>frontend/build</code> folder, select ALL the files, and Add to Archive to create <code>frontend-build.zip</code>.</li>
+        </ul>
+    </div>
+
+    <div class="step-container">
+        <h2>Phase 2: Namecheap Database Setup</h2>
+        <ul>
+            <li>Log into your <b>Namecheap cPanel</b>.</li>
+            <li>Navigate to <b>MySQL Databases</b>.</li>
+            <li>Create a New Database (e.g., <code>yourcpanelusername_keyhost</code>).</li>
+            <li>Create a New User (e.g., <code>yourcpanelusername_keyuser</code>) and give it a strong password. Save this password somewhere safe!</li>
+            <li>Add the User to the Database and check the box that says <b>All Privileges</b>.</li>
+            <li>Next, go to <b>phpMyAdmin</b> in cPanel, select your newly created database on the left sidebar.</li>
+            <li>Click <b>Import</b> at the top, select your local Keyhost database SQL file, and press Go to import your local data into the live server.</li>
+        </p>
+    </div>
+
+    <div class="step-container">
+        <h2>Phase 3: Backend Setup (cPanel Setup Node.js App)</h2>
+        <ul>
+            <li>Go to <b>File Manager</b> in cPanel.</li>
+            <li>In the root directory (outside of `public_html`), create a new folder named <code>keyhost-api</code>.</li>
+            <li>Open <code>keyhost-api</code>, click <b>Upload</b>, and upload your <code>backend.zip</code> file. Then, right-click and extract it.</li>
+            <li>In cPanel, go to <b>Setup Node.js App</b>.</li>
+            <li>Click <b>Create Application</b>.</li>
+            <li>Set the Node.js version (preferably <code>18.x.x</code> or higher).</li>
+            <li>Set the Application mode to <code>Production</code>.</li>
+            <li><b>Application root:</b> <code>keyhost-api/backend</code></li>
+            <li><b>Application URL:</b> <code>keyhost24.com/api</code></li>
+            <li><b>Application startup file:</b> <code>server.js</code></li>
+            <li>Click <b>Create</b>.</li>
+            <li>Once created, scroll down and click the <b>Run NPM Install</b> button and wait for it to successfully install everything.</li>
+            <li>Scroll up and click <b>Stop App</b>, then click <b>Start App</b> to ensure it grabs the fresh dependencies.</li>
+        </ul>
+    </div>
+
+    <div class="step-container">
+        <h2>Phase 4: Backend Environment Variables (.env)</h2>
+        <p>In your <b>Setup Node.js App</b> dashboard (where you just hit start/stop), scroll down to the <b>Environment variables</b> section.</p>
+        <p>Click "Add Variable" to add all of your database secrets here permanently in cPanel, instead of relying on the local .env file. Add the following:</p>
+        <ul>
+            <li><code>DB_HOST</code> = <code>127.0.0.1</code> (or localhost)</li>
+            <li><code>DB_USER</code> = <code>yourcpanelusername_keyuser</code></li>
+            <li><code>DB_PASSWORD</code> = <code>the_password_you_just_created</code></li>
+            <li><code>DB_NAME</code> = <code>yourcpanelusername_keyhost</code></li>
+            <li><code>FRONTEND_URL</code> = <code>https://keyhost24.com</code></li>
+            <li><code>NODE_ENV</code> = <code>production</code></li>
+        </ul>
+        <p>Click <b>Save</b>, and restart the Node.js app once more to lock these variables into memory.</p>
+    </div>
+
+    <div class="step-container">
+        <h2>Phase 5: Frontend Hosting (public_html)</h2>
+        <ul>
+            <li>Navigate back to <b>File Manager</b> in cPanel.</li>
+            <li>Open the <code>public_html</code> folder.</li>
+            <li>If there is a default folder or files from Namecheap, delete everything so it is completely empty.</li>
+            <li>Click <b>Upload</b> and select your <code>frontend-build.zip</code> file.</li>
+            <li>Right-click the zip file and click <b>Extract</b>. Ensure the extraction path is exactly <code>/public_html</code>.</li>
+            <li>Delete the zip file to save space.</li>
+            <li><b>CRITICAL:</b> Because React is a single-page app, you must tell the Apache server how to handle routing and the advanced caching mechanics we just set up. In `public_html`, find the <code>.htaccess</code> file (enable "Show Hidden Files" in Settings if you don't see it). Ensure its content has the routing fallback mechanics applied.</li>
+        </ul>
+    </div>
+
+    <div class="step-container">
+        <h2>Phase 6: Verification & SSL</h2>
+        <ul>
+            <li>Go to Namecheap cPanel -> <b>Namecheap SSL</b> and make sure the free SSL is installed and active on <code>keyhost24.com</code>.</li>
+            <li>Open an incognito tab and test <code>https://keyhost24.com</code>.</li>
+            <li>Ensure the property images load, the property calendar populates correctly, and the login page functions properly.</li>
+            <li>To verify the API is connected successfully, you can visit <code>https://keyhost24.com/api/health</code> and ensure it returns JSON saying "Keyhost Homes API is running".</li>
+        </ul>
+    </div>
+
+</body>
+</html>

@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="bn">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>tradfly.com — Full Deployment Guide</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap');
+
+        :root {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --border: #334155;
+            --text: #f8fafc;
+            --muted: #94a3b8;
+            --primary: #3b82f6;
+            --success: #22c55e;
+            --warning: #eab308;
+            --danger: #ef4444;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            line-height: 1.6;
+            font-size: 15px;
+        }
+
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 50px;
+            padding-bottom: 30px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            color: var(--primary);
+            margin-bottom: 10px;
+        }
+
+        h2 {
+            font-size: 1.8rem;
+            margin: 40px 0 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--border);
+            color: #e2e8f0;
+        }
+
+        h3 {
+            font-size: 1.3rem;
+            margin: 25px 0 15px;
+            color: #cbd5e1;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .step-badge {
+            background: var(--primary);
+            color: white;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: inline-flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        p {
+            margin-bottom: 15px;
+            color: #cbd5e1;
+        }
+
+        ul,
+        ol {
+            margin-bottom: 15px;
+            padding-left: 20px;
+            color: #cbd5e1;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        .code-block {
+            background: #0b1120;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin: 15px 0;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .code-header {
+            background: #1e293b;
+            padding: 8px 15px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-family: 'Fira Code', monospace;
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        .copy-btn {
+            background: #334155;
+            border: none;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: 0.2s;
+        }
+
+        .copy-btn:hover {
+            background: var(--primary);
+        }
+
+        pre {
+            padding: 15px;
+            overflow-x: auto;
+            font-family: 'Fira Code', monospace;
+            font-size: 13.5px;
+            color: #e2e8f0;
+        }
+
+        .keyword {
+            color: #c678dd;
+        }
+
+        .string {
+            color: #98c379;
+        }
+
+        .comment {
+            color: #5c6370;
+        }
+
+        .variable {
+            color: #e5c07b;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid;
+            display: flex;
+            gap: 10px;
+        }
+
+        .alert-warning {
+            background: rgba(234, 179, 8, 0.1);
+            border-color: var(--warning);
+            color: #fef08a;
+        }
+
+        .alert-info {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: var(--primary);
+            color: #bfdbfe;
+        }
+
+        .alert-danger {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: var(--danger);
+            color: #fecaca;
+        }
+
+        .tree {
+            background: #0b1120;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            font-family: 'Fira Code', monospace;
+            font-size: 14px;
+            margin-bottom: 20px;
+            line-height: 1.5;
+            color: #cbd5e1;
+        }
+
+        .tree .folder {
+            color: var(--primary);
+            font-weight: bold;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+
+        th,
+        td {
+            border: 1px solid var(--border);
+            padding: 12px;
+            text-align: left;
+        }
+
+        th {
+            background: var(--surface);
+            color: var(--text);
+        }
+
+        td {
+            background: #0f172a;
+            color: #cbd5e1;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <header>
+            <h1>🚀 tradfly.com Deployment Guide</h1>
+            <p>Complete Step-by-Step Documentation for Namecheap Shared Hosting with cPanel</p>
+            <p><strong>Stack:</strong> React.js Frontend, Node.js + Express Backend, MySQL Database</p>
+        </header>
+
+        <div class="alert alert-info">
+            <strong>Architecture Plan:</strong><br>
+            • <strong>Frontend:</strong> <code>tradfly.com</code> (Hosted in <code>public_html/</code> folder)<br>
+            • <strong>Backend API:</strong> <code>api.tradfly.com</code> (Hosted in <code>nodeapp/</code> folder)
+        </div>
+
+        <!-- SECTION 1 -->
+        <h2>📌 Phase 1: Local Preparation (আপনার পিসিতে)</h2>
+
+        <h3><span class="step-badge">1</span> Frontend: Update Environment & Build</h3>
+        <p>Local project-এ frontend-এর production environment file তৈরি করে build করতে হবে।</p>
+        <p>১. <code>frontend/</code> ফোল্ডারে <code>.env.production</code> নামে একটি ফাইল তৈরি করুন এবং নিচের কোড দিন:
+        </p>
+        <div class="code-block">
+            <div class="code-header"><span>frontend/.env.production</span> <button class="copy-btn"
+                    onclick="copy(this)">Copy</button></div>
+            <pre><span class="variable">REACT_APP_API_URL</span>=<span class="string">https://api.tradfly.com/api</span></pre>
+        </div>
+
+        <p>২. Terminal (Git Bash / VS Code terminal) ওপেন করে frontend ফোল্ডারে যান এবং build করুন:</p>
+        <div class="code-block">
+            <div class="code-header"><span>Terminal</span> <button class="copy-btn" onclick="copy(this)">Copy</button>
+            </div>
+            <pre>cd frontend
+npm run build</pre>
+        </div>
+        <p>✅ এই কমান্ডটি শেষ হলে <code>frontend/build/</code> নামে একটি ফোল্ডার তৈরি হবে।</p>
+
+        <h3><span class="step-badge">2</span> Backend: Prepare Production .env</h3>
+        <p>Hosting-এ আপলোড করার জন্য <code>backend/.env</code> ফাইলটি production values দিয়ে আপডেট করুন:</p>
+        <div class="code-block">
+            <div class="code-header"><span>backend/.env</span> <button class="copy-btn"
+                    onclick="copy(this)">Copy</button></div>
+            <pre>
+<span class="comment"># Database (These will be from cPanel, change accordingly)</span>
+<span class="variable">DB_HOST</span>=<span class="string">localhost</span>
+<span class="variable">DB_USER</span>=<span class="string">tradfly_khuser</span>
+<span class="variable">DB_PASSWORD</span>=<span class="string">YOUR_CPANEL_DB_PASSWORD</span>
+<span class="variable">DB_NAME</span>=<span class="string">tradfly_keyhost</span>
+<span class="variable">DB_PORT</span>=<span class="string">3306</span>
+
+<span class="comment"># Security JWT (use long random strings)</span>
+<span class="variable">JWT_SECRET</span>=<span class="string">tradfly_random_long_secret_string_for_production_use_only</span>
+<span class="variable">JWT_EXPIRES_IN</span>=<span class="string">7d</span>
+<span class="variable">JWT_REFRESH_SECRET</span>=<span class="string">another_random_long_secret_string_for_refresh_token</span>
+<span class="variable">JWT_REFRESH_EXPIRES_IN</span>=<span class="string">30d</span>
+
+<span class="comment"># Server & URLs</span>
+<span class="variable">PORT</span>=<span class="string">3001</span>
+<span class="variable">NODE_ENV</span>=<span class="string">production</span>
+<span class="variable">FRONTEND_URL</span>=<span class="string">https://tradfly.com</span>
+
+<span class="comment"># Email Config</span>
+<span class="variable">EMAIL_HOST</span>=<span class="string">smtp.gmail.com</span>
+<span class="variable">EMAIL_PORT</span>=<span class="string">587</span>
+<span class="variable">EMAIL_USER</span>=<span class="string">your_email@gmail.com</span>
+<span class="variable">EMAIL_PASS</span>=<span class="string">your_app_password</span>
+
+<span class="comment"># SSLCommerz & Keys (Keep your existing values but turn on live mode)</span>
+<span class="variable">SSLCOMMERZ_STORE_ID</span>=<span class="string">your_store_id</span>
+<span class="variable">SSLCOMMERZ_STORE_PASSWORD</span>=<span class="string">your_store_password</span>
+<span class="variable">SSLCOMMERZ_IS_LIVE</span>=<span class="string">true</span>
+</pre>
+        </div>
+
+        <h3><span class="step-badge">3</span> Extract/Export Database</h3>
+        <p>আপনার লোকাল ডাটাবেসটি export করে একটি <code>.sql</code> ফাইল তৈরি করুন:</p>
+        <div class="code-block">
+            <div class="code-header"><span>Terminal</span> <button class="copy-btn" onclick="copy(this)">Copy</button>
+            </div>
+            <pre>mysqldump -u root keyhost_booking_system > tradfly_database.sql</pre>
+        </div>
+        <p>✅ এই <code>tradfly_database.sql</code> ফাইলটি পরবর্তীতে cPanel-এ আপলোড করতে হবে।</p>
+
+        <!-- SECTION 2 -->
+        <h2>📌 Phase 2: Database Setup (cPanel)</h2>
+
+        <h3><span class="step-badge">4</span> Create MySQL Database & User</h3>
+        <ol>
+            <li>Namecheap cPanel-এ লগইন করুন।</li>
+            <li><strong>MySQL Databases</strong> অপশনে যান।</li>
+            <li><strong>Create New Database:</strong> <code>keyhost</code> লিখে Create Database করুন। (cPanel নিজে থেকে
+                username prefix অ্যাড করে নাম বানাবে <code>tradfly_keyhost</code>)।</li>
+            <li><strong>Add New User:</strong> Username দিন <code>khuser</code>, Password Generator দিয়ে একটি শক্ত
+                পাসওয়ার্ড দিন এবং <strong>পাসওয়ার্ডটি সেভ করে রাখুন</strong> (backend .env-এ বসানোর জন্য)। Create User-এ
+                ক্লিক করুন। (ইউজারনেম হবে <code>tradfly_khuser</code>)।</li>
+            <li><strong>Add User To Database:</strong> User এবং Database সিলেক্ট করে Add করুন। এরপর <strong>ALL
+                    PRIVILEGES</strong> বক্সে টিক দিয়ে Make Changes এ ক্লিক করুন।</li>
+        </ol>
+
+        <h3><span class="step-badge">5</span> Import SQL Data</h3>
+        <ol>
+            <li>cPanel এর হোমপেজে ফিরে গিয়ে <strong>phpMyAdmin</strong> ওপেন করুন।</li>
+            <li>বাম পাশের লিস্ট থেকে আপনার তৈরি করা ডাটাবেস (<code>tradfly_keyhost</code>) সিলেক্ট করুন।</li>
+            <li>উপরের মেনু থেকে <strong>Import</strong> এ ক্লিক করুন।</li>
+            <li><strong>Choose File</strong> এ ক্লিক করে আপনার পিসির <code>tradfly_database.sql</code> ফাইলটি সিলেক্ট
+                করুন।</li>
+            <li>নিচে গিয়ে <strong>Go</strong> বাটনে ক্লিক করুন। "Import has been successfully finished" লেখা আসলে কাজ
+                শেষ।</li>
+        </ol>
+
+        <!-- SECTION 3 -->
+        <h2>📌 Phase 3: Backend Deployment (App Setup)</h2>
+
+        <h3><span class="step-badge">6</span> Create Subdomain for API</h3>
+        <ol>
+            <li>cPanel-এ গিয়ে <strong>Subdomains</strong> / <strong>Domains</strong> অপশনে যান।</li>
+            <li><strong>Subdomain:</strong> <code>api</code></li>
+            <li><strong>Domain:</strong> <code>tradfly.com</code></li>
+            <li><strong>Document Root:</strong> বক্সে <code>/nodeapp</code> দিন (অর্থাৎ
+                <code>/home/yourusername/nodeapp</code>)।</li>
+            <li>Create এ ক্লিক করুন।</li>
+        </ol>
+
+        <h3><span class="step-badge">7</span> Upload Backend Files</h3>
+        <ol>
+            <li>cPanel-এর <strong>File Manager</strong> এ যান।</li>
+            <li>আপনার হোম ডিরেক্টরিতে (public_html এর বাইরে) <code>nodeapp</code> নামে একটি ফোল্ডার তৈরি করুন।</li>
+            <li>আপনার লোকাল <code>backend/</code> ফোল্ডারটি ওপেন করে <code>node_modules/</code> <strong>বাদ
+                    দিয়ে</strong> বাকি সব ফাইল সিলেক্ট করে একটি <code>.zip</code> ফাইল তৈরি করুন।</li>
+            <li>cPanel File Manager-এ <code>nodeapp</code> ফোল্ডারের ভিতরে ঐ <code>.zip</code> ফাইলটি আপলোড করুন।</li>
+            <li>আপলোড শেষে zip ফাইলটি Extract করুন।</li>
+        </ol>
+        <div class="tree">
+            <span class="folder">/home/yourusername/nodeapp/</span><br>
+            ├── package.json<br>
+            ├── server.js<br>
+            ├── .env (Production values)<br>
+            ├── <span class="folder">routes/</span><br>
+            ├── <span class="folder">config/</span><br>
+            ├── <span class="folder">models/</span> (If any)<br>
+            ├── <span class="folder">middleware/</span><br>
+            └── <span class="folder">utils/</span>
+        </div>
+        <div class="alert alert-warning">
+            <strong>বিঃদ্রঃ:</strong> <code>node_modules</code> ফোল্ডার কখনোই আপলোড করবেন না। এটি হার্ডড্রিভের অনেক
+            জায়গা নেয় এবং লিনাক্স সার্ভারে ইন্সটল করতে হয়।
+        </div>
+
+        <h3><span class="step-badge">8</span> Setup Node.js App in cPanel</h3>
+        <ol>
+            <li>cPanel থেকে <strong>Setup Node.js App</strong> অপশনে যান।</li>
+            <li><strong>Create Application</strong> বাটনে ক্লিক করুন।</li>
+        </ol>
+        <table>
+            <tr>
+                <th>Field</th>
+                <th>Value</th>
+            </tr>
+            <tr>
+                <td>Node.js version</td>
+                <td>18.x বা তার উপরের লেটেস্ট ভার্সন</td>
+            </tr>
+            <tr>
+                <td>Application mode</td>
+                <td>Production</td>
+            </tr>
+            <tr>
+                <td>Application root</td>
+                <td><code>nodeapp</code></td>
+            </tr>
+            <tr>
+                <td>Application URL</td>
+                <td><code>api.tradfly.com</code></td>
+            </tr>
+            <tr>
+                <td>Application startup file</td>
+                <td><code>server.js</code></td>
+            </tr>
+        </table>
+        <p><strong>Create</strong> এ ক্লিক করুন।</p>
+
+        <h3><span class="step-badge">9</span> Install Packages & Start API</h3>
+        <ol>
+            <li>Node app তৈরি হলে <strong>Run NPM Install</strong> বাটনে ক্লিক করুন। প্যাকেজ ইনস্টল হতে কয়েক মিনিট সময়
+                লাগতে পারে।</li>
+            <li>ইন্সটল সফল হলে অ্যাপটির <strong>START</strong> বাটনে ক্লিক করুন।</li>
+        </ol>
+
+        <h3><span class="step-badge">10</span> Set Uploads Permissions</h3>
+        <p>আপনার cPanel Terminal অপশনটি ওপেন করুন এবং নিচের কমান্ডগুলো রান করুন:</p>
+        <div class="code-block">
+            <div class="code-header"><span>Terminal</span> <button class="copy-btn" onclick="copy(this)">Copy</button>
+            </div>
+            <pre>cd ~/nodeapp
+mkdir -p uploads/properties uploads/avatars uploads/documents
+chmod -R 755 uploads/</pre>
+        </div>
+        <p>✅ Backend ঠিকমতো চললে ব্রাউজারে <code>https://api.tradfly.com/api/health</code> গেলে
+            <code>{"success":true,"message":"Keyhost Homes API is running"}</code> দেখাবে।</p>
+
+        <!-- SECTION 4 -->
+        <h2>📌 Phase 4: Frontend Deployment</h2>
+
+        <h3><span class="step-badge">11</span> Upload React Build Folder</h3>
+        <ol>
+            <li>cPanel <strong>File Manager</strong> থেকে <code>public_html</code> ফোল্ডারে যান।</li>
+            <li>সেখানে থাকা ডিফল্ট ফাইলগুলো (যেমন <code>cgi-bin</code> বাদে অন্য কোন <code>.html</code> থাকলে) ডিলেট
+                করুন।</li>
+            <li>আপনার লোকাল পিসিতে <code>frontend/build/</code> ফোল্ডারের <strong>ভিতরের</strong> সব কন্টেন্ট সিলেক্ট
+                করে একটি <code>.zip</code> ফাইল বানান। <strong>(খেয়াল রাখবেন build ফোল্ডারটি zip না করে ভিতরের ফাইলগুলো
+                    zip করবেন)</strong>।</li>
+            <li>cPanel-এ <code>public_html</code> ফোল্ডারে সেটি আপলোড করে Extract করুন।</li>
+        </ol>
+        <div class="tree">
+            <span class="folder">/home/yourusername/public_html/</span><br>
+            ├── index.html<br>
+            ├── manifest.json<br>
+            ├── robots.txt<br>
+            └── <span class="folder">static/</span>
+        </div>
+
+        <h3><span class="step-badge">12</span> Create .htaccess for React Router</h3>
+        <p>React SPA (Single Page Application)-এ সরাসরি লিঙ্কে গেলে 404 Error যেন না আসে, তাই <code>public_html</code>
+            ডিরেক্টরিতে <code>.htaccess</code> ফাইল তৈরি করে নিচের কোডটি দিতে হবে:</p>
+        <ol>
+            <li>File Manager-এর <code>public_html</code> ফোল্ডারে <code>+File</code> এ ক্লিক করে ফাইলের নাম দিন
+                <code>.htaccess</code>।</li>
+            <li>ফাইলটি Edit করে নিচের কোড পেস্ট করে Save করুন:</li>
+        </ol>
+        <div class="code-block">
+            <div class="code-header"><span>public_html/.htaccess</span> <button class="copy-btn"
+                    onclick="copy(this)">Copy</button></div>
+            <pre>
+Options -MultiViews
+RewriteEngine On
+
+<span class="comment"># React Router Configuration</span>
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.html [QSA,L]
+</pre>
+        </div>
+
+        <!-- SECTION 5 -->
+        <h2>📌 Phase 5: Additional Validations</h2>
+
+        <h3><span class="step-badge">13</span> SSLCommerz Production Update</h3>
+        <p>
+            পেমেন্ট গেটওয়ের জন্য SSLCommerz-এর স্টোর প্যানেলে লগইন করে আপনার production ডোমেইন
+            <code>https://tradfly.com</code> whitelisted করে IPN Settings-এ
+            <code>https://api.tradfly.com/api/sslcommerz/ipn</code> (যদি আপনার এপিআই লজিক অনুযায়ী দরকার পড়ে) সেট করে
+            নেবেন।
+        </p>
+
+        <h3><span class="step-badge">14</span> Google OAuth Console Update</h3>
+        <p>Google Cloud Console-এ গিয়ে আপনার প্রজেক্টের <strong>Credentials -> OAuth 2.0 Client IDs</strong> এ যান:</p>
+        <ul>
+            <li><strong>Authorized JavaScript origins:</strong> <code>https://tradfly.com</code> এবং
+                <code>https://www.tradfly.com</code> যুক্ত করুন।</li>
+            <li><strong>Authorized redirect URIs:</strong> <code>https://api.tradfly.com/api/auth/google/callback</code>
+                (বা আপনার রুট অনুযায়ী) যুক্ত করুন।</li>
+        </ul>
+
+        <!-- SECTION 6 -->
+        <h2>📌 Troubleshooting & Common Errors</h2>
+        <table>
+            <tr>
+                <th>Error / Issue</th>
+                <th>Solution</th>
+            </tr>
+            <tr>
+                <td><strong>502 Bad Gateway / Backend Error</strong></td>
+                <td>Setup Node.js App থেকে অ্যাপটি একবার <code>STOP</code> করে আবার <code>START</code> করুন।
+                    <code>nodeapp/</code> এ থাকা .env তে ডাটাবেস পাসওয়ার্ড বা নাম ভুল আছে কিনা চেক করুন।</td>
+            </tr>
+            <tr>
+                <td><strong>CORS Error on Frontend</strong></td>
+                <td>Server.js (Backend) ফাইলে cross origin allow করা আছে কিনা নিশ্চিত করুন। আপনার
+                    <code>frontend.env.production</code> এ API url সঠিক আছে কিনা দেখুন এবং re-build করুন।</td>
+            </tr>
+            <tr>
+                <td><strong>404 Route Not Found on Refresh</strong></td>
+                <td>আপনার <code>public_html/.htaccess</code> ফাইলটি সঠিকভাবে তৈরি হয়নি অথবা সার্ভারে AllowOverride অন
+                    করা নেই (സാധാരണ Namecheap-এ অন থাকে)।</td>
+            </tr>
+        </table>
+
+        <br>
+        <div class="alert alert-info">
+            <strong>✅ Final Check:</strong> ব্রাউজারে <code>https://tradfly.com</code> ওপেন করুন। সবকিছু ঠিক থাকলে
+            প্রজেক্টটি সুন্দরভাবে রান করবে।
+        </div>
+
+    </div>
+
+    <script>
+        function copy(button) {
+            const pre = button.parentElement.nextElementSibling;
+            const text = pre.innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                button.innerText = 'Copied!';
+                setTimeout(() => button.innerText = 'Copy', 2000);
+            });
+        }
+    </script>
+</body>
+
+</html>

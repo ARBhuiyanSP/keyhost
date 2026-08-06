@@ -17,6 +17,9 @@ const BkashPayment = ({ bookingId, amount, onSuccess, onCancel, pointsToRedeem =
     {
       onSuccess: (response) => {
         setPaymentData(response.data.data);
+        if (response.data.data && response.data.data.bkash_token) {
+          console.log('bkash new token ' + response.data.data.bkash_token);
+        }
         setStep('processing');
         // Simulate payment processing
         setTimeout(() => {
@@ -39,6 +42,9 @@ const BkashPayment = ({ bookingId, amount, onSuccess, onCancel, pointsToRedeem =
     {
       onSuccess: (response) => {
         setStep('success');
+        if (response.data.data && response.data.data.bkash_token) {
+          console.log('bkash new token ' + response.data.data.bkash_token);
+        }
         if (onSuccess) {
           onSuccess(response.data.data);
         }

@@ -1,30 +1,42 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { useQuery } from 'react-query';
+import { useQuery, useQueryClient } from 'react-query';
 import {
   FiStar, FiMapPin, FiUsers, FiWifi, FiTruck, FiCoffee, FiHeart, FiShare2,
-  FiCalendar, FiCheck, FiX, FiShield, FiTv, FiHome, FiChevronLeft, FiChevronRight,
+  FiCalendar, FiCheck, FiCheckCircle, FiX, FiShield, FiTv, FiHome, FiChevronLeft, FiChevronRight,
   FiClock, FiKey, FiWind, FiMonitor, FiSun, FiMoon, FiThermometer, FiLock,
   FiEye, FiEyeOff, FiMinus, FiPlus, FiDroplet, FiPackage, FiArrowUp, FiZap,
-  FiRadio, FiMusic, FiVideo, FiBriefcase, FiTag, FiMessageSquare, FiSearch, FiFlag, FiChevronDown
+  FiRadio, FiMusic, FiVideo, FiBriefcase, FiTag, FiMessageSquare, FiSearch, FiFlag, FiChevronDown,
+  FiGrid
 } from 'react-icons/fi';
 import ReportListingModal from '../components/property/ReportListingModal';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import { toast } from 'react-toastify';
 import api from '../utils/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import useAuthStore from '../store/authStore';
+import useSettingsStore from '../store/settingsStore';
 import StickySearchHeader from '../components/layout/StickySearchHeader';
 import PropertyImageSlider from '../components/property/PropertyImageSlider';
-import PropertyMap from '../components/property/PropertyMap';
-import { addToRecentlyViewed } from '../utils/recentlyViewed';
-import { sanitizeText } from '../utils/textUtils';
-
+import { useInView } from 'react-intersection-observer';
+import { addToRecentlyViewed, removeFromRecentlyViewed } from '../utils/recentlyViewed';
+import { sanitizeText, formatPrice } from '../utils/textUtils';
+import AuthModal from '../components/auth/AuthModal';
+import ShareModal from '../components/property/ShareModal';
+import { getImageUrl } from '../utils/imageUrl';
+const PropertyMap = lazy(() => import('../components/property/PropertyMap'));
 const PropertyDetail = () => {
-  const { id } = useParams();
+  const { slug } = useParams();
+  // Extract numeric id from slug tail (e.g. "peaceful-3br-near-68" -> 68)
+  // Falls back to treating the whole param as an id for old numeric-only links
+  const urlParamId = slug ? (slug.match(/-?(\d+)$/) ? slug.match(/-?(\d+)$/)[1] : slug) : null;
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated } = useAuthStore();
+  const { settings } = useSettingsStore();
+
   const mobileReserveDateContainerRef = useRef(null);
   const desktopReserveDatePickerRef = useRef(null);
   const reserveSectionRef = useRef(null);
@@ -36,6 +48,7 @@ const PropertyDetail = () => {
   const [showImageModal, setShowImageModal] = useState(false);
   const [showAllPhotos, setShowAllPhotos] = useState(false);
   const [showDescriptionModal, setShowDescriptionModal] = useState(false);
+  const [showMapMobile, setShowMapMobile] = useState(false);
   const [showMobileReserveForm, setShowMobileReserveForm] = useState(false);
   const [mobileSearchStep, setMobileSearchStep] = useState('dates'); // 'dates', 'guests'
   const [showStickySearchHeader, setShowStickySearchHeader] = useState(true); // Show on first load
@@ -46,19 +59,163 @@ const PropertyDetail = () => {
   const [isReserveButtonInView, setIsReserveButtonInView] = useState(true);
   const [showReviewsModal, setShowReviewsModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState('login');
   const [isGuestPickerOpen, setIsGuestPickerOpen] = useState(false);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
 
+  const { ref: reviewsRef, inView: reviewsInView } = useInView({
+    triggerOnce: true,
+    rootMargin: '300px 0px',
+  });
+
+  const { ref: mapRef, inView: mapInView } = useInView({
+    triggerOnce: true,
+    rootMargin: '400px 0px',
+  });
   const datePickerRef = useRef(null);
   const datePickerTriggerRef = useRef(null);
   const guestPickerRef = useRef(null);
   const guestPickerTriggerRef = useRef(null);
 
-  // Get search params from URL (for when coming from search/properties pages)
+  const renderGuestPickerDropdown = () => {
+    if (!isGuestPickerOpen) return null;
+    return (
+      <div
+        ref={guestPickerRef}
+        className="bg-white border border-gray-200 rounded-lg p-6 shadow-xl absolute w-full left-0 z-50 cursor-default top-full mt-1"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="space-y-6">
+          {[
+            { key: 'adults', label: 'Adults', subtitle: 'Ages 13 or above', min: 1 },
+            { key: 'children', label: 'Children', subtitle: 'Ages 2 – 12', min: 0 },
+            { key: 'infants', label: 'Infants', subtitle: 'Under 2', min: 0 },
+            { key: 'pets', label: 'Pets', subtitle: 'Bringing a service animal?', min: 0 },
+          ].map((item) => {
+            let currentValue = 0;
+            const totalGuests = bookingData.number_of_guests || 1;
+            const children = bookingData.number_of_children || 0;
+
+            if (item.key === 'adults') currentValue = totalGuests - children;
+            else if (item.key === 'children') currentValue = children;
+            else if (item.key === 'infants') currentValue = bookingData.number_of_infants || 0;
+            else if (item.key === 'pets') currentValue = bookingData.number_of_pets || 0;
+
+            const isMinusDisabled = currentValue <= item.min;
+            let isPlusDisabled = false;
+
+            if (item.key === 'adults' || item.key === 'children') {
+              isPlusDisabled = totalGuests >= property.max_guests;
+            } else if (item.key === 'infants') {
+              isPlusDisabled = (bookingData.number_of_infants || 0) >= 2;
+            } else if (item.key === 'pets') {
+              isPlusDisabled = (bookingData.number_of_pets || 0) >= 3;
+            }
+
+            return (
+              <div key={item.key} className="flex justify-between items-center w-full">
+                <div className="flex-1 text-left">
+                  <div className="font-semibold text-[#222222]">{item.label}</div>
+                  <div className="text-sm text-gray-500">{item.subtitle}</div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className={`w-8 h-8 rounded-full border flex items-center justify-center ${isMinusDisabled ? 'border-gray-200 text-gray-200 cursor-not-allowed' : 'border-gray-400 text-gray-600 hover:border-black hover:text-black'}`}
+                    disabled={isMinusDisabled}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (item.key === 'adults') {
+                        setBookingData(prev => ({ ...prev, number_of_guests: (prev.number_of_guests || 1) - 1 }));
+                      } else if (item.key === 'children') {
+                        setBookingData(prev => ({
+                          ...prev,
+                          number_of_children: (prev.number_of_children || 0) - 1,
+                          number_of_guests: (prev.number_of_guests || 1) - 1
+                        }));
+                      } else if (item.key === 'infants') {
+                        setBookingData(prev => ({ ...prev, number_of_infants: (prev.number_of_infants || 0) - 1 }));
+                      } else if (item.key === 'pets') {
+                        setBookingData(prev => ({ ...prev, number_of_pets: (prev.number_of_pets || 0) - 1 }));
+                      }
+                    }}
+                  >
+                    <FiMinus className="w-3 h-3" />
+                  </button>
+                  <span className="w-4 text-center text-[#222222]">{currentValue}</span>
+                  <button
+                    type="button"
+                    className={`w-8 h-8 rounded-full border flex items-center justify-center ${isPlusDisabled ? 'border-gray-200 text-gray-200 cursor-not-allowed' : 'border-gray-400 text-gray-600 hover:border-black hover:text-black'}`}
+                    disabled={isPlusDisabled}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (item.key === 'adults') {
+                        setBookingData(prev => ({ ...prev, number_of_guests: (prev.number_of_guests || 1) + 1 }));
+                      } else if (item.key === 'children') {
+                        setBookingData(prev => ({
+                          ...prev,
+                          number_of_children: (prev.number_of_children || 0) + 1,
+                          number_of_guests: (prev.number_of_guests || 1) + 1
+                        }));
+                      } else if (item.key === 'infants') {
+                        setBookingData(prev => ({ ...prev, number_of_infants: (prev.number_of_infants || 0) + 1 }));
+                      } else if (item.key === 'pets') {
+                        setBookingData(prev => ({ ...prev, number_of_pets: (prev.number_of_pets || 0) + 1 }));
+                      }
+                    }}
+                  >
+                    <FiPlus className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+
+          <div className="text-xs text-gray-500 mt-4 pt-4 border-t border-gray-100 text-left">
+            This place has a maximum of {property.max_guests || 4} guests.
+          </div>
+          <div className="flex justify-end pt-2">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsGuestPickerOpen(false);
+              }}
+              className="text-sm font-semibold underline text-black hover:text-gray-700"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Get search params from URL (for when coming from search/properties pages or direct host links)
   const searchParams = new URLSearchParams(location.search);
-  const urlCheckIn = searchParams.get('check_in_date');
-  const urlCheckOut = searchParams.get('check_out_date');
+  const urlCheckIn = searchParams.get('checkin') || searchParams.get('checkIn') || searchParams.get('check_in_date');
+  const urlCheckOut = searchParams.get('checkout') || searchParams.get('checkOut') || searchParams.get('check_out_date');
   const urlGuests = searchParams.get('guests');
+  const isDirectLink = searchParams.get('direct') === 'true';
+  const urlRoomId = searchParams.get('hms_room_id');
+
+  const [selectedRoomId, setSelectedRoomId] = useState(urlRoomId ? parseInt(urlRoomId) : null);
+  const [selectedRoomGallery, setSelectedRoomGallery] = useState(null);
+
+  // Monthly booking state (initialized from URL params if coming from monthly search)
+  const [bookingMode, setBookingMode] = useState(
+    searchParams.get('booking_type') === 'monthly' ? 'monthly' : 'short_stay'
+  );
+  const [monthlyMoveInDate, setMonthlyMoveInDate] = useState(searchParams.get('move_in_date') || null);
+  const [durationMonths, setDurationMonths] = useState(
+    searchParams.get('duration_months') ? parseInt(searchParams.get('duration_months')) : 1
+  );
+  const [isMonthlyDatePickerOpen, setIsMonthlyDatePickerOpen] = useState(false);
+  const [monthlyDurationMode, setMonthlyDurationMode] = useState('quick');
+  const monthlyDatePickerRef = useRef(null);
+  const monthlyDatePickerTriggerRef = useRef(null);
 
   // Helper function to format date in local timezone (YYYY-MM-DD) without timezone conversion
   const formatDateLocal = (date) => {
@@ -169,22 +326,91 @@ const PropertyDetail = () => {
 
 
 
-  // Fetch property details
+  // Fetch property details — pass the full slug so backend can do SEO-friendly lookup;
+  // sub-queries inside PropertyDetail still use the numeric id extracted above.
   const { data: property, isLoading, error } = useQuery(
-    ['property', id],
-    () => api.get(`/properties/${id}`),
+    ['property', slug, bookingData.check_in_date, bookingData.check_out_date],
+    () => api.get(`/properties/${slug}?check_in_date=${bookingData.check_in_date || ''}&check_out_date=${bookingData.check_out_date || ''}`),
     {
       select: (response) => response.data?.data?.property,
-      enabled: !!id,
+      enabled: !!slug,
+      keepPreviousData: true,
     }
   );
 
+  // Define actual numeric ID to use for sub-queries
+  const id = property?.id || urlParamId;
+
+  // SEO: Update page <title>, <meta description>, and Open Graph tags dynamically
+  React.useEffect(() => {
+    if (!property) return;
+    const siteName = settings?.site_name || 'KeyHost';
+    const title = `${property.title} — ${property.city}, ${property.state} | ${siteName}`;
+    const desc = property.description
+      ? property.description.substring(0, 160).replace(/\s+/g, ' ').trim()
+      : `Book ${property.title} in ${property.city}. ${property.bedrooms} bedrooms, up to ${property.max_guests} guests.`;
+    const img = property.images?.[0]?.image_url || '';
+    const canonical = `${window.location.origin}/property/${property.slug || slug}`;
+
+    document.title = title;
+
+    const setMeta = (name, content, attr = 'name') => {
+      let el = document.querySelector(`meta[${attr}="${name}"]`);
+      if (!el) { el = document.createElement('meta'); el.setAttribute(attr, name); document.head.appendChild(el); }
+      el.setAttribute('content', content);
+    };
+    const setLink = (rel, href) => {
+      let el = document.querySelector(`link[rel="${rel}"]`);
+      if (!el) { el = document.createElement('link'); el.setAttribute('rel', rel); document.head.appendChild(el); }
+      el.setAttribute('href', href);
+    };
+
+    setMeta('description', desc);
+    setMeta('og:title', title, 'property');
+    setMeta('og:description', desc, 'property');
+    setMeta('og:url', canonical, 'property');
+    setMeta('og:type', 'website', 'property');
+    if (img) setMeta('og:image', img, 'property');
+    setMeta('twitter:card', 'summary_large_image');
+    setMeta('twitter:title', title);
+    setMeta('twitter:description', desc);
+    if (img) setMeta('twitter:image', img);
+    setLink('canonical', canonical);
+
+    return () => {
+      document.title = siteName;
+    };
+  }, [property, settings, slug]);
+
+  // Auto-select the only room/flat unit if the property is a single unit, or pre-select room from URL query param
+  useEffect(() => {
+    if (property && property.is_hms_enabled) {
+      if (property.is_single_unit === 1 || property.is_single_unit === true) {
+        if (property.hms_rooms && property.hms_rooms.length > 0) {
+          setSelectedRoomId(property.hms_rooms[0].id);
+        }
+      } else if (urlRoomId) {
+        const roomIdInt = parseInt(urlRoomId);
+        if (property.hms_rooms?.some(r => r.id === roomIdInt)) {
+          setSelectedRoomId(roomIdInt);
+        }
+      }
+    }
+  }, [property, urlRoomId]);
+
+  // For monthly only properties, automatically set bookingMode to monthly
+  useEffect(() => {
+    if (property && property.monthly_rent_enabled && property.monthly_approved && property.monthly_stay_type === 'monthly_only') {
+      setBookingMode('monthly');
+    }
+  }, [property]);
+
   // Fetch blocked dates for calendar
   const { data: blockedDatesData } = useQuery(
-    ['blockedDates', id],
-    () => api.get(`/properties/${id}/blocked-dates`),
+    ['blockedDates', id, selectedRoomId],
+    () => api.get(`/properties/${id}/blocked-dates${selectedRoomId ? `?hms_room_id=${selectedRoomId}` : ''}`),
     {
-      select: (response) => response.data?.data?.blockedDates || [],
+      select: (response) => response.data?.data || { blockedDates: [], checkInDates: [] },
       enabled: !!id,
     }
   );
@@ -195,15 +421,31 @@ const PropertyDetail = () => {
     () => api.get(`/reviews/property/${id}?page=${reviewsPage}&limit=10`),
     {
       select: (response) => response.data?.data || { reviews: [], pagination: {} },
-      enabled: !!id,
+      enabled: reviewsInView && !!id,
     }
   );
 
-  const blockedDates = blockedDatesData || [];
+  // Build a fast lookup map: "YYYY-MM-DD" -> availability record
+  const availabilityMap = React.useMemo(() => {
+    const map = {};
+    (property?.availability_data || []).forEach(a => {
+      map[a.date] = a;
+    });
+    return map;
+  }, [property?.availability_data]);
 
-  // Function to check if a date is blocked (includes past dates and booked dates)
+  const blockedDates = blockedDatesData?.blockedDates || [];
+  const checkInDates = blockedDatesData?.checkInDates || [];
+
+  // Function to check if a date is blocked (includes past dates, booked dates, and host-blocked dates)
   const isDateBlocked = (date) => {
     if (!date) return false;
+
+    // Timezone-safe date string format: YYYY-MM-DD
+    const y = date.getFullYear();
+    const mo = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    const dateStr = `${y}-${mo}-${d}`;
 
     // Check if date is in the past (before today)
     const today = new Date();
@@ -215,9 +457,47 @@ const PropertyDetail = () => {
       return true; // Past dates are blocked
     }
 
-    // Check if date is in blocked dates list
-    const dateString = formatDateLocal(date);
-    return blockedDates.includes(dateString);
+    // Check host availability blocks from availabilityMap (is_available == 0)
+    const hostData = availabilityMap[dateStr];
+    if (hostData && Number(hostData.is_available) === 0) {
+      return true; // Host explicitly blocked this date
+    }
+
+    // Allow checking out on a day someone else checks in (only if user is selecting checkout date)
+    const isSelectingCheckout = bookingData.check_in_date && !bookingData.check_out_date;
+    if (isSelectingCheckout) {
+      const start = parseDateLocal(bookingData.check_in_date);
+      const end = new Date(date);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
+
+      // Checkout date must be after check-in date
+      if (end <= start) {
+        return true; 
+      }
+
+      // Check if there are any blocked dates between check-in (inclusive) and candidate checkout (exclusive)
+      let temp = new Date(start);
+      while (temp < end) {
+        const y = temp.getFullYear();
+        const mo = String(temp.getMonth() + 1).padStart(2, '0');
+        const d = String(temp.getDate()).padStart(2, '0');
+        const tempStr = `${y}-${mo}-${d}`;
+
+        const hostData = availabilityMap[tempStr];
+        const isHostBlocked = hostData && Number(hostData.is_available) === 0;
+        const isPast = temp < today;
+
+        if (isPast || isHostBlocked || blockedDates.includes(tempStr)) {
+          return true; // Range crosses a blocked date
+        }
+        temp.setDate(temp.getDate() + 1);
+      }
+
+      return false; // Range is clear, checkout is allowed
+    }
+
+    return blockedDates.includes(dateStr);
   };
 
   // Function to get day className for styling
@@ -226,13 +506,27 @@ const PropertyDetail = () => {
     if (isDateBlocked(date)) {
       return 'react-datepicker__day--blocked';
     }
+
+    // Timezone-safe date string format: YYYY-MM-DD
+    const y = date.getFullYear();
+    const mo = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    const dateStr = `${y}-${mo}-${d}`;
+
+    const match = availabilityMap[dateStr];
+    const hasSpecialRate = match && Number(match.is_available) === 1 && match.price &&
+      parseFloat(match.price) !== parseFloat(property?.base_price);
+
+    if (hasSpecialRate) {
+      return 'react-datepicker__day--available react-datepicker__day--special-rate';
+    }
     return 'react-datepicker__day--available';
   };
 
   // Check availability
   const { data: availability } = useQuery(
-    ['availability', id, bookingData.check_in_date, bookingData.check_out_date],
-    () => api.get(`/properties/${id}/availability?check_in_date=${bookingData.check_in_date}&check_out_date=${bookingData.check_out_date}`),
+    ['availability', id, bookingData.check_in_date, bookingData.check_out_date, selectedRoomId],
+    () => api.get(`/properties/${id}/availability?check_in_date=${bookingData.check_in_date}&check_out_date=${bookingData.check_out_date}${selectedRoomId ? `&hms_room_id=${selectedRoomId}` : ''}`),
     {
       select: (response) => response.data?.data,
       enabled: !!bookingData.check_in_date && !!bookingData.check_out_date,
@@ -256,19 +550,62 @@ const PropertyDetail = () => {
     checkFavoriteStatus();
   }, [isAuthenticated, property]);
 
+  // On-Demand iCal Sync when the user visits the property details page
+  useEffect(() => {
+    if (id) {
+      const syncExternalCalendars = async () => {
+        try {
+          await api.get(`/ical/sync-property/${id}`);
+          // Invalidate queries to fetch updated calendar availability
+          queryClient.invalidateQueries(['blockedDates', id]);
 
+          if (bookingData.check_in_date && bookingData.check_out_date) {
+            queryClient.invalidateQueries(['availability', id, bookingData.check_in_date, bookingData.check_out_date]);
+
+            // Explicitly check availability state to trigger alert
+            const availRes = await api.get(`/properties/${id}/availability?check_in_date=${bookingData.check_in_date}&check_out_date=${bookingData.check_out_date}`);
+            const isAvail = availRes.data?.data?.isAvailable;
+
+            if (isAvail === false) {
+              toast.error('Already/just booked on another platform, please choose another date/property');
+              setBookingData(prev => ({ ...prev, check_in_date: null, check_out_date: null }));
+            }
+          }
+        } catch (error) {
+          console.error('Failed to sync iCal on demand:', error);
+        }
+      };
+
+      syncExternalCalendars();
+    }
+  }, [id]); // Only run once per property load
 
   // Scroll to top when property ID changes or component mounts
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, [id]);
 
-  // Track property view
+  // Track property view and handle direct booking logic
   useEffect(() => {
     if (property) {
       addToRecentlyViewed(property);
+
+      // If it's a direct link from a host
+      if (isDirectLink) {
+        // 1. If not authenticated, force login
+        if (!isAuthenticated) {
+          setAuthModalMode('login');
+          setAuthModalOpen(true);
+          toast.info('Please login to complete your booking');
+        } else {
+          // 2. If authenticated, scroll to booking section
+          setTimeout(() => {
+            scrollToSection('reserve');
+          }, 800);
+        }
+      }
     }
-  }, [property]);
+  }, [property, isDirectLink, isAuthenticated]);
 
   useEffect(() => {
     if (!property) return;
@@ -333,12 +670,20 @@ const PropertyDetail = () => {
         !guestPickerTriggerRef.current.contains(event.target)) {
         setIsGuestPickerOpen(false);
       }
+
+      if (isMonthlyDatePickerOpen &&
+        monthlyDatePickerRef.current &&
+        !monthlyDatePickerRef.current.contains(event.target) &&
+        monthlyDatePickerTriggerRef.current &&
+        !monthlyDatePickerTriggerRef.current.contains(event.target)) {
+        setIsMonthlyDatePickerOpen(false);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [isDatePickerOpen, isGuestPickerOpen]);
+  }, [isDatePickerOpen, isGuestPickerOpen, isMonthlyDatePickerOpen]);
 
   // Wrapper for format compatibility
   const formatDate = (dateString) => {
@@ -349,53 +694,151 @@ const PropertyDetail = () => {
   };
 
   const handleBookingSubmit = (e) => {
-    e.preventDefault();
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
+
+    if (property.is_hms_enabled && !selectedRoomId) {
+      toast.error('Please select a room before reserving');
+      scrollToSection('hms-rooms');
+      return;
+    }
+
+    let bookingType = 'short_stay';
+    let checkIn = bookingData.check_in_date;
+    let checkOut = bookingData.check_out_date;
+    let monthsCount = 0;
+    let extraDays = 0;
+
+    // Monthly booking navigation/resolution
+    if (bookingMode === 'monthly' && property.monthly_rent_enabled && property.monthly_approved) {
+      bookingType = 'monthly';
+      if (monthlyDurationMode === 'quick') {
+        if (!monthlyMoveInDate) {
+          toast.error('Please select a move-in date');
+          scrollToSection('reserve');
+          return;
+        }
+        checkIn = monthlyMoveInDate;
+        checkOut = calculateMonthlyCheckout();
+        monthsCount = durationMonths;
+        extraDays = 0;
+      } else {
+        // Custom range
+        if (!bookingData.check_in_date || !bookingData.check_out_date) {
+          toast.error('Please select check-in and checkout dates');
+          scrollToSection('reserve');
+          return;
+        }
+        const checkInD = parseDateLocal(bookingData.check_in_date);
+        const checkOutD = parseDateLocal(bookingData.check_out_date);
+        const nights = Math.ceil((checkOutD - checkInD) / (1000 * 60 * 60 * 24));
+        const minNights = property.monthly_min_stay_nights || 30;
+        if (nights < minNights) {
+          toast.error(`Minimum stay of ${minNights} nights is required for monthly booking`);
+          return;
+        }
+        checkIn = bookingData.check_in_date;
+        checkOut = bookingData.check_out_date;
+        monthsCount = Math.floor(nights / 30);
+        extraDays = nights % 30;
+      }
+    } else {
+      // standard stay check
+      const checkInD = parseDateLocal(bookingData.check_in_date);
+      const checkOutD = parseDateLocal(bookingData.check_out_date);
+      const nights = checkInD && checkOutD ? Math.ceil((checkOutD - checkInD) / (1000 * 60 * 60 * 24)) : 0;
+      if (nights > 0 && nights < property.minimum_stay) {
+        toast.error(`Minimum ${property.minimum_stay} nights required`);
+        return;
+      }
+    }
 
     if (!isAuthenticated) {
-      // Store booking data in localStorage before redirecting to login
-      // Only store essential property fields to avoid serialization issues
+      // Store booking data in localStorage so AuthModal's handlePostAuth can redirect after login
       const propertyData = property ? {
-        id: property.id,
-        title: property.title,
-        base_price: property.base_price,
-        max_guests: property.max_guests,
-        bedrooms: property.bedrooms,
-        bathrooms: property.bathrooms,
-        city: property.city,
-        state: property.state,
-        address: property.address,
+        ...property,
         main_image: property.main_image || property.images?.[0] || null
       } : null;
 
       const pendingBookingData = {
         property_id: id,
-        check_in_date: bookingData.check_in_date,
-        check_out_date: bookingData.check_out_date,
+        hms_room_id: selectedRoomId,
+        check_in_date: checkIn,
+        check_out_date: checkOut,
         number_of_guests: bookingData.number_of_guests,
         number_of_children: bookingData.number_of_children || 0,
         number_of_infants: bookingData.number_of_infants || 0,
         special_requests: bookingData.special_requests || '',
-        property: propertyData
+        booking_type: bookingType,
+        months_count: monthsCount,
+        extra_days: extraDays,
+        property: propertyData,
+        customPrice: searchParams.get('customPrice') ? parseFloat(searchParams.get('customPrice')) : null
       };
 
-      console.log('Storing pending booking data:', pendingBookingData);
       localStorage.setItem('pendingBooking', JSON.stringify(pendingBookingData));
-      navigate('/login', { state: { from: `/property/${id}`, bookingIntent: true } });
+
+      // Open auth modal instead of navigating to /login page
+      setAuthModalMode('login');
+      setAuthModalOpen(true);
+      return;
+    }
+
+    // Authenticated flow
+    if (bookingType === 'monthly') {
+      const mParams = new URLSearchParams();
+      mParams.set('booking_type', 'monthly');
+      mParams.set('check_in_date', checkIn);
+      mParams.set('check_out_date', checkOut);
+      mParams.set('duration_months', monthsCount.toString());
+      if (extraDays > 0) mParams.set('extra_days', extraDays.toString());
+      if (bookingData.number_of_guests) mParams.set('guests', bookingData.number_of_guests.toString());
+      if (selectedRoomId) mParams.set('hms_room_id', selectedRoomId.toString());
+
+      navigate(`/guest/booking/new/${id}?${mParams.toString()}`, {
+        state: {
+          bookingData: {
+            ...bookingData,
+            hms_room_id: selectedRoomId,
+            check_in_date: checkIn,
+            check_out_date: checkOut,
+            booking_type: 'monthly',
+            months_count: monthsCount,
+            extra_days: extraDays
+          },
+          property
+        }
+      });
       return;
     }
 
     // Navigate to new booking page with property and booking data, also pass URL params
     const params = new URLSearchParams();
-    if (bookingData.check_in_date) params.set('check_in_date', bookingData.check_in_date);
-    if (bookingData.check_out_date) params.set('check_out_date', bookingData.check_out_date);
+    if (checkIn) params.set('check_in_date', checkIn);
+    if (checkOut) params.set('check_out_date', checkOut);
     if (bookingData.number_of_guests) params.set('guests', bookingData.number_of_guests.toString());
+    if (selectedRoomId) params.set('hms_room_id', selectedRoomId.toString());
+    const customPrice = searchParams.get('customPrice');
+    if (customPrice) params.set('customPrice', customPrice);
     const queryString = params.toString();
-    navigate(`/guest/booking/new/${id}${queryString ? `?${queryString}` : ''}`, { state: { bookingData, property } });
+    navigate(`/guest/booking/new/${id}${queryString ? `?${queryString}` : ''}`, { 
+      state: { 
+        bookingData: { 
+          ...bookingData, 
+          hms_room_id: selectedRoomId,
+          check_in_date: checkIn,
+          check_out_date: checkOut
+        }, 
+        property 
+      } 
+    });
   };
 
   const toggleFavorite = async () => {
     if (!isAuthenticated) {
-      navigate('/login');
+      setAuthModalMode('login');
+      setAuthModalOpen(true);
       return;
     }
 
@@ -421,7 +864,43 @@ const PropertyDetail = () => {
     return 0;
   };
 
+  // Helper: get special price for a date string (YYYY-MM-DD), or base_price
+  // Uses availabilityMap built from property.availability_data
+  const getDateRate = (dateStr) => {
+    const match = availabilityMap[dateStr];
+    if (match && Number(match.is_available) === 1 && match.price) return parseFloat(match.price);
+
+    // If HMS is enabled and a room is selected, use room price as base
+    if (property.is_hms_enabled && selectedRoomId) {
+      const room = property.hms_rooms?.find(r => r.id === selectedRoomId);
+      if (room) return parseFloat(room.price) || 0;
+    }
+
+    return parseFloat(property?.base_price) || 0;
+  };
+
+  // Sum up night-by-night prices with timezone-safe date string generation
+  const calculateBasePrice = () => {
+    if (!property || !bookingData.check_in_date || !bookingData.check_out_date) return 0;
+    const checkIn = parseDateLocal(bookingData.check_in_date);
+    const checkOut = parseDateLocal(bookingData.check_out_date);
+    let total = 0;
+    const current = new Date(checkIn);
+    while (current < checkOut) {
+      const y = current.getFullYear();
+      const mo = String(current.getMonth() + 1).padStart(2, '0');
+      const d = String(current.getDate()).padStart(2, '0');
+      total += getDateRate(`${y}-${mo}-${d}`);
+      current.setDate(current.getDate() + 1);
+    }
+    return total;
+  };
+
+
   const calculateTotal = () => {
+    const customPrice = parseFloat(searchParams.get('customPrice')) || null;
+    if (customPrice && customPrice > 0) return customPrice;
+
     if (!property || !bookingData.check_in_date || !bookingData.check_out_date) {
       return 0;
     }
@@ -429,19 +908,109 @@ const PropertyDetail = () => {
     const nights = calculateNights();
     if (nights === 0) return 0;
 
-    const basePricePerNight = parseFloat(property.base_price) || 0;
-    const basePrice = basePricePerNight * nights;
+    const basePrice = calculateBasePrice();
     const cleaningFee = parseFloat(property.cleaning_fee) || 0;
     const securityDeposit = parseFloat(property.security_deposit) || 0;
     const extraGuestFee = bookingData.number_of_guests > 1 ? (bookingData.number_of_guests - 1) * (parseFloat(property.extra_guest_fee) || 0) : 0;
-    const serviceFee = basePrice * 0.1; // 10% service fee
-    const taxAmount = basePrice * 0.15; // 15% tax
+
+    const serviceFeePercent = parseFloat(settings?.service_fee_percentage || 0) / 100;
+    const taxPercent = parseFloat(settings?.tax_percentage || 0) / 100;
+
+    const serviceFee = basePrice * serviceFeePercent;
+    const taxAmount = basePrice * taxPercent;
 
     const total = basePrice + cleaningFee + securityDeposit + extraGuestFee + serviceFee + taxAmount;
     return isNaN(total) ? 0 : total;
   };
 
+
+
+  // Monthly booking helpers
+  const calculateMonthlyCheckout = () => {
+    if (!monthlyMoveInDate) return null;
+    const moveIn = parseDateLocal(monthlyMoveInDate);
+    const checkout = new Date(moveIn);
+    checkout.setMonth(checkout.getMonth() + parseInt(durationMonths));
+    return formatDateLocal(checkout);
+  };
+
+  const calculateMonthlyPricing = () => {
+    if (!property) return null;
+    const monthlyRate = parseFloat(property.monthly_rent_amount) || 0;
+    if (!monthlyRate) return null;
+
+    let nights = 0;
+    let totalMonths = 0;
+    let extraDays = 0;
+
+    if (bookingMode === 'monthly' && monthlyDurationMode === 'quick') {
+      if (!monthlyMoveInDate) return null;
+      const moveIn = parseDateLocal(monthlyMoveInDate);
+      const checkoutDateStr = calculateMonthlyCheckout();
+      if (!checkoutDateStr) return null;
+      const checkout = parseDateLocal(checkoutDateStr);
+      nights = Math.ceil((checkout - moveIn) / (1000 * 60 * 60 * 24));
+      totalMonths = parseInt(durationMonths) || 1;
+      const totalDays = nights;
+      extraDays = Math.max(0, totalDays - totalMonths * 30);
+    } else {
+      // Custom range or default fallback
+      if (!bookingData.check_in_date || !bookingData.check_out_date) return null;
+      const checkIn = parseDateLocal(bookingData.check_in_date);
+      const checkOut = parseDateLocal(bookingData.check_out_date);
+      nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
+      totalMonths = Math.floor(nights / 30);
+      extraDays = nights % 30;
+    }
+
+    const baseMonthlyTotal = totalMonths * monthlyRate;
+    const extraDayAmount = extraDays > 0 ? extraDays * (monthlyRate / 30) : 0;
+    const securityDeposit = parseFloat(property.monthly_security_deposit) || 0;
+    const advancePayment = parseFloat(property.monthly_advance_amount) || 0;
+    const total = baseMonthlyTotal + extraDayAmount + securityDeposit;
+
+    return {
+      nights,
+      totalMonths,
+      monthlyRate,
+      baseMonthlyTotal,
+      extraDays,
+      extraDayAmount,
+      securityDeposit,
+      advancePayment,
+      remaining: Math.max(0, total - advancePayment),
+      total
+    };
+  };
+
+  // Render each day cell with special price below the number
+  // Use date.getFullYear/getMonth/getDate (local time) to avoid UTC timezone drift
+  const renderDayContents = (day, date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    const dateStr = `${y}-${m}-${d}`;
+
+    const isBlocked = isDateBlocked(date);
+    const match = availabilityMap[dateStr];
+    const hasSpecialRate = match && Number(match.is_available) === 1 && match.price &&
+      parseFloat(match.price) !== parseFloat(property?.base_price);
+    const specialPrice = hasSpecialRate ? parseFloat(match.price) : null;
+
+    return (
+      <div className="day-cell-wrapper" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, gap: '1px', paddingTop: '3px' }}>
+        <span style={{ fontSize: '14px', fontWeight: specialPrice && !isBlocked ? 750 : 500, color: specialPrice && !isBlocked ? '#4A90E2' : 'inherit' }}>{day}</span>
+        {!isBlocked && specialPrice !== null && (
+          <span style={{ fontSize: '9px', color: '#4A90E2', fontWeight: 750, lineHeight: 1, whiteSpace: 'nowrap' }}>
+            ৳{Math.round(specialPrice).toLocaleString()}
+          </span>
+        )}
+      </div>
+    );
+  };
+
   const formatStickyDateRange = () => {
+
     if (!bookingData.check_in_date || !bookingData.check_out_date) return '';
     const checkIn = parseDateLocal(bookingData.check_in_date);
     const checkOut = parseDateLocal(bookingData.check_out_date);
@@ -577,6 +1146,17 @@ const PropertyDetail = () => {
   };
 
   const handleStickyBookingAction = () => {
+    // Monthly mode
+    if (bookingMode === 'monthly' && property?.monthly_rent_enabled && property?.monthly_approved) {
+      if (monthlyMoveInDate) {
+        handleBookingSubmit({ preventDefault: () => {} });
+      } else {
+        scrollToSection('reserve');
+        window.setTimeout(() => setIsMonthlyDatePickerOpen(true), 350);
+      }
+      return;
+    }
+
     const hasDates = Boolean(bookingData.check_in_date && bookingData.check_out_date);
     if (hasDates) {
       handleBookingSubmit({ preventDefault: () => { } });
@@ -592,7 +1172,7 @@ const PropertyDetail = () => {
     }, 350);
   };
 
-  if (isLoading) {
+  if (isLoading && !property) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <LoadingSpinner size="large" />
@@ -601,6 +1181,11 @@ const PropertyDetail = () => {
   }
 
   if (error || !property) {
+    // If we've got an ID but the property is not found, remove it from recently viewed
+    if (id) {
+      removeFromRecentlyViewed(parseInt(id));
+    }
+
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -629,16 +1214,25 @@ const PropertyDetail = () => {
       )}
       {/* Modern Hero Gallery - Responsive 2 Column Layout */}
       <div className="relative property-hero-gallery">
+        {/* Back Button - Mobile */}
+        <button
+          onClick={() => {
+            // window.history.length <= 2 means no meaningful prior page in session
+            // (1 = current page only; 2 = one page before current which may be a new tab start)
+            if (window.history.length > 2) {
+              navigate(-1);
+            } else {
+              navigate('/');
+            }
+          }}
+          className="md:hidden absolute top-4 left-4 z-50 p-3 bg-white/90 hover:bg-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 backdrop-blur-sm"
+          aria-label="Go back"
+        >
+          <FiChevronLeft className="w-5 h-5 text-gray-900" />
+        </button>
+
         {property.images && property.images.length > 0 ? (
-          <div className="h-[50vh] md:h-[70vh] relative overflow-hidden">
-            {/* Back Button - Mobile */}
-            <button
-              onClick={() => navigate(-1)}
-              className="md:hidden absolute top-4 left-4 z-10 p-3 bg-white/90 hover:bg-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 backdrop-blur-sm"
-              aria-label="Go back"
-            >
-              <FiChevronLeft className="w-5 h-5 text-gray-900" />
-            </button>
+          <div className="h-[50vh] md:h-[70vh] relative overflow-hidden md:rounded-2xl">
             {/* Mobile: Image Slider */}
             <div className="md:hidden h-full mt-[3px]">
               <div
@@ -683,11 +1277,11 @@ const PropertyDetail = () => {
                 }}
               >
                 <img
-                  src={property.images[0]?.image_url}
+                  src={getImageUrl(property.images[0]?.image_url)}
                   alt={property.title}
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   onError={(e) => {
-                    e.target.src = property.images[0]?.image_url || '';
+                    e.target.src = getImageUrl(property.images[0]?.image_url) || '';
                   }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
@@ -711,8 +1305,6 @@ const PropertyDetail = () => {
                     actualImageIndex = cycleIndex;
                   }
 
-                  const gridIndex = position - 1; // 0, 1, 2, 3 for array index
-
                   return (
                     <div
                       key={`right-photo-${position}`}
@@ -726,41 +1318,41 @@ const PropertyDetail = () => {
                       {image && image.image_url && (
                         <>
                           <img
-                            src={image.image_url}
-                            alt={`${property.title} photo ${position + 1}`}
+                            src={getImageUrl(image.image_url)}
+                            alt={`${property.title} ${position + 1}`}
                             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                             loading="lazy"
                             onError={(e) => {
                               if (property.images[0] && property.images[0].image_url) {
-                                e.target.src = property.images[0].image_url;
+                                e.target.src = getImageUrl(property.images[0].image_url);
                               }
                             }}
                           />
                           <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                         </>
                       )}
-
-                      {/* View More Photos Button - Only on bottom right photo (4th photo) */}
-                      {gridIndex === 3 && property.images.length > 5 && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 group-hover:bg-black/50 transition-all duration-300 z-10">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              // Start from 5th photo (index 4) when opening modal
-                              setSelectedImage(4);
-                              setShowImageModal(true);
-                            }}
-                            className="px-4 py-2 bg-white text-gray-900 font-medium rounded-lg shadow-lg hover:bg-gray-100 transition-all duration-200 text-sm"
-                          >
-                            View more photos
-                          </button>
-                        </div>
-                      )}
                     </div>
                   );
                 })}
               </div>
             </div>
+
+            {/* View All Photos Button for Desktop */}
+            {property.images.length > 0 && (
+              <div className="hidden md:block absolute bottom-4 right-4 z-10 pointer-events-auto">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedImage(0);
+                    setShowImageModal(true);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-white text-gray-950 font-semibold rounded-lg shadow-md hover:bg-gray-50 border border-gray-300 hover:shadow-lg transition-all duration-200 text-sm"
+                >
+                  <FiGrid className="w-4 h-4" />
+                  Show all photos
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="h-[50vh] md:h-[70vh] bg-gray-100 flex items-center justify-center">
@@ -772,7 +1364,7 @@ const PropertyDetail = () => {
         )}
 
         {/* Action Buttons */}
-        <div className="absolute top-4 right-4 flex space-x-2 z-10">
+        <div className="absolute top-4 right-4 flex space-x-2 z-50">
           <button
             onClick={toggleFavorite}
             className="p-3 bg-white/90 hover:bg-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 backdrop-blur-sm"
@@ -781,15 +1373,7 @@ const PropertyDetail = () => {
           </button>
           <button
             className="p-3 bg-white/90 hover:bg-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 backdrop-blur-sm"
-            onClick={() => {
-              if (navigator.share) {
-                navigator.share({
-                  title: property.title,
-                  text: property.description,
-                  url: window.location.href
-                });
-              }
-            }}
+            onClick={() => setShowShareModal(true)}
           >
             <FiShare2 className="w-5 h-5 text-gray-600" />
           </button>
@@ -820,9 +1404,10 @@ const PropertyDetail = () => {
                   }}
                 >
                   <img
-                    src={image.image_url}
+                    src={getImageUrl(image.image_url)}
                     alt={`${property.title} ${index + 1}`}
                     className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105"
+                    loading="lazy"
                   />
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all duration-300" />
                 </div>
@@ -903,8 +1488,8 @@ const PropertyDetail = () => {
                     }}
                   >
                     <img
-                      src={image.image_url}
-                      alt={`${property.title} photo ${index + 1}`}
+                      src={getImageUrl(image.image_url)}
+                      alt={`${property.title} ${index + 1}`}
                       className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
                       loading="lazy"
                     />
@@ -922,7 +1507,7 @@ const PropertyDetail = () => {
 
       {/* Sticky Tab Navigation - Desktop Only */}
       {showStickyTabs && (
-        <div className="hidden md:block fixed top-16 left-0 right-0 z-40 bg-white border-b border-gray-200 shadow-sm">
+        <div className="hidden md:block fixed top-[80px] left-0 right-0 z-30 bg-white border-b border-gray-200 shadow-sm">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-8 overflow-x-auto">
@@ -980,7 +1565,7 @@ const PropertyDetail = () => {
                   {bookingData.check_in_date && bookingData.check_out_date ? (
                     <div className="text-sm text-gray-900 whitespace-nowrap flex flex-col items-end">
                       <div className="font-bold text-red-600">
-                        BDT {(calculateTotal() || 0).toFixed(0)}
+                        BDT {formatPrice(calculateTotal() || 0)}
                       </div>
                       <div className="text-gray-600 text-xs">
                         {formatStickyDateRange()} · {calculateNights()} night{calculateNights() !== 1 ? 's' : ''}
@@ -1019,16 +1604,24 @@ const PropertyDetail = () => {
                 {sanitizeText(property.title)}
               </h1>
 
-              {/* Location and Review - Same Line */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center text-gray-600">
-                  <FiMapPin className="mr-2 text-gray-400" />
+              {/* Location and Review - Same Line on Desktop, Two Lines on Mobile */}
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-4">
+                <div className="flex items-start text-gray-600 mt-1">
+                  <FiMapPin className="mr-2 mt-0.5 min-w-[16px] text-gray-400" />
                   <span className="text-sm">{sanitizeText(property.address)}, {sanitizeText(property.city)}, {sanitizeText(property.state)}</span>
                 </div>
-                <div className="flex items-center">
-                  <FiStar className="text-yellow-400 mr-1" />
-                  <span className="font-medium">{property.average_rating || 'New'}</span>
-                  <span className="text-gray-500 ml-1">({property.total_reviews} reviews)</span>
+                <div className="flex items-center gap-1 shrink-0">
+                  {property.total_reviews > 0 ? (
+                    <>
+                      <div className="flex items-center">
+                        <FiStar className="text-yellow-400 mr-1 min-w-[16px] fill-current" />
+                        <span className="font-semibold">{parseFloat(property.average_rating).toFixed(1)}</span>
+                      </div>
+                      <span className="text-gray-500 md:ml-1 text-sm whitespace-nowrap">({property.total_reviews} verified {property.total_reviews === 1 ? 'review' : 'reviews'})</span>
+                    </>
+                  ) : (
+                    <span className="text-sm text-gray-400 font-medium">No reviews yet</span>
+                  )}
                 </div>
               </div>
 
@@ -1061,6 +1654,7 @@ const PropertyDetail = () => {
                       src={property.owner_profile_image}
                       alt={`${property.owner_first_name} ${property.owner_last_name}`}
                       className="w-14 h-14 rounded-full object-cover"
+                      loading="lazy"
                     />
                   ) : (
                     <div className="w-14 h-14 bg-[#222222] rounded-full flex items-center justify-center text-white text-xl font-bold">
@@ -1076,8 +1670,13 @@ const PropertyDetail = () => {
                   )}
                 </div>
                 <div>
-                  <h3 className="font-bold text-[#222222] text-base">
+                  <h3 className="font-bold text-[#222222] text-base flex items-center gap-1.5">
                     Hosted by {property.owner_first_name}
+                    {!!property.owner_verified && (
+                      <svg className="w-4 h-4 text-blue-500 fill-current flex-shrink-0" viewBox="0 0 24 24" title="Verified Host">
+                        <path d="M23 12l-2.44-2.79.34-3.69-3.61-.82-1.89-3.2L12 2.96 8.6 1.5 6.71 4.7 3.1 5.52l.34 3.7L1 12l2.44 2.79-.34 3.7 3.61.82 1.89 3.2 3.4-1.46 3.4 1.46 1.89-3.2 3.61-.82-.34-3.7L23 12zm-13 5l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z" />
+                      </svg>
+                    )}
                   </h3>
                   <div className="text-gray-500 text-sm">
                     {property.owner_is_superhost ? 'Superhost · ' : ''}
@@ -1106,6 +1705,148 @@ const PropertyDetail = () => {
                 </button>
               )}
             </div>
+
+            {/* HMS Room Selection */}
+            {property.is_hms_enabled && !(property.is_single_unit === 1 || property.is_single_unit === true) && property.hms_rooms && property.hms_rooms.length > 0 && (
+              <div className="border-t pt-8" id="section-hms-rooms">
+                <h3 className="text-xl font-semibold mb-6 flex items-center">
+                  <FiPackage className="mr-2 text-[#E41D57]" />
+                  Select your room
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                  {(property.hms_rooms || [])
+                    .filter(room => !bookingData.check_in_date || !bookingData.check_out_date || room.is_available)
+                    .map((room) => {
+                      const roomImages = typeof room.images === 'string' ? JSON.parse(room.images) : (room.images || []);
+                      const coverImage = roomImages[0];
+                      const displayImage = coverImage ? getImageUrl(coverImage) : null;
+
+                      return (
+                        <div
+                          key={room.id}
+                          onClick={() => setSelectedRoomId(room.id)}
+                          className={`cursor-pointer overflow-hidden rounded-xl border-2 transition-all flex flex-col ${selectedRoomId === room.id
+                            ? 'border-[#E41D57] bg-rose-50 shadow-md transform scale-[1.01]'
+                            : 'border-gray-100 hover:border-gray-200 bg-white'
+                            }`}
+                        >
+                          {/* Room Photo Area */}
+                          <div className="w-full h-36 relative bg-gray-100 flex-shrink-0">
+                            {displayImage ? (
+                              <img
+                                src={displayImage}
+                                alt={`Room ${room.room_number}`}
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-gray-400">
+                                <FiHome className="w-6 h-6" />
+                              </div>
+                            )}
+
+                            {roomImages.length > 1 && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedRoomGallery(room);
+                                }}
+                                className="absolute bottom-1.5 right-1.5 bg-white/90 backdrop-blur-sm hover:bg-white text-gray-900 px-1.5 py-0.5 rounded text-[9px] font-bold shadow-sm transition flex items-center gap-1"
+                              >
+                                <FiSearch size={10} />
+                                +{roomImages.length - 1}
+                              </button>
+                            )}
+
+                            <div className="absolute top-1.5 left-1.5">
+                              <span className="bg-black/60 backdrop-blur-sm text-white px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider">
+                                {room.room_type}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Room Info Area */}
+                          <div className="p-3 flex-1 flex flex-col">
+                            <div className="mb-2">
+                              <div className="flex justify-between items-start">
+                                <span className="text-sm font-bold text-gray-900">Room {room.room_number}</span>
+                                {selectedRoomId === room.id && (
+                                  <FiCheck className="text-[#E41D57] w-4 h-4" />
+                                )}
+                              </div>
+                              <div className="text-gray-500 text-[10px]">
+                                {room.floor ? `${room.floor} Floor` : 'Standard'}
+                              </div>
+                            </div>
+
+                            {room.features && room.features.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mb-3">
+                                {(typeof room.features === 'string' ? JSON.parse(room.features) : room.features).slice(0, 2).map((feature, idx) => (
+                                  <span key={idx} className="text-[8px] bg-gray-50 border border-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                                    {feature}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
+                            <div className="mt-auto flex items-center justify-between pt-2 border-t border-gray-50">
+                              <div className="text-[#E41D57] font-bold text-sm">
+                                ৳{formatPrice(room.price)}
+                              </div>
+                              <button
+                                className={`px-2 py-1 rounded text-[9px] font-bold transition-colors ${selectedRoomId === room.id
+                                  ? 'bg-[#E41D57] text-white'
+                                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                  }`}
+                              >
+                                {selectedRoomId === room.id ? 'Selected' : 'Choose'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+
+            {/* Room Gallery Modal */}
+            {selectedRoomGallery && (
+              <div
+                className="fixed inset-0 bg-black/95 z-[200] flex flex-col backdrop-blur-sm overflow-hidden animate-fadeIn"
+                onClick={() => setSelectedRoomGallery(null)}
+              >
+                <div className="flex items-center justify-between p-6">
+                  <h2 className="text-white text-xl font-semibold">
+                    Room {selectedRoomGallery.room_number} Gallery
+                  </h2>
+                  <button
+                    onClick={() => setSelectedRoomGallery(null)}
+                    className="p-3 bg-white hover:bg-gray-100 rounded-full text-gray-900 transition-all shadow-lg"
+                  >
+                    <FiX className="w-6 h-6" />
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto px-4 pb-8" onClick={(e) => e.stopPropagation()}>
+                  <div className="max-w-4xl mx-auto space-y-4">
+                    {(typeof selectedRoomGallery.images === 'string' ? JSON.parse(selectedRoomGallery.images) : selectedRoomGallery.images).map((img, idx) => {
+                      const fullUrl = getImageUrl(img);
+                      return (
+                        <div key={idx} className="rounded-xl overflow-hidden shadow-2xl bg-gray-900">
+                          <img
+                            src={fullUrl}
+                            alt={`Room ${selectedRoomGallery.room_number} view ${idx + 1}`}
+                            className="w-full h-auto object-contain max-h-[80vh] mx-auto"
+                            loading="lazy"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Amenities */}
             <div className="border-t pt-4 md:pt-8" id="section-amenities">
@@ -1153,48 +1894,300 @@ const PropertyDetail = () => {
               </div>
             )}
 
+            {/* Cancellation Policy Showcase */}
+            <div className="border-t pt-8" id="section-cancellation">
+              <h3 className="text-xl font-semibold mb-6">Cancellation policy</h3>
+              <div className="flex items-start gap-4 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                <div className={`p-3 rounded-full ${property.is_non_refundable ? 'bg-rose-100 text-rose-600' : 'bg-green-100 text-green-600'}`}>
+                  <FiShield className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-gray-900">
+                    {property.is_non_refundable ? 'Non-refundable booking' : 'Standard Flexible Policy'}
+                  </h4>
+                  <p className="text-gray-600 text-sm mt-1 leading-relaxed">
+                    {property.is_non_refundable
+                      ? 'This property is marked as non-refundable. No refund will be issued for cancellations at any time.'
+                      : 'Free cancellation up to 48 hours before check-in. Cancellations made within 48 hours of check-in are non-refundable.'}
+                  </p>
+                  <a href="/refund-policy" target="_blank" className="text-sm font-bold text-gray-900 underline mt-3 inline-block hover:text-gray-700">
+                    Learn more
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {/* Booking & Payment Policy (Trust Signals) */}
+            <div className="border-t pt-8 pb-4" id="section-payment-policy">
+              <h3 className="text-xl font-semibold mb-6">Booking & payment terms</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex items-start gap-4 p-4 rounded-xl border border-gray-200">
+                  <div className="mt-0.5">
+                    {property.owner_auto_accept ? (
+                      <FiZap className="w-5 h-5 text-amber-500" />
+                    ) : (
+                      <FiClock className="w-5 h-5 text-blue-500" />
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-gray-900 text-sm">
+                      {property.owner_auto_accept ? 'Instant Booking' : 'Manual Approval Required'}
+                    </h4>
+                    <p className="text-gray-600 text-xs mt-1 leading-relaxed">
+                      {property.owner_auto_accept
+                        ? 'Your booking is confirmed instantly. No need to wait for host approval.'
+                        : 'The host must approve your booking request within 24 hours before it is confirmed.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-4 p-4 rounded-xl border border-gray-200">
+                  <div className="mt-0.5">
+                    <FiLock className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-gray-900 text-sm">Secure Payment</h4>
+                    <p className="text-gray-600 text-xs mt-1 leading-relaxed">
+                      Once confirmed, you will have {settings?.payment_time_limit_hours || 24} hours to complete your payment securely. Unpaid bookings are automatically cancelled.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
           </div>
 
           {/* Booking Sidebar - Contact Host Style */}
           <div className="hidden md:block lg:col-span-1" id="section-reserve" ref={reserveSectionRef}>
             <div className="sticky" style={{ top: showStickyTabs ? 150 : 32 }}>
               <div className="bg-white border text-center border-gray-200 rounded-xl shadow-xl p-6 property-detail-booking-form">
-                <div className="flex gap-4 mb-6">
+                <div className="flex gap-4 mb-4">
                   <div className="flex-1 text-left">
-                    <div className="text-2xl font-bold text-[#222222] mb-1">
-                      {calculateNights() > 0 ? `BDT ${calculateTotal()}` : `BDT ${property.base_price}`}
-                      <span className="text-base font-normal text-gray-500"> {calculateNights() > 0 ? `for ${calculateNights()} nights` : ' per night'}</span>
+                    <div className="text-xl font-bold text-[#222222] mb-1">
+                      {bookingMode === 'monthly' ? (
+                        <>
+                          BDT {formatPrice(property.monthly_rent_amount)}
+                          <span className="text-sm font-normal text-gray-500 ml-1">/ month</span>
+                        </>
+                      ) : calculateNights() > 0 ? (
+                        <>
+                          BDT {formatPrice(calculateTotal())}
+                          <span className="text-sm font-normal text-gray-500 ml-1">for {calculateNights()} night{calculateNights() !== 1 ? 's' : ''}</span>
+                        </>
+                      ) : (
+                        <>
+                          {property.is_hms_enabled ? (
+                            selectedRoomId ? (
+                              <>
+                                BDT {formatPrice(property.hms_rooms.find(r => r.id === selectedRoomId)?.price || 0)}
+                                <span className="text-sm font-normal text-gray-500 ml-1">per night</span>
+                              </>
+                            ) : (
+                              <>
+                                <div className="text-xs text-gray-400 font-normal mb-1">Starts from</div>
+                                BDT {formatPrice(Math.min(...property.hms_rooms.map(r => parseFloat(r.price))))}
+                                <span className="mx-1 text-gray-300">-</span>
+                                {formatPrice(Math.max(...property.hms_rooms.map(r => parseFloat(r.price))))}
+                                <span className="text-sm font-normal text-gray-500 ml-1">per night</span>
+                              </>
+                            )
+                          ) : (
+                            <>
+                              BDT {formatPrice(property.base_price)}
+                              <span className="text-sm font-normal text-gray-500 ml-1">per night</span>
+                            </>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
 
+                {/* Nightly vs Monthly Switcher (shown only if both available, i.e., monthly approved/enabled and not monthly_only) */}
+                {!!property.monthly_rent_enabled && !!property.monthly_approved && property.monthly_stay_type !== 'monthly_only' && (
+                  <div className="flex border border-gray-200 mb-4 bg-gray-50 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setBookingMode('short_stay')}
+                      className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors ${bookingMode === 'short_stay' ? 'bg-white text-gray-900 shadow-sm border border-gray-200/50' : 'text-gray-500 hover:text-gray-800'}`}
+                    >
+                      Nightly Stay
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBookingMode('monthly')}
+                      className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors ${bookingMode === 'monthly' ? 'bg-white text-gray-900 shadow-sm border border-gray-200/50' : 'text-gray-500 hover:text-gray-800'}`}
+                    >
+                      Monthly Stay
+                    </button>
+                  </div>
+                )}
+
                 {/* Booking Widget Inputs */}
                 <div className="relative">
-                  <div className="border border-gray-400 rounded-lg overflow-hidden mb-4">
-                    <div ref={datePickerTriggerRef} className="grid grid-cols-2 border-b border-gray-400" onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}>
-                      <div className="p-3 border-r border-gray-400 hover:bg-gray-50 cursor-pointer text-left">
-                        <div className="text-[10px] font-bold uppercase tracking-wider text-gray-800">Check-in</div>
-                        <div className="text-sm text-gray-700 truncate">{formatDate(bookingData.check_in_date) || 'Add date'}</div>
+                  {bookingMode === 'monthly' ? (
+                    /* ── MONTHLY INPUTS ── */
+                    <div className="mb-4">
+                      {/* Duration Mode Switcher */}
+                      <div className="flex border border-gray-300 rounded-lg p-0.5 mb-3 bg-gray-50">
+                        <button
+                          type="button"
+                          onClick={() => setMonthlyDurationMode('quick')}
+                          className={`flex-1 py-1 text-xs font-semibold rounded-md transition-colors ${monthlyDurationMode === 'quick' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-800'}`}
+                        >
+                          Quick Select
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMonthlyDurationMode('custom')}
+                          className={`flex-1 py-1 text-xs font-semibold rounded-md transition-colors ${monthlyDurationMode === 'custom' ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-800'}`}
+                        >
+                          Custom Dates
+                        </button>
                       </div>
-                      <div className="p-3 hover:bg-gray-50 cursor-pointer text-left">
-                        <div className="text-[10px] font-bold uppercase tracking-wider text-gray-800">Checkout</div>
-                        <div className="text-sm text-gray-700 truncate">{formatDate(bookingData.check_out_date) || 'Add date'}</div>
-                      </div>
-                    </div>
-                    <div ref={guestPickerTriggerRef} className="p-3 hover:bg-gray-50 cursor-pointer relative text-left" onClick={() => setIsGuestPickerOpen(!isGuestPickerOpen)}>
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-800">Guests</div>
-                          <div className="text-sm text-gray-700">
-                            {bookingData.number_of_guests} guest{bookingData.number_of_guests !== 1 ? 's' : ''}
-                            {bookingData.number_of_infants > 0 ? `, ${bookingData.number_of_infants} infant${bookingData.number_of_infants !== 1 ? 's' : ''}` : ''}
-                          </div>
-                        </div>
-                        <FiChevronDown className={`w-5 h-5 text-gray-700 transition-transform ${isGuestPickerOpen ? 'rotate-180' : ''}`} />
-                      </div>
-                    </div>
-                  </div>
 
+                      {monthlyDurationMode === 'quick' ? (
+                        <>
+                          {/* Move-in Date Box */}
+                          <div ref={monthlyDatePickerTriggerRef} className="border border-gray-400 rounded-lg p-3 hover:bg-gray-50 cursor-pointer text-left mb-3" onClick={() => setIsMonthlyDatePickerOpen(!isMonthlyDatePickerOpen)}>
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-800">Move-in Date</div>
+                            <div className="text-sm text-gray-700 truncate">
+                              {monthlyMoveInDate ? parseDateLocal(monthlyMoveInDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'Select move-in date'}
+                            </div>
+                          </div>
+
+                          {/* Duration Pills */}
+                          <div className="mb-4 text-left">
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-800 mb-2">Duration</div>
+                            <div className="grid grid-cols-4 gap-2">
+                              {[1, 2, 3, 6].map((months) => (
+                                <button
+                                  key={months}
+                                  type="button"
+                                  onClick={() => setDurationMonths(months)}
+                                  className={`py-2 text-xs font-semibold rounded-lg border transition-all ${durationMonths === months ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:border-gray-900'}`}
+                                >
+                                  {months} {months === 1 ? 'Month' : 'Months'}
+                                </button>
+                              ))}
+                            </div>
+                            {monthlyMoveInDate && (
+                              <p className="text-xs text-gray-500 mt-2 font-medium">
+                                Stay for {durationMonths * 30} nights, until {calculateMonthlyCheckout() ? parseDateLocal(calculateMonthlyCheckout()).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                              </p>
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        /* Custom Dates selection (reuses standard checkin/checkout calendar) */
+                        <>
+                          <div className="border border-gray-400 rounded-lg overflow-hidden mb-3">
+                            <div ref={datePickerTriggerRef} className="grid grid-cols-2" onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}>
+                              <div className="p-3 border-r border-gray-400 hover:bg-gray-50 cursor-pointer text-left">
+                                <div className="text-[10px] font-bold uppercase tracking-wider text-gray-800">Move-in</div>
+                                <div className="text-sm text-gray-700 truncate">{formatDate(bookingData.check_in_date) || 'Add date'}</div>
+                              </div>
+                              <div className="p-3 hover:bg-gray-50 cursor-pointer text-left">
+                                <div className="text-[10px] font-bold uppercase tracking-wider text-gray-800">Move-out</div>
+                                <div className="text-sm text-gray-700 truncate">{formatDate(bookingData.check_out_date) || 'Add date'}</div>
+                              </div>
+                            </div>
+                          </div>
+                          {calculateNights() > 0 && calculateNights() < (property.monthly_min_stay_nights || 30) && (
+                            <p className="text-xs text-rose-600 mb-3 font-semibold text-left">
+                              ⚠️ Minimum stay is {property.monthly_min_stay_nights || 30} nights for monthly bookings (selected {calculateNights()} nights).
+                            </p>
+                          )}
+                          {calculateNights() > 0 && calculateNights() >= (property.monthly_min_stay_nights || 30) && (
+                            <p className="text-xs text-green-600 mb-3 font-semibold text-left">
+                              ✓ Valid duration: {calculateNights()} nights ({Math.floor(calculateNights() / 30)} months + {calculateNights() % 30} extra days).
+                            </p>
+                          )}
+                        </>
+                      )}
+
+                      {/* Guest Picker (Common for both Quick and Custom monthly select) */}
+                      <div className="border border-gray-400 rounded-lg mb-4">
+                        <div
+                          ref={guestPickerTriggerRef}
+                          className="p-3 hover:bg-gray-50 cursor-pointer relative text-left rounded-lg"
+                          onClick={() => setIsGuestPickerOpen(!isGuestPickerOpen)}
+                        >
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-800">Guests</div>
+                              <div className="text-sm text-gray-700">
+                                {bookingData.number_of_guests} guest{bookingData.number_of_guests !== 1 ? 's' : ''}
+                                {bookingData.number_of_infants > 0 ? `, ${bookingData.number_of_infants} infant${bookingData.number_of_infants !== 1 ? 's' : ''}` : ''}
+                              </div>
+                            </div>
+                            <FiChevronDown className={`w-5 h-5 text-gray-700 transition-transform ${isGuestPickerOpen ? 'rotate-180' : ''}`} />
+                          </div>
+                          {renderGuestPickerDropdown()}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    /* ── NIGHTLY INPUTS ── */
+                    <div className="border border-gray-400 rounded-lg mb-4">
+                      <div ref={datePickerTriggerRef} className="grid grid-cols-2 border-b border-gray-400 rounded-t-lg" onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}>
+                        <div className="p-3 border-r border-gray-400 hover:bg-gray-50 cursor-pointer text-left">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-800">Check-in</div>
+                          <div className="text-sm text-gray-700 truncate">{formatDate(bookingData.check_in_date) || 'Add date'}</div>
+                        </div>
+                        <div className="p-3 hover:bg-gray-50 cursor-pointer text-left">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-800">Checkout</div>
+                          <div className="text-sm text-gray-700 truncate">{formatDate(bookingData.check_out_date) || 'Add date'}</div>
+                        </div>
+                      </div>
+                      <div
+                        ref={guestPickerTriggerRef}
+                        className="p-3 hover:bg-gray-50 cursor-pointer relative text-left rounded-b-lg"
+                        onClick={() => setIsGuestPickerOpen(!isGuestPickerOpen)}
+                      >
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-800">Guests</div>
+                            <div className="text-sm text-gray-700">
+                              {bookingData.number_of_guests} guest{bookingData.number_of_guests !== 1 ? 's' : ''}
+                              {bookingData.number_of_infants > 0 ? `, ${bookingData.number_of_infants} infant${bookingData.number_of_infants !== 1 ? 's' : ''}` : ''}
+                            </div>
+                          </div>
+                          <FiChevronDown className={`w-5 h-5 text-gray-700 transition-transform ${isGuestPickerOpen ? 'rotate-180' : ''}`} />
+                        </div>
+                        {renderGuestPickerDropdown()}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Monthly Move-in Date Picker Dropdown */}
+                  {isMonthlyDatePickerOpen && (
+                    <div ref={monthlyDatePickerRef} className="absolute right-0 top-[-20px] z-50 p-4 bg-white rounded-2xl border border-gray-200 max-w-[90vw] animate-fadeIn cursor-default text-left origin-top-right shadow-2xl">
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <h2 className="text-[16px] font-bold text-[#222222] mb-1">Select move-in date</h2>
+                          <p className="text-[#717171] text-xs">Choose when you want to start your stay</p>
+                        </div>
+                      </div>
+                      <div className="flex justify-center -mx-4">
+                        <DatePicker
+                          selected={monthlyMoveInDate ? parseDateLocal(monthlyMoveInDate) : null}
+                          onChange={(date) => {
+                            setMonthlyMoveInDate(formatDateLocal(date));
+                            setIsMonthlyDatePickerOpen(false);
+                          }}
+                          minDate={new Date()}
+                          filterDate={(date) => !isDateBlocked(date)}
+                          dayClassName={getDayClassName}
+                          renderDayContents={renderDayContents}
+                          inline
+                          calendarClassName="custom-calendar"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Standard Date Picker Dropdown */}
                   {isDatePickerOpen && (
                     <div ref={datePickerRef} className="absolute right-0 top-[-20px] z-50 p-4 bg-white rounded-2xl border border-gray-200 max-w-[90vw] animate-fadeIn cursor-default text-left origin-top-right shadow-2xl">
                       <style>{`
@@ -1222,37 +2215,52 @@ const PropertyDetail = () => {
                                       margin: 0;
                                   }
                                   .custom-calendar .react-datepicker__day {
-                                      width: 38px;
-                                      height: 38px;
-                                      line-height: 38px;
+                                      width: 42px;
+                                      height: 50px;
+                                      line-height: 1;
                                       margin: 0;
                                       font-size: 0.85rem;
                                       font-weight: 500;
-                                      border-radius: 50%;
+                                      border-radius: 8px;
+                                      display: inline-flex !important;
+                                      align-items: center;
+                                      justify-content: center;
                                   }
                                   .custom-calendar .react-datepicker__day:hover {
                                       background-color: #f7f7f7;
                                       border: 1.5px solid black;
                                       color: black;
-                                      border-radius: 50%;
+                                      border-radius: 8px;
                                   }
                                   .custom-calendar .react-datepicker__day--selected,
                                   .custom-calendar .react-datepicker__day--range-end,
                                   .custom-calendar .react-datepicker__day--range-start {
                                       background-color: #222222 !important;
                                       color: white !important;
-                                      border-radius: 50%;
+                                      border-radius: 8px;
+                                  }
+                                  .custom-calendar .react-datepicker__day--selected .day-cell-wrapper span:last-child,
+                                  .custom-calendar .react-datepicker__day--range-start .day-cell-wrapper span:last-child,
+                                  .custom-calendar .react-datepicker__day--range-end .day-cell-wrapper span:last-child {
+                                      color: #a0c4ff !important;
                                   }
                                   .custom-calendar .react-datepicker__day--in-selecting-range:not(.react-datepicker__day--range-start):not(.react-datepicker__day--range-end),
                                   .custom-calendar .react-datepicker__day--in-range:not(.react-datepicker__day--range-start):not(.react-datepicker__day--range-end) {
                                       background-color: #f7f7f7 !important;
                                       color: #222222 !important;
-                                      border-radius: 50%;
+                                      border-radius: 8px;
                                   }
-                                  .custom-calendar .react-datepicker__day--blocked {
-                                      color: #dddddd !important;
-                                      text-decoration: line-through;
-                                      pointer-events: none;
+                                  .custom-calendar .react-datepicker__day--blocked,
+                                  .custom-calendar .react-datepicker__day--disabled {
+                                      background-color: #f3f4f6 !important;
+                                      color: #9ca3af !important;
+                                      text-decoration: line-through !important;
+                                      pointer-events: none !important;
+                                      opacity: 0.65;
+                                  }
+                                  .custom-calendar .react-datepicker__day--blocked .day-cell-wrapper span,
+                                  .custom-calendar .react-datepicker__day--disabled .day-cell-wrapper span {
+                                      color: #9ca3af !important;
                                   }
                                   .custom-calendar .react-datepicker__current-month {
                                       font-size: 0.95rem;
@@ -1262,6 +2270,9 @@ const PropertyDetail = () => {
                                   }
                                   .custom-calendar .react-datepicker__navigation {
                                       top: 4px;
+                                  }
+                                  .custom-calendar .react-datepicker__day-name {
+                                      width: 42px;
                                   }
                               `}</style>
                       <div className="flex justify-between items-start mb-4">
@@ -1299,6 +2310,7 @@ const PropertyDetail = () => {
                           minDate={new Date()}
                           filterDate={(date) => !isDateBlocked(date)}
                           dayClassName={getDayClassName}
+                          renderDayContents={renderDayContents}
                           inline
                           monthsShown={2}
                           calendarClassName="custom-calendar"
@@ -1333,121 +2345,197 @@ const PropertyDetail = () => {
                     </div>
                   )}
 
-                  {/* Guest Picker Dropdown */}
-                  {isGuestPickerOpen && (
-                    <div ref={guestPickerRef} className="mb-4 bg-white border border-gray-200 rounded-lg p-6 shadow-xl absolute w-full left-0 z-20 cursor-default top-[55%]">
-                      <div className="space-y-6">
-                        {[
-                          { key: 'adults', label: 'Adults', subtitle: 'Ages 13 or above', min: 1 },
-                          { key: 'children', label: 'Children', subtitle: 'Ages 2 – 12', min: 0 },
-                          { key: 'infants', label: 'Infants', subtitle: 'Under 2', min: 0 },
-                          { key: 'pets', label: 'Pets', subtitle: 'Bringing a service animal?', min: 0 },
-                        ].map((item) => {
-                          let currentValue = 0;
-                          const totalGuests = bookingData.number_of_guests || 1;
-                          const children = bookingData.number_of_children || 0;
 
-                          if (item.key === 'adults') currentValue = totalGuests - children;
-                          else if (item.key === 'children') currentValue = children;
-                          else if (item.key === 'infants') currentValue = bookingData.number_of_infants || 0;
-                          else if (item.key === 'pets') currentValue = bookingData.number_of_pets || 0;
 
-                          const isMinusDisabled = currentValue <= item.min;
-                          let isPlusDisabled = false;
-
-                          if (item.key === 'adults' || item.key === 'children') {
-                            isPlusDisabled = totalGuests >= property.max_guests;
-                          } else if (item.key === 'infants') {
-                            isPlusDisabled = (bookingData.number_of_infants || 0) >= 2;
-                          } else if (item.key === 'pets') {
-                            isPlusDisabled = (bookingData.number_of_pets || 0) >= 3;
-                          }
-
-                          return (
-                            <div key={item.key} className="flex justify-between items-center w-full">
-                              <div className="flex-1 text-left">
-                                <div className="font-semibold text-[#222222]">{item.label}</div>
-                                <div className="text-sm text-gray-500">{item.subtitle}</div>
-                              </div>
-                              <div className="flex items-center gap-3">
-                                <button
-                                  type="button"
-                                  className={`w-8 h-8 rounded-full border flex items-center justify-center ${isMinusDisabled ? 'border-gray-200 text-gray-200 cursor-not-allowed' : 'border-gray-400 text-gray-600 hover:border-black hover:text-black'}`}
-                                  disabled={isMinusDisabled}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (item.key === 'adults') {
-                                      setBookingData(prev => ({ ...prev, number_of_guests: (prev.number_of_guests || 1) - 1 }));
-                                    } else if (item.key === 'children') {
-                                      setBookingData(prev => ({
-                                        ...prev,
-                                        number_of_children: (prev.number_of_children || 0) - 1,
-                                        number_of_guests: (prev.number_of_guests || 1) - 1
-                                      }));
-                                    } else if (item.key === 'infants') {
-                                      setBookingData(prev => ({ ...prev, number_of_infants: (prev.number_of_infants || 0) - 1 }));
-                                    } else if (item.key === 'pets') {
-                                      setBookingData(prev => ({ ...prev, number_of_pets: (prev.number_of_pets || 0) - 1 }));
-                                    }
-                                  }}
-                                >
-                                  <FiMinus className="w-3 h-3" />
-                                </button>
-                                <span className="w-4 text-center text-[#222222]">{currentValue}</span>
-                                <button
-                                  type="button"
-                                  className={`w-8 h-8 rounded-full border flex items-center justify-center ${isPlusDisabled ? 'border-gray-200 text-gray-200 cursor-not-allowed' : 'border-gray-400 text-gray-600 hover:border-black hover:text-black'}`}
-                                  disabled={isPlusDisabled}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (item.key === 'adults') {
-                                      setBookingData(prev => ({ ...prev, number_of_guests: (prev.number_of_guests || 1) + 1 }));
-                                    } else if (item.key === 'children') {
-                                      setBookingData(prev => ({
-                                        ...prev,
-                                        number_of_children: (prev.number_of_children || 0) + 1,
-                                        number_of_guests: (prev.number_of_guests || 1) + 1
-                                      }));
-                                    } else if (item.key === 'infants') {
-                                      setBookingData(prev => ({ ...prev, number_of_infants: (prev.number_of_infants || 0) + 1 }));
-                                    } else if (item.key === 'pets') {
-                                      setBookingData(prev => ({ ...prev, number_of_pets: (prev.number_of_pets || 0) + 1 }));
-                                    }
-                                  }}
-                                >
-                                  <FiPlus className="w-3 h-3" />
-                                </button>
-                              </div>
+                  {/* Nightly Price Breakdown */}
+                  {bookingMode !== 'monthly' && calculateNights() > 0 && (
+                    <div className="mt-1 mb-4 space-y-2 text-sm text-gray-700 border-t border-gray-100 pt-4">
+                      {(() => {
+                        const nights = calculateNights();
+                        const basePrice = calculateBasePrice();
+                        const defaultTotal = parseFloat(property.base_price) * nights;
+                        const hasSpecialRates = Math.abs(basePrice - defaultTotal) > 0.01;
+                        const cleaningFee = parseFloat(property.cleaning_fee) || 0;
+                        const securityDeposit = parseFloat(property.security_deposit) || 0;
+                        const serviceFeePercent = parseFloat(settings?.service_fee_percentage || 0) / 100;
+                        const taxPercent = parseFloat(settings?.tax_percentage || 0) / 100;
+                        const serviceFee = basePrice * serviceFeePercent;
+                        const taxAmount = basePrice * taxPercent;
+                        const extraGuestFee = bookingData.number_of_guests > 1 ? (bookingData.number_of_guests - 1) * (parseFloat(property.extra_guest_fee) || 0) : 0;
+                        return (
+                          <>
+                            <div className="flex justify-between items-start text-left">
+                              <span className="underline underline-offset-2 text-gray-600">
+                                {hasSpecialRates
+                                  ? `BDT ${formatPrice(property.base_price)} × ${nights} nights (special rates apply)`
+                                  : `BDT ${formatPrice(property.base_price)} × ${nights} nights`}
+                              </span>
+                              <span className="font-medium">BDT {Math.round(basePrice).toLocaleString()}</span>
                             </div>
-                          );
-                        })}
+                            {hasSpecialRates && (
+                              <div className="flex justify-between items-center text-blue-600 text-xs bg-blue-50 -mx-1 px-2 py-1.5 rounded-md text-left">
+                                <span className="flex items-center gap-1 text-left">
+                                  <span className="text-base">🏷️</span> Special rates applied for selected dates
+                                </span>
+                              </div>
+                            )}
+                            {cleaningFee > 0 && (
+                              <div className="flex justify-between text-left">
+                                <span className="underline underline-offset-2 text-gray-600">Cleaning fee</span>
+                                <span className="font-medium">BDT {Math.round(cleaningFee).toLocaleString()}</span>
+                              </div>
+                            )}
+                            {securityDeposit > 0 && (
+                              <div className="flex justify-between text-left">
+                                <span className="underline underline-offset-2 text-gray-600">Security deposit</span>
+                                <span className="font-medium">BDT {Math.round(securityDeposit).toLocaleString()}</span>
+                              </div>
+                            )}
+                            {extraGuestFee > 0 && (
+                              <div className="flex justify-between text-left">
+                                <span className="underline underline-offset-2 text-gray-600">Extra guest fee</span>
+                                <span className="font-medium">BDT {Math.round(extraGuestFee).toLocaleString()}</span>
+                              </div>
+                            )}
+                            {serviceFee > 0 && (
+                              <div className="flex justify-between text-left">
+                                <span className="underline underline-offset-2 text-gray-600">Service fee</span>
+                                <span className="font-medium">BDT {Math.round(serviceFee).toLocaleString()}</span>
+                              </div>
+                            )}
+                            {taxAmount > 0 && (
+                              <div className="flex justify-between text-left">
+                                <span className="underline underline-offset-2 text-gray-600">Taxes</span>
+                                <span className="font-medium">BDT {Math.round(taxAmount).toLocaleString()}</span>
+                              </div>
+                            )}
+                            {(() => {
+                              const totalBeforeCustom = parseFloat(property.cleaning_fee || 0) + parseFloat(property.security_deposit || 0) + extraGuestFee + serviceFee + taxAmount + basePrice;
+                              const customPrice = parseFloat(searchParams.get('customPrice')) || null;
+                              const discount = customPrice && customPrice > 0 ? Math.max(0, totalBeforeCustom - customPrice) : 0;
+                              return discount > 0 ? (
+                                <div className="flex justify-between text-green-600 font-semibold text-left">
+                                  <span className="underline underline-offset-2">Host Discount</span>
+                                  <span>- BDT {Math.round(discount).toLocaleString()}</span>
+                                </div>
+                              ) : null;
+                            })()}
+                            <div className="flex justify-between font-bold text-base pt-2 border-t border-gray-200 mt-1 text-left">
+                              <span>Total (BDT)</span>
+                              <span>BDT {Math.round(calculateTotal()).toLocaleString()}</span>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
 
-                        <div className="text-xs text-gray-500 mt-4 pt-4 border-t border-gray-100">
-                          This place has a maximum of {property.max_guests || 4} guests.
-                        </div>
-                        <div className="flex justify-end pt-2">
-                          <button
-                            onClick={() => setIsGuestPickerOpen(false)}
-                            className="text-sm font-semibold underline text-black hover:text-gray-700"
-                          >
-                            Close
-                          </button>
-                        </div>
+                  {/* Monthly Price Breakdown */}
+                  {bookingMode === 'monthly' && calculateMonthlyPricing() && (
+                    <div className="mt-1 mb-4 space-y-2 text-sm text-gray-700 border-t border-gray-100 pt-4">
+                      {(() => {
+                        const pricing = calculateMonthlyPricing();
+                        return (
+                          <>
+                            <div className="flex justify-between items-start text-left">
+                              <span className="underline underline-offset-2 text-gray-600">
+                                {pricing.totalMonths} {pricing.totalMonths === 1 ? 'month' : 'months'} × BDT {formatPrice(pricing.monthlyRate)}
+                              </span>
+                              <span className="font-medium">BDT {Math.round(pricing.baseMonthlyTotal).toLocaleString()}</span>
+                            </div>
+                            {pricing.extraDays > 0 && (
+                              <div className="flex justify-between items-start text-left">
+                                <span className="underline underline-offset-2 text-gray-600">
+                                  {pricing.extraDays} pro-rated {pricing.extraDays === 1 ? 'day' : 'days'}
+                                </span>
+                                <span className="font-medium">BDT {Math.round(pricing.extraDayAmount).toLocaleString()}</span>
+                              </div>
+                            )}
+                            {pricing.securityDeposit > 0 && (
+                              <div className="flex justify-between items-start text-left">
+                                <span className="underline underline-offset-2 text-gray-600">Security deposit</span>
+                                <span className="font-medium">BDT {Math.round(pricing.securityDeposit).toLocaleString()}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between font-bold text-base pt-2 border-t border-gray-200 mt-1 text-left">
+                              <span>Total (BDT)</span>
+                              <span>BDT {Math.round(pricing.total).toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-[#E41D57] font-semibold bg-rose-50 -mx-1 px-2 py-1.5 rounded-md text-xs mt-2 text-left">
+                              <span>Advance to pay now</span>
+                              <span>BDT {Math.round(pricing.advancePayment).toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between text-gray-500 text-xs text-left">
+                              <span>Remaining (due later)</span>
+                              <span>BDT {Math.round(pricing.remaining).toLocaleString()}</span>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {/* Monthly Inclusions Box */}
+                  {bookingMode === 'monthly' && (
+                    <div className="mt-3 p-3 bg-violet-50/70 border border-violet-100 rounded-xl text-left mb-4">
+                      <div className="text-[10px] font-bold text-violet-800 uppercase tracking-wider mb-1.5">Included in Rent</div>
+                      <div className="flex flex-wrap gap-x-3 gap-y-1.5 text-xs text-violet-900 font-medium">
+                        {Number(property.monthly_furnished) === 1 && <span className="flex items-center gap-1">🛋️ Furnished</span>}
+                        {Number(property.monthly_wifi_included) === 1 && <span className="flex items-center gap-1">📶 WiFi</span>}
+                        {Number(property.monthly_electricity_included) === 1 && <span className="flex items-center gap-1">⚡ Electricity</span>}
+                        {Number(property.monthly_gas_included) === 1 && <span className="flex items-center gap-1">💨 Gas</span>}
+                        {Number(property.monthly_water_included) === 1 && <span className="flex items-center gap-1">💧 Water</span>}
+                        {Number(property.monthly_cleaning_included) === 1 && <span className="flex items-center gap-1">🧹 Cleaning</span>}
+                        {Number(property.monthly_service_charge_included) === 1 && <span className="flex items-center gap-1">💼 Service Charge</span>}
                       </div>
+                      {property.monthly_inclusions_notes && (
+                        <p className="text-[10px] text-violet-700/80 mt-1.5 italic font-normal line-clamp-2">
+                          Note: {property.monthly_inclusions_notes}
+                        </p>
+                      )}
                     </div>
                   )}
 
                   <button
                     ref={reserveSubmitBtnRef}
                     onClick={handleBookingSubmit}
-                    disabled={!bookingData.check_in_date || !bookingData.check_out_date}
-                    className={`w-full font-bold py-3.5 rounded-lg transition-colors mb-4 bg-[#E41D57] text-white ${(!bookingData.check_in_date || !bookingData.check_out_date)
-                      ? 'cursor-not-allowed opacity-100'
-                      : 'hover:bg-[#D90B45]'
-                      }`}
+                    disabled={
+                      bookingMode === 'monthly'
+                        ? (monthlyDurationMode === 'quick'
+                            ? !monthlyMoveInDate
+                            : (!bookingData.check_in_date || !bookingData.check_out_date || calculateNights() < (property.monthly_min_stay_nights || 30))
+                          )
+                        : (!bookingData.check_in_date || !bookingData.check_out_date)
+                    }
+                    className={`w-full font-bold py-3.5 rounded-lg transition-colors mb-4 bg-[#E41D57] text-white ${
+                      (bookingMode === 'monthly'
+                        ? (monthlyDurationMode === 'quick'
+                            ? !monthlyMoveInDate
+                            : (!bookingData.check_in_date || !bookingData.check_out_date || calculateNights() < (property.monthly_min_stay_nights || 30))
+                          )
+                        : (!bookingData.check_in_date || !bookingData.check_out_date)
+                      )
+                        ? 'cursor-not-allowed opacity-50 bg-[#E41D57]/70'
+                        : 'hover:bg-[#D90B45]'
+                    }`}
                   >
-                    Reserve
+                    {bookingMode === 'monthly' ? 'Request to Book' : (property?.owner_auto_accept ? 'Confirm Booking' : 'Reserve')}
                   </button>
+
+                  {/* Help/Support link near booking CTA */}
+                  <div className="text-center mb-4">
+                    <p className="text-xs text-gray-500">
+                      Need help with booking?{' '}
+                      <a 
+                        href="/contact" 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="font-bold text-gray-800 hover:text-black underline underline-offset-2"
+                      >
+                        Ask Help & Support
+                      </a>
+                    </p>
+                  </div>
                 </div>
 
                 <div className="mt-4 flex justify-center">
@@ -1466,15 +2554,21 @@ const PropertyDetail = () => {
         </div>
       </div>
 
-      <div className="w-full border-t" id="section-reviews">
+      <div ref={reviewsRef} className="w-full border-t" id="section-reviews">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
           {/* Review Summary Header - Airbnb Horizontal Design */}
           <div className="mb-12 border-b border-gray-200 pb-12">
             <h3 className="flex items-center text-[2rem] font-extrabold text-[#222222] mb-10 tracking-tight">
               <FiStar className="text-[#222222] w-8 h-8 fill-current mr-3" />
-              <span className="mr-3">{property.average_rating ? parseFloat(property.average_rating).toFixed(2) : 'New'}</span>
-              <span className="mx-3 text-4xl leading-none" style={{ marginTop: '-4px' }}>·</span>
-              <span className="text-[2rem]">{property.total_reviews} {property.total_reviews === 1 ? 'review' : 'reviews'}</span>
+              {property.total_reviews > 0 ? (
+                <>
+                  <span className="mr-3">{parseFloat(property.average_rating).toFixed(1)}</span>
+                  <span className="mx-3 text-4xl leading-none" style={{ marginTop: '-4px' }}>·</span>
+                  <span className="text-[2rem]">{property.total_reviews} verified {property.total_reviews === 1 ? 'review' : 'reviews'}</span>
+                </>
+              ) : (
+                <span className="text-[1.5rem] font-semibold text-gray-400">No reviews yet</span>
+              )}
             </h3>
 
             <div className="flex flex-col lg:flex-row lg:items-center gap-10 overflow-x-auto pb-4">
@@ -1542,6 +2636,7 @@ const PropertyDetail = () => {
                             src={review.profile_image}
                             alt={`${review.first_name} ${review.last_name}`}
                             className="w-12 h-12 rounded-full object-cover"
+                            loading="lazy"
                           />
                         ) : (
                           <div className="w-12 h-12 bg-[#222222] rounded-full flex items-center justify-center text-white text-lg font-semibold">
@@ -1561,7 +2656,7 @@ const PropertyDetail = () => {
 
                     {/* Review Content */}
                     <div>
-                      <div className="flex items-center gap-2 mb-2">
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
                         <div className="flex gap-0.5">
                           {[...Array(5)].map((_, i) => (
                             <FiStar key={i} className={`w-3 h-3 ${i < review.rating ? 'text-[#222222] fill-current' : 'text-[#222222]'}`} />
@@ -1577,6 +2672,11 @@ const PropertyDetail = () => {
                             <span className="text-sm text-gray-500">Stayed {review.stay_duration}</span>
                           </>
                         )}
+                        {/* Verified Stay Badge */}
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 border border-green-200 text-green-700 text-[10px] font-bold">
+                          <FiCheck className="w-2.5 h-2.5" />
+                          Verified Stay
+                        </span>
                       </div>
 
                       <p className="text-[#222222] leading-6 text-base line-clamp-4">
@@ -1619,10 +2719,44 @@ const PropertyDetail = () => {
       <div className="w-full border-t border-gray-200" id="section-location">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
           <h2 className="text-xl lg:text-2xl font-bold text-[#222222] mb-6">Where you'll be</h2>
-          <div className="h-[240px] md:h-[320px] lg:h-[480px] w-full rounded-xl overflow-hidden shadow-sm border border-gray-200 relative z-0">
-            <PropertyMap properties={[property]} detailView={true} />
+
+          <div ref={mapRef} className="hidden md:block h-[320px] lg:h-[480px] w-full rounded-xl overflow-hidden shadow-sm border border-gray-200 relative z-0">
+            {mapInView ? (
+              <Suspense fallback={<div className="w-full h-full bg-gray-100 animate-pulse flex items-center justify-center text-gray-400">Loading Map...</div>}>
+                <PropertyMap properties={[property]} detailView={true} />
+              </Suspense>
+            ) : (
+              <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                <div className="text-center text-gray-400">
+                  <FiMapPin className="w-12 h-12 mx-auto mb-3 animate-pulse" />
+                  <p className="text-sm">Loading Map...</p>
+                </div>
+              </div>
+            )}
           </div>
-          <div className="mt-6">
+
+          <div className="md:hidden">
+            {showMapMobile ? (
+              <div className="h-[240px] w-full rounded-xl overflow-hidden shadow-sm border border-gray-200 relative z-0 mb-4 animate-fadeIn">
+                <Suspense fallback={<div className="w-full h-full bg-gray-100 animate-pulse flex items-center justify-center text-gray-400">Loading Map...</div>}>
+                  <PropertyMap properties={[property]} detailView={true} />
+                </Suspense>
+              </div>
+            ) : (
+              <div className="w-full rounded-xl border border-gray-200 p-6 flex flex-col items-center justify-center bg-gray-50 mb-4">
+                <FiMapPin className="w-8 h-8 text-gray-400 mb-3" />
+                <p className="text-sm font-medium text-gray-600 mb-4 text-center">Map is hidden to save data on mobile</p>
+                <button
+                  onClick={() => setShowMapMobile(true)}
+                  className="px-6 py-2 border border-gray-900 rounded-lg text-sm font-semibold hover:bg-gray-50 transition-colors"
+                >
+                  Load Map
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 md:mt-6">
             <h3 className="font-semibold text-[#222222] text-lg">{sanitizeText(property.city)}, {sanitizeText(property.state)}</h3>
             <p className="mt-2 text-gray-600 max-w-3xl">
               Very dynamic and appreciated area. We will send you the exact location once your booking is confirmed.
@@ -1647,6 +2781,7 @@ const PropertyDetail = () => {
                       src={property.owner_profile_image}
                       alt={property.owner_first_name}
                       className="w-24 h-24 lg:w-32 lg:h-32 rounded-full object-cover"
+                      loading="lazy"
                     />
                   ) : (
                     <div className="w-24 h-24 lg:w-32 lg:h-32 bg-[#222222] rounded-full flex items-center justify-center text-white text-4xl font-bold">
@@ -1662,8 +2797,13 @@ const PropertyDetail = () => {
 
                 {/* Name & Title */}
                 <div>
-                  <h3 className="text-2xl lg:text-3xl font-bold text-[#222222] mb-1">
+                  <h3 className="text-2xl lg:text-3xl font-bold text-[#222222] mb-1 flex items-center justify-start lg:justify-center gap-1.5 flex-wrap">
                     {property.owner_first_name}
+                    {!!property.owner_verified && (
+                      <svg className="w-6 h-6 text-blue-500 fill-current flex-shrink-0" viewBox="0 0 24 24" title="Verified Host">
+                        <path d="M23 12l-2.44-2.79.34-3.69-3.61-.82-1.89-3.2L12 2.96 8.6 1.5 6.71 4.7 3.1 5.52l.34 3.7L1 12l2.44 2.79-.34 3.7 3.61.82 1.89 3.2 3.4-1.46 3.4 1.46 1.89-3.2 3.61-.82-.34-3.7L23 12zm-13 5l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z" />
+                      </svg>
+                    )}
                   </h3>
                   {!!property.owner_is_superhost && (
                     <div className="flex items-center justify-start lg:justify-center gap-2 text-[#222222] font-semibold text-sm">
@@ -1802,31 +2942,60 @@ const PropertyDetail = () => {
         !showMobileReserveForm && (
           <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 shadow-lg pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pl-[calc(1rem+env(safe-area-inset-left))] pr-[calc(1rem+env(safe-area-inset-right))]">
             <div className="flex items-center justify-between gap-3">
-              <div>
-                <span className="text-xl font-bold text-red-600">BDT {property.base_price || 0}</span>
-                <span className="text-gray-600 ml-1 text-sm">/ night</span>
+              <div className="flex flex-col">
+                <span className="text-xl font-bold text-red-600">
+                  {property.monthly_rent_enabled && property.monthly_approved && property.monthly_stay_type === 'monthly_only' ? (
+                    `BDT ${formatPrice(property.monthly_rent_amount || 0)}`
+                  ) : property.is_hms_enabled ? (
+                    selectedRoomId ? (
+                      `BDT ${formatPrice(property.hms_rooms.find(r => r.id === selectedRoomId)?.price || 0)}`
+                    ) : (
+                      `BDT ${formatPrice(Math.min(...property.hms_rooms.map(r => parseFloat(r.price))))} - ${formatPrice(Math.max(...property.hms_rooms.map(r => parseFloat(r.price))))}`
+                    )
+                  ) : (
+                    `BDT ${formatPrice(property.base_price || 0)}`
+                  )}
+                </span>
+                <span className="text-gray-600 text-xs">
+                  {property.monthly_rent_enabled && property.monthly_approved && property.monthly_stay_type === 'monthly_only' ? '/ month' : (property.is_hms_enabled && !selectedRoomId ? 'Starts from per night' : '/ night')}
+                </span>
               </div>
               <button
                 onClick={() => setShowMobileReserveForm(true)}
                 className="bg-[#E41D57] hover:bg-[#E41D57] text-white font-medium py-3 px-6 rounded-lg transition-colors duration-200 flex-shrink-0"
               >
-                Reserve
+                {property.monthly_rent_enabled && property.monthly_approved && property.monthly_stay_type === 'monthly_only' ? 'Book Monthly' : 'Reserve'}
               </button>
             </div>
           </div>
         )
       }
 
-      {/* Mobile Booking Form - Fixed at Bottom (Animated) */}
       {/* Mobile Booking Form - Fixed Full Screen with Sticky Footer */}
       {
         showMobileReserveForm && (
           <div className="md:hidden fixed inset-0 z-[100] bg-white shadow-lg animate-slideUp flex flex-col property-detail-booking-form">
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-white z-10">
-              <div>
-                <span className="text-xl font-bold text-red-600">BDT {property.base_price || 0}</span>
-                <span className="text-gray-600 ml-1 text-sm">/ night</span>
+              <div className="flex flex-col">
+                <span className="text-lg font-bold text-red-600">
+                  {bookingMode === 'monthly' ? (
+                    `BDT ${formatPrice(property.monthly_rent_amount || 0)}`
+                  ) : calculateNights() > 0 ? (
+                    `BDT ${formatPrice(calculateTotal())}`
+                  ) : property.is_hms_enabled ? (
+                    selectedRoomId ? (
+                      `BDT ${formatPrice(property.hms_rooms.find(r => r.id === selectedRoomId)?.price || 0)}`
+                    ) : (
+                      `BDT ${formatPrice(Math.min(...property.hms_rooms.map(r => parseFloat(r.price))))} - ${formatPrice(Math.max(...property.hms_rooms.map(r => parseFloat(r.price))))}`
+                    )
+                  ) : (
+                    `BDT ${formatPrice(property.base_price || 0)}`
+                  )}
+                </span>
+                <span className="text-gray-500 text-[10px]">
+                  {bookingMode === 'monthly' ? '/ month' : calculateNights() > 0 ? `Total for ${calculateNights()} nights` : (property.is_hms_enabled && !selectedRoomId ? 'Starts from per night' : 'per night')}
+                </span>
               </div>
               <button
                 onClick={() => setShowMobileReserveForm(false)}
@@ -1840,7 +3009,152 @@ const PropertyDetail = () => {
             {/* Scrollable Content */}
             <div className="flex-1 overflow-y-auto p-4">
               <form id="mobile-reserve-form" onSubmit={handleBookingSubmit} className="space-y-4">
-                {/* When Card */}
+
+                {/* Booking Mode Switcher — only shown if both modes available */}
+                {!!property.monthly_rent_enabled && !!property.monthly_approved && property.monthly_stay_type !== 'monthly_only' && (
+                  <div className="bg-gray-100 rounded-xl p-1 flex">
+                    <button
+                      type="button"
+                      onClick={() => setBookingMode('short_stay')}
+                      className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${bookingMode !== 'monthly' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
+                    >
+                      Short Stay
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBookingMode('monthly')}
+                      className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${bookingMode === 'monthly' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
+                    >
+                      Monthly Stay
+                    </button>
+                  </div>
+                )}
+
+                {/* ── MONTHLY BOOKING UI ── */}
+                {(bookingMode === 'monthly' || (property.monthly_rent_enabled && property.monthly_approved && property.monthly_stay_type === 'monthly_only')) ? (
+                  <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-4">
+                    <h3 className="text-xl font-bold text-black">Monthly Rent</h3>
+
+                    {/* Move-in Date */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Move-in Date</label>
+                      <DatePicker
+                        selected={monthlyMoveInDate ? parseDateLocal(monthlyMoveInDate) : null}
+                        onChange={(date) => {
+                          setMonthlyMoveInDate(formatDateLocal(date));
+                        }}
+                        minDate={new Date()}
+                        inline
+                        monthsShown={1}
+                        calendarClassName="mobile-date-picker-calendar w-full"
+                        wrapperClassName="w-full"
+                      />
+                      {monthlyMoveInDate && (
+                        <div className="mt-2 text-sm text-gray-600 bg-blue-50 rounded-lg px-3 py-2">
+                          Move-in: <strong>{parseDateLocal(monthlyMoveInDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</strong>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Duration */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Duration (months)</label>
+                      <div className="flex items-center gap-4">
+                        <button
+                          type="button"
+                          onClick={() => setDurationMonths(Math.max(1, durationMonths - 1))}
+                          className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center hover:border-black"
+                        >
+                          <FiMinus className="w-4 h-4" />
+                        </button>
+                        <span className="text-xl font-bold w-8 text-center">{durationMonths}</span>
+                        <button
+                          type="button"
+                          onClick={() => setDurationMonths(durationMonths + 1)}
+                          className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center hover:border-black"
+                        >
+                          <FiPlus className="w-4 h-4" />
+                        </button>
+                        <span className="text-gray-500 text-sm">{durationMonths} month{durationMonths !== 1 ? 's' : ''}</span>
+                      </div>
+                      {monthlyMoveInDate && (
+                        <p className="text-xs text-gray-500 mt-2">
+                          Move-out: {calculateMonthlyCheckout() ? parseDateLocal(calculateMonthlyCheckout()).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Monthly Price Summary */}
+                    {calculateMonthlyPricing() && (
+                      <div className="bg-gray-50 rounded-xl p-3 space-y-2 text-sm text-gray-700">
+                        {(() => {
+                          const pricing = calculateMonthlyPricing();
+                          return (
+                            <>
+                              <div className="flex justify-between items-start text-left">
+                                <span className="text-gray-600">
+                                  {pricing.totalMonths} {pricing.totalMonths === 1 ? 'month' : 'months'} × BDT {formatPrice(pricing.monthlyRate)}
+                                </span>
+                                <span className="font-semibold text-gray-900">BDT {Math.round(pricing.baseMonthlyTotal).toLocaleString()}</span>
+                              </div>
+                              {pricing.extraDays > 0 && (
+                                <div className="flex justify-between items-start text-left">
+                                  <span className="text-gray-600">
+                                    {pricing.extraDays} pro-rated {pricing.extraDays === 1 ? 'day' : 'days'}
+                                  </span>
+                                  <span className="font-semibold text-gray-900">BDT {Math.round(pricing.extraDayAmount).toLocaleString()}</span>
+                                </div>
+                              )}
+                              {pricing.securityDeposit > 0 && (
+                                <div className="flex justify-between items-start text-left">
+                                  <span className="text-gray-600">Security deposit</span>
+                                  <span className="font-semibold text-gray-900">BDT {Math.round(pricing.securityDeposit).toLocaleString()}</span>
+                                </div>
+                              )}
+                              <div className="flex justify-between font-bold text-sm pt-1.5 border-t border-gray-200 text-left text-gray-900">
+                                <span>Total (BDT)</span>
+                                <span>BDT {Math.round(pricing.total).toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between items-center text-[#E41D57] font-semibold bg-rose-50 px-2 py-1.5 rounded-md text-xs text-left">
+                                <span>Advance to pay now</span>
+                                <span>BDT {Math.round(pricing.advancePayment).toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between text-gray-500 text-xs text-left">
+                                <span>Remaining (due later)</span>
+                                <span>BDT {Math.round(pricing.remaining).toLocaleString()}</span>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {/* Monthly Inclusions */}
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      {Number(property.monthly_furnished) === 1 && <span className="bg-green-50 text-green-700 px-2 py-1 rounded-full">🛋️ Furnished</span>}
+                      {Number(property.monthly_wifi_included) === 1 && <span className="bg-green-50 text-green-700 px-2 py-1 rounded-full">📶 WiFi</span>}
+                      {Number(property.monthly_electricity_included) === 1 && <span className="bg-green-50 text-green-700 px-2 py-1 rounded-full">⚡ Electricity</span>}
+                      {Number(property.monthly_gas_included) === 1 && <span className="bg-green-50 text-green-700 px-2 py-1 rounded-full">💨 Gas</span>}
+                      {Number(property.monthly_water_included) === 1 && <span className="bg-green-50 text-green-700 px-2 py-1 rounded-full">💧 Water</span>}
+                    </div>
+
+                    {/* Guests */}
+                    <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                      <span className="text-sm font-semibold text-gray-700">Guests</span>
+                      <div className="flex items-center gap-3">
+                        <button type="button" onClick={() => setBookingData(prev => ({ ...prev, number_of_guests: Math.max(1, (prev.number_of_guests || 1) - 1) }))} className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:border-black">
+                          <FiMinus className="w-3 h-3" />
+                        </button>
+                        <span className="font-bold text-base w-5 text-center">{bookingData.number_of_guests || 1}</span>
+                        <button type="button" onClick={() => setBookingData(prev => ({ ...prev, number_of_guests: Math.min(property.max_guests, (prev.number_of_guests || 1) + 1) }))} className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:border-black">
+                          <FiPlus className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                {/* When Card (Short Stay) */}
                 <div
                   className={`bg-white rounded-2xl transition-all duration-300 overflow-hidden ${mobileSearchStep === 'dates' ? 'p-6 shadow-xl border-transparent' : 'p-4 shadow-sm'}`}
                   onClick={() => setMobileSearchStep('dates')}
@@ -1869,6 +3183,7 @@ const PropertyDetail = () => {
                           minDate={new Date()}
                           filterDate={(date) => !isDateBlocked(date)}
                           dayClassName={getDayClassName}
+                          renderDayContents={renderDayContents}
                           inline
                           monthsShown={1}
                           calendarClassName="mobile-date-picker-calendar w-full"
@@ -1889,7 +3204,7 @@ const PropertyDetail = () => {
                   )}
                 </div>
 
-                {/* Who Card */}
+                {/* Who Card (Short Stay) */}
                 <div
                   className={`bg-white rounded-2xl transition-all duration-300 overflow-hidden ${mobileSearchStep === 'guests' ? 'p-6 shadow-xl border-transparent' : 'p-4 shadow-sm'}`}
                   onClick={() => setMobileSearchStep('guests')}
@@ -2014,39 +3329,67 @@ const PropertyDetail = () => {
                   </div>
                 )}
 
+                {/* Close the short-stay conditional block */}
+                </>
+                )}
+
                 {/* Extra spacing for better scrolling experience */}
                 <div className="h-20"></div>
               </form>
             </div>
 
-            {/* Footer - Fixed Bottom */}
             <div className="border-t border-gray-200 bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pl-[calc(1rem+env(safe-area-inset-left))] pr-[calc(1rem+env(safe-area-inset-right))]">
               <div className="flex items-center justify-between gap-4">
-                {bookingData.check_in_date && bookingData.check_out_date && calculateNights() > 0 ? (
-                  <>
-                    <div className="flex flex-col">
-                      <span className="font-bold text-lg text-red-600">BDT {(calculateTotal() || 0).toFixed(0)}</span>
-                      <span className="text-xs text-gray-500 underline">Total for {calculateNights()} nights</span>
-                    </div>
-                    <button
-                      type="submit"
-                      form="mobile-reserve-form"
-                      disabled={!bookingData.check_in_date || !bookingData.check_out_date || (availability && !availability.isAvailable)}
-                      className="bg-[#E41D57] hover:bg-[#E41D57] disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium py-3 px-8 rounded-lg transition-colors duration-200 flex-shrink-0"
-                    >
-                      Reserve
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    type="submit"
-                    form="mobile-reserve-form"
-                    disabled={!bookingData.check_in_date || !bookingData.check_out_date || (availability && !availability.isAvailable)}
-                    className="w-full bg-[#E41D57] hover:bg-[#E41D57] disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200"
-                  >
-                    Check availability
-                  </button>
-                )}
+                <div className="flex flex-col">
+                  <span className="font-bold text-lg text-red-600">
+                    {bookingMode === 'monthly' ? (
+                      (() => {
+                        const pricing = calculateMonthlyPricing();
+                        return pricing 
+                          ? `BDT ${formatPrice(pricing.total)}`
+                          : `BDT ${formatPrice(property.monthly_rent_amount || 0)}`;
+                      })()
+                    ) : calculateNights() > 0 ? (
+                      `BDT ${formatPrice(calculateTotal())}`
+                    ) : (
+                      property.is_hms_enabled ? (
+                        selectedRoomId ? (
+                          `BDT ${formatPrice(property.hms_rooms.find(r => r.id === selectedRoomId)?.price || 0)}`
+                        ) : (
+                          `BDT ${formatPrice(Math.min(...property.hms_rooms.map(r => parseFloat(r.price))))} - ${formatPrice(Math.max(...property.hms_rooms.map(r => parseFloat(r.price))))}`
+                        )
+                      ) : (
+                        `BDT ${formatPrice(property.base_price || 0)}`
+                      )
+                    )}
+                  </span>
+                  <span className="text-xs text-gray-500 underline">
+                    {bookingMode === 'monthly' ? (
+                      (() => {
+                        const pricing = calculateMonthlyPricing();
+                        return pricing 
+                          ? `Total for ${pricing.totalMonths} month${pricing.totalMonths !== 1 ? 's' : ''}${pricing.extraDays > 0 ? ` & ${pricing.extraDays} day${pricing.extraDays !== 1 ? 's' : ''}` : ''}`
+                          : 'per month';
+                      })()
+                    ) : calculateNights() > 0 ? (
+                      `Total for ${calculateNights()} nights`
+                    ) : (
+                      property.is_hms_enabled && !selectedRoomId ? 'Starts from per night' : 'per night'
+                    )}
+                  </span>
+                </div>
+                <button
+                  type="submit"
+                  form="mobile-reserve-form"
+                  disabled={
+                    bookingMode === 'monthly'
+                      ? !monthlyMoveInDate
+                      : (!bookingData.check_in_date || !bookingData.check_out_date || (availability && !availability.isAvailable))
+                  }
+                  className="bg-[#E41D57] hover:bg-[#E41D57] disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium py-3 px-8 rounded-lg transition-colors duration-200 flex-shrink-0"
+                >
+                  {bookingMode === 'monthly' ? 'Request to Book' : (calculateNights() > 0 ? 'Reserve' : 'Check availability')}
+                </button>
               </div>
             </div>
           </div>
@@ -2058,6 +3401,13 @@ const PropertyDetail = () => {
         onClose={() => setShowReportModal(false)}
         propertyTitle={property.title}
         propertyId={property.id}
+      />
+
+      {/* Auth Modal — shown when unauthenticated user clicks Reserve or Favorite */}
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        defaultMode={authModalMode}
       />
 
       {/* Reviews Modal */}
@@ -2081,7 +3431,11 @@ const PropertyDetail = () => {
                 <div className="hidden md:flex flex-col w-[360px] p-8 pt-16 border-r border-gray-200 overflow-y-auto">
                   <div className="flex items-center gap-3 mb-8">
                     <FiStar className="w-8 h-8 text-[#222222] fill-current" />
-                    <span className="text-[2rem] font-extrabold text-[#222222]">{parseFloat(property.average_rating || 0).toFixed(2)}</span>
+                    {property.total_reviews > 0 ? (
+                      <span className="text-[2rem] font-extrabold text-[#222222]">{parseFloat(property.average_rating || 0).toFixed(1)}</span>
+                    ) : (
+                      <span className="text-xl font-semibold text-gray-400">No reviews yet</span>
+                    )}
                   </div>
 
                   {/* Distribution */}
@@ -2132,7 +3486,7 @@ const PropertyDetail = () => {
                   {/* Header */}
                   <div className="p-6 pb-2 pt-16 md:pt-6">
                     <h3 className="text-2xl font-bold text-[#222222] mb-6">
-                      {property.total_reviews} reviews
+                      {property.total_reviews} verified {property.total_reviews === 1 ? 'review' : 'reviews'}
                     </h3>
                     <div className="relative">
                       <FiSearch className="absolute left-4 top-3.5 w-5 h-5 text-gray-500" />
@@ -2168,10 +3522,14 @@ const PropertyDetail = () => {
                               </div>
                             </div>
                           </div>
-                          <div className="mb-2 flex items-center gap-1">
+                          <div className="mb-2 flex items-center gap-2 flex-wrap">
                             {[...Array(5)].map((_, i) => (
                               <FiStar key={i} className={`w-3 h-3 ${i < review.rating ? 'text-[#222222] fill-current' : 'text-[#222222]'}`} />
                             ))}
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 border border-green-200 text-green-700 text-[10px] font-bold">
+                              <FiCheck className="w-2.5 h-2.5" />
+                              Verified Stay
+                            </span>
                           </div>
                           <p className="text-[#222222] leading-relaxed whitespace-pre-line">
                             {review.comment}
@@ -2187,6 +3545,11 @@ const PropertyDetail = () => {
         )
       }
 
+      <ShareModal
+        property={property}
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+      />
     </div >
   );
 };

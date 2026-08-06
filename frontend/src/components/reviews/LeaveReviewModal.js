@@ -26,8 +26,20 @@ const LeaveReviewModal = ({ isOpen, onClose, booking, onSuccess }) => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        
+        // Frontend validation
         if (formData.rating === 0) {
             showError('Please provide an overall rating');
+            return;
+        }
+
+        if (!formData.title || formData.title.trim().length < 2) {
+            showError('Please provide a title (at least 2 characters)');
+            return;
+        }
+
+        if (!formData.comment || formData.comment.trim().length < 3) {
+            showError('Please provide a review comment (at least 3 characters)');
             return;
         }
 

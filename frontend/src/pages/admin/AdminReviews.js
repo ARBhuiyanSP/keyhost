@@ -12,11 +12,37 @@ const AdminReviews = () => {
     limit: 10
   });
 
+  const [searchInput, setSearchInput] = useState(filters.search);
+  const searchTimeoutRef = React.useRef(null);
+
+  React.useEffect(() => {
+    setSearchInput(filters.search);
+  }, [filters.search]);
+
+  React.useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleSearchChange = (val) => {
+    setSearchInput(val);
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      handleFilterChange('search', val);
+    }, 300);
+  };
+
   // Fetch reviews
-  const { data: reviewsData, isLoading, refetch } = useQuery(
+  const { data: reviewsData, isLoading, isFetching, refetch } = useQuery(
     ['admin-reviews', filters],
     () => api.get(`/admin/reviews?${new URLSearchParams(filters).toString()}`),
     {
+      keepPreviousData: true,
       select: (response) => response.data?.data || { reviews: [], pagination: {} },
     }
   );
@@ -24,8 +50,8 @@ const AdminReviews = () => {
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({
       ...prev,
-      [key]: value,
-      page: 1
+      page: 1,
+      [key]: value
     }));
   };
 
@@ -72,16 +98,16 @@ const AdminReviews = () => {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Search Reviews
               </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <FiSearch className="h-5 w-5 text-gray-400" />
+              <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 group-focus-within:text-blue-500 transition-colors">
+                  <FiSearch className="h-5 w-5" />
                 </div>
                 <input
                   type="text"
                   placeholder="Search by guest name or property..."
-                  value={filters.search}
-                  onChange={(e) => handleFilterChange('search', e.target.value)}
-                  className="input-field pl-10"
+                  value={searchInput}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  className="input-field pl-10 transition-all duration-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
               </div>
             </div>
@@ -93,7 +119,7 @@ const AdminReviews = () => {
               <select
                 value={filters.status}
                 onChange={(e) => handleFilterChange('status', e.target.value)}
-                className="input-field"
+                className="input-field transition-all duration-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               >
                 <option value="">All Statuses</option>
                 <option value="pending">Pending</option>
@@ -105,7 +131,7 @@ const AdminReviews = () => {
             <div className="flex items-end">
               <button
                 onClick={() => setFilters({ status: '', search: '', page: 1, limit: 10 })}
-                className="btn-secondary w-full"
+                className="btn-secondary w-full transition-all duration-205 hover:bg-gray-150 active:scale-[0.98]"
               >
                 <FiFilter className="inline mr-2" />
                 Clear Filters
@@ -115,7 +141,15 @@ const AdminReviews = () => {
         </div>
 
         {/* Reviews List */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative">
+          {/* Subtle loading line at the top of the table container */}
+          <div 
+            className={`absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 transition-all duration-300 ${
+              isFetching ? 'opacity-100 animate-pulse translate-y-0' : 'opacity-0 -translate-y-1'
+            }`}
+            style={{ zIndex: 10 }}
+          />
+
           <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
             <h2 className="text-lg font-bold text-gray-900">
               Reviews List <span className="text-gray-500 font-normal text-sm ml-2">({reviewsData?.pagination?.totalItems || 0} total)</span>
@@ -127,7 +161,7 @@ const AdminReviews = () => {
               <LoadingSpinner />
             </div>
           ) : reviewsData?.reviews?.length > 0 ? (
-            <div className="divide-y divide-gray-200">
+            <div className={`divide-y divide-gray-200 transition-all duration-300 ${isFetching ? 'opacity-65 pointer-events-none filter blur-[0.5px]' : 'opacity-100'}`}>
               {reviewsData.reviews.map((review) => (
                 <div key={review.id} className="p-6 hover:bg-gray-50 transition-colors duration-150 group">
                   <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">

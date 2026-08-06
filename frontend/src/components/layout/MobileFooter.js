@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { FiHome, FiHeart, FiUser, FiSettings, FiBookOpen, FiDollarSign, FiLogIn, FiUserPlus } from 'react-icons/fi';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { FiHome, FiHeart, FiUser, FiSettings, FiBookOpen, FiDollarSign, FiLogIn, FiUserPlus, FiMessageSquare, FiLifeBuoy } from 'react-icons/fi';
 import useAuthStore from '../../store/authStore';
 
 const MobileFooter = () => {
@@ -30,18 +30,18 @@ const MobileFooter = () => {
           active: location.pathname.startsWith('/properties')
         },
         {
+          id: 'become-host',
+          label: 'Become a Host',
+          icon: FiDollarSign,
+          path: '/become-host',
+          active: location.pathname.startsWith('/become-host')
+        },
+        {
           id: 'login',
           label: 'Login',
           icon: FiLogIn,
           path: '/login',
           active: location.pathname.startsWith('/login')
-        },
-        {
-          id: 'register',
-          label: 'Sign Up',
-          icon: FiUserPlus,
-          path: '/register',
-          active: location.pathname.startsWith('/register')
         }
       ];
     }
@@ -119,18 +119,18 @@ const MobileFooter = () => {
           active: location.pathname.startsWith('/property-owner/bookings')
         },
         {
-          id: 'owner-earnings',
-          label: 'Earnings',
-          icon: FiDollarSign,
-          path: '/property-owner/earnings',
-          active: location.pathname.startsWith('/property-owner/earnings')
+          id: 'owner-messages',
+          label: 'Messages',
+          icon: FiMessageSquare,
+          path: '/messages',
+          active: location.pathname.startsWith('/messages')
         },
         {
-          id: 'owner-profile',
-          label: 'Profile',
-          icon: FiUser,
-          path: '/property-owner',
-          active: location.pathname === '/property-owner' || location.pathname.startsWith('/property-owner/profile')
+          id: 'owner-support',
+          label: 'Support',
+          icon: FiLifeBuoy,
+          path: '/support',
+          active: location.pathname.startsWith('/support')
         }
       ];
     }
@@ -239,36 +239,22 @@ const MobileFooter = () => {
 
   return (
     <div className={`md:hidden fixed bottom-0 left-0 right-0 z-50 transition-transform duration-300 ease-in-out ${isVisible ? 'translate-y-0' : 'translate-y-full'
-      }`} style={{ transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}>
-      <div className="bg-white border-t border-gray-200 shadow-lg w-full" style={{ width: '100%', maxWidth: '100vw' }}>
-        <div className="flex items-center justify-between pt-2 px-[calc(0.25rem+env(safe-area-inset-left))] pr-[calc(0.25rem+env(safe-area-inset-right))] w-full pb-[calc(0.5rem+env(safe-area-inset-bottom))]" style={{ width: '100%', maxWidth: '100vw', overflow: 'hidden', boxSizing: 'border-box' }}>
+      }`}>
+      <div className="bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] w-full pb-[env(safe-area-inset-bottom)]">
+        <div className="flex items-center justify-between px-2 h-16 w-full max-w-md mx-auto">
           {menuItems.map((item) => {
             const IconComponent = item.icon;
             const isActive = item.active;
-
             return (
               <button
                 key={item.id}
                 onClick={() => handleMenuClick(item)}
-                className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-lg transition-all duration-200 ${isActive
-                  ? 'bg-gray-100 text-[#E41D57]'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                  }`}
-                style={{
-                  flex: `0 0 ${100 / menuItems.length}%`,
-                  minWidth: 0,
-                  maxWidth: `${100 / menuItems.length}%`,
-                  width: `${100 / menuItems.length}%`,
-                  boxSizing: 'border-box',
-                  padding: '0.375rem 0.125rem'
-                }}
+                className={`flex-1 flex flex-col items-center justify-center h-full gap-1 transition-colors duration-200 ${isActive ? 'text-[#E41D57]' : 'text-gray-500 hover:text-gray-900'}`}
               >
-                <IconComponent
-                  size={18}
-                  className={`mb-0.5 flex-shrink-0 ${isActive ? 'text-[#E41D57]' : 'text-gray-600'}`}
-                />
-                <span className={`text-[10px] sm:text-xs font-medium whitespace-nowrap overflow-hidden text-ellipsis block w-full text-center ${isActive ? 'text-[#E41D57]' : 'text-gray-600'
-                  }`} style={{ maxWidth: '100%', display: 'block' }}>
+                <div className={`relative flex items-center justify-center w-8 h-8 rounded-full ${isActive ? 'bg-pink-50' : 'bg-transparent'}`}>
+                  <IconComponent size={22} className={`${isActive ? 'text-[#E41D57] stroke-[2.5px]' : 'text-gray-500 stroke-[2px]'}`} />
+                </div>
+                <span className={`text-[10px] sm:text-[11px] leading-none whitespace-nowrap tracking-wide ${isActive ? 'font-bold text-[#E41D57]' : 'font-semibold text-gray-500'}`}>
                   {item.label}
                 </span>
               </button>

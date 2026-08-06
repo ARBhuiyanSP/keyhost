@@ -1,7 +1,7 @@
 const express = require('express');
 const { pool } = require('../config/database');
 const { formatResponse, generatePagination } = require('../utils/helpers');
-const { verifyToken, requireGuest, requireAdmin } = require('../middleware/auth');
+const { verifyToken, requireGuestOrOwner, requireAdmin } = require('../middleware/auth');
 const { validatePagination } = require('../middleware/validation');
 
 const router = express.Router();
@@ -9,7 +9,7 @@ const router = express.Router();
 // ==================== GUEST ROUTES ====================
 
 // Get user's rewards points balance and status
-router.get('/my-points', verifyToken, requireGuest, async (req, res) => {
+router.get('/my-points', verifyToken, requireGuestOrOwner, async (req, res) => {
   try {
     const userId = req.user.id;
 
@@ -92,7 +92,7 @@ router.get('/my-points', verifyToken, requireGuest, async (req, res) => {
 });
 
 // Get user's rewards points transaction history
-router.get('/my-transactions', verifyToken, requireGuest, validatePagination, async (req, res) => {
+router.get('/my-transactions', verifyToken, requireGuestOrOwner, validatePagination, async (req, res) => {
   try {
     const userId = req.user.id;
     const { page = 1, limit = 20 } = req.query;
@@ -136,7 +136,7 @@ router.get('/my-transactions', verifyToken, requireGuest, validatePagination, as
 });
 
 // Get available member status tiers
-router.get('/member-tiers', verifyToken, requireGuest, async (req, res) => {
+router.get('/member-tiers', verifyToken, requireGuestOrOwner, async (req, res) => {
   try {
     const [tiers] = await pool.execute(`
       SELECT * FROM member_status_tiers 

@@ -2,8 +2,8 @@ const { pool } = require('./config/database.js');
 
 async function check() {
     try {
-        const [res] = await pool.execute("SELECT id, status, payment_status, confirmed_at FROM bookings ORDER BY id DESC LIMIT 5");
-        console.log("Recent Bookings:", res);
+        const [res] = await pool.execute("SELECT * FROM hms_accounts_transactions LIMIT 5");
+        console.log("HMS Transactions:", JSON.stringify(res, null, 2));
     } catch (err) {
         console.error("Error:", err);
     } finally {
@@ -12,3 +12,4 @@ async function check() {
 }
 
 check();
+

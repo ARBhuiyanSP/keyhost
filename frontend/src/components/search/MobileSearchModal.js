@@ -8,11 +8,13 @@ import {
     FiChevronLeft, FiWifi, FiHome, FiBriefcase, FiGrid, FiSun, FiTv, FiCoffee, FiDroplet, FiShield, FiEye
 } from 'react-icons/fi';
 import api from '../../utils/api';
+import { getLocationSubtitle } from '../../utils/textUtils';
+import useLocationAutocomplete from '../../hooks/useLocationAutocomplete';
 
-const MobileSearchModal = ({ isOpen, onClose, filters, onSearch }) => {
+const MobileSearchModal = ({ isOpen, onClose, filters, onSearch, onApply }) => {
     const navigate = useNavigate();
     const [mobileSearchStep, setMobileSearchStep] = useState('location'); // 'location', 'dates', 'guests'
-    const [activePropertyType, setActivePropertyType] = useState(filters.property_type || 'room');
+    const [activePropertyType, setActivePropertyType] = useState(filters.property_type || '');
     const [airportList, setAirportList] = useState([]);
     const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
     const locationInputRef = useRef(null);
@@ -29,6 +31,24 @@ const MobileSearchModal = ({ isOpen, onClose, filters, onSearch }) => {
         tripType: 'oneWay'
     });
 
+    // Google Places Autocomplete search hook integration
+    const { placePredictions, handlePlaceSelect } = useLocationAutocomplete(
+        searchData.location,
+        activePropertyType,
+        ({ location, latitude, longitude }) => {
+            setSearchData(prev => ({
+                ...prev,
+                location,
+                latitude,
+                longitude
+            }));
+
+            if (location) {
+                setMobileSearchStep('dates');
+            }
+        }
+    );
+
     useEffect(() => {
         if (isOpen) {
             setSearchData({
@@ -40,7 +60,7 @@ const MobileSearchModal = ({ isOpen, onClose, filters, onSearch }) => {
                 to: '',
                 tripType: 'oneWay'
             });
-            setActivePropertyType(filters.property_type || 'room');
+            setActivePropertyType(filters.property_type || '');
             setMobileSearchStep('location');
         }
     }, [isOpen, filters]);
@@ -108,7 +128,7 @@ const MobileSearchModal = ({ isOpen, onClose, filters, onSearch }) => {
         return null;
     };
 
-    const getTypeIcon = (typeName, isActive) => {
+    const getTypeIcon = (typeName, isActive, iconUrl = '') => {
         const normalized = (typeName || '').toLowerCase();
         let Icon = FiHome;
         if (normalized.includes('apartment')) Icon = FiGrid;
@@ -117,10 +137,13 @@ const MobileSearchModal = ({ isOpen, onClose, filters, onSearch }) => {
 
         // Use img for consistency if available, otherwise Icon
         // Replicating Home.js logic which uses images primarily
-        let imgSrc = '/images/nav-icon-room.png';
-        if (normalized.includes('apartment')) imgSrc = '/images/nav-icon-apartment.png';
-        else if (normalized.includes('hotel')) imgSrc = '/images/nav-icon-hotel.png';
-        else if (normalized.includes('flight')) imgSrc = '/images/flight.png';
+        let imgSrc = iconUrl || '/images/nav-icon-room.png';
+        if (!iconUrl) {
+            if (normalized.includes('apartment')) imgSrc = '/images/nav-icon-apartment.png';
+            else if (normalized.includes('hotel')) imgSrc = '/images/nav-icon-hotel.png';
+            else if (normalized.includes('flight')) imgSrc = '/images/flight.png';
+            else if (normalized.includes('monthly') || normalized.includes('rent')) imgSrc = '/images/nav-icon-monthly.png';
+        }
 
         return (
             <img
@@ -130,8 +153,37 @@ const MobileSearchModal = ({ isOpen, onClose, filters, onSearch }) => {
                     ? 'opacity-100 grayscale-0'
                     : 'opacity-70 grayscale'
                     }`}
+                onError={(e) => { e.target.src = '/images/nav-icon-room.png'; }}
             />
         );
+    };
+
+    const handleNearbyClick = (e) => {
+        if (e) {
+            e.stopPropagation();
+        }
+        if (navigator.geolocation) {
+            setSearchData(prev => ({ ...prev, location: 'Locating...' }));
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    setSearchData(prev => ({
+                        ...prev,
+                        location: 'Nearby',
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude
+                    }));
+                    setMobileSearchStep('dates');
+                },
+                (error) => {
+                    console.error("Geolocation error:", error);
+                    setSearchData(prev => ({ ...prev, location: 'Nearby' }));
+                    setMobileSearchStep('dates');
+                }
+            );
+        } else {
+            setSearchData(prev => ({ ...prev, location: 'Nearby' }));
+            setMobileSearchStep('dates');
+        }
     };
 
     const handleSearchClick = () => {
@@ -144,12 +196,17 @@ const MobileSearchModal = ({ isOpen, onClose, filters, onSearch }) => {
 
         const params = {
             city: searchData.location,
+            latitude: searchData.latitude || undefined,
+            longitude: searchData.longitude || undefined,
             check_in_date: formatDateLocal(searchData.checkIn),
             check_out_date: formatDateLocal(searchData.checkOut),
             min_guests: searchData.guests,
             property_type: activePropertyType
         };
-        onSearch(params);
+        const searchHandler = onSearch || onApply;
+        if (typeof searchHandler === 'function') {
+            searchHandler(params);
+        }
         onClose();
     };
 
@@ -167,7 +224,21 @@ const MobileSearchModal = ({ isOpen, onClose, filters, onSearch }) => {
                 </button>
 
                 {/* Property Type Tabs */}
-                <div className="flex items-center justify-center gap-6 overflow-x-auto scrollbar-hide px-10 w-full">
+                <div className="flex items-center justify-center gap-3 overflow-x-auto scrollbar-hide px-10 w-full">
+                    {/* All Property Tab */}
+                    <button
+                        onClick={() => setActivePropertyType('')}
+                        className="flex flex-col items-center gap-2 min-w-[64px] flex-shrink-0 group cursor-pointer"
+                    >
+                        <div className={`transition-opacity duration-200 ${!activePropertyType ? 'opacity-100' : 'opacity-60 group-hover:opacity-80'}`}>
+                            <FiGrid className="w-5 h-5 text-black" />
+                        </div>
+                        <span className={`text-xs font-semibold whitespace-nowrap pb-2 border-b-2 transition-all duration-200 ${!activePropertyType ? 'text-black border-black' : 'text-gray-500 border-transparent group-hover:text-gray-800'
+                            }`}>
+                            All
+                        </span>
+                    </button>
+
                     {propertyTypes && propertyTypes.map((type) => {
                         const isActive = activePropertyType === (type.name || '').toLowerCase();
                         return (
@@ -177,7 +248,7 @@ const MobileSearchModal = ({ isOpen, onClose, filters, onSearch }) => {
                                 className="flex flex-col items-center gap-2 min-w-[64px] flex-shrink-0 group cursor-pointer"
                             >
                                 <div className={`transition-opacity duration-200 ${isActive ? 'opacity-100' : 'opacity-60 group-hover:opacity-80'}`}>
-                                    {getTypeIcon(type.name, isActive)}
+                                    {getTypeIcon(type.name, isActive, type.icon_url)}
                                 </div>
                                 <span className={`text-xs font-semibold whitespace-nowrap pb-2 border-b-2 transition-all duration-200 ${isActive ? 'text-black border-black' : 'text-gray-500 border-transparent group-hover:text-gray-800'
                                     }`}>
@@ -187,18 +258,6 @@ const MobileSearchModal = ({ isOpen, onClose, filters, onSearch }) => {
                         );
                     })}
 
-                    {/* Manual Flight Tab - Moved to End */}
-                    <button
-                        onClick={() => setActivePropertyType('flight')}
-                        className="flex flex-col items-center gap-2 min-w-[64px] flex-shrink-0 group cursor-pointer"
-                    >
-                        <div className={`transition-opacity duration-200 ${activePropertyType === 'flight' ? 'opacity-100' : 'opacity-60 group-hover:opacity-100'}`}>
-                            <img src="/images/flight.png" alt="Flight" className={`w-5 h-5 object-contain transition-all duration-300 ${activePropertyType === 'flight' ? 'grayscale-0' : 'grayscale'}`} />
-                        </div>
-                        <span className={`text-xs font-semibold whitespace-nowrap pb-2 border-b-2 transition-all duration-200 ${activePropertyType === 'flight' ? 'text-black border-black' : 'text-gray-500 border-transparent group-hover:text-gray-900 group-hover:border-gray-300'}`}>
-                            Flight
-                        </span>
-                    </button>
                 </div>
             </div>
 
@@ -241,35 +300,76 @@ const MobileSearchModal = ({ isOpen, onClose, filters, onSearch }) => {
                                 </div>
 
                                 {/* Suggestions */}
-                                {locationSuggestionsData && locationSuggestionsData.length > 0 && (
+                                {searchData.location && searchData.location.trim().length >= 2 && placePredictions.length > 0 ? (
                                     <div className="mt-2 pl-2">
-                                        <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Suggested destinations</div>
-                                        <div className="space-y-4">
-                                            <button className="flex items-center gap-4 w-full text-left" onClick={(e) => { e.stopPropagation(); setSearchData(prev => ({ ...prev, location: 'Nearby' })); setMobileSearchStep('dates'); }}>
-                                                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center"><FiMapPin className="w-5 h-5" /></div>
-                                                <div className="font-semibold text-gray-700">Nearby</div>
-                                            </button>
-                                            {locationSuggestionsData.slice(0, 5).map((loc, idx) => (
+                                        <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Search locations</div>
+                                        <div className="space-y-3.5 mt-2">
+                                            {placePredictions.map((pred, idx) => (
                                                 <button
-                                                    key={idx}
+                                                    key={pred.place_id || idx}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        setSearchData(prev => ({ ...prev, location: loc.city }));
-                                                        setMobileSearchStep('dates');
+                                                        handlePlaceSelect(pred);
                                                     }}
-                                                    className="flex items-center gap-4 w-full text-left"
+                                                    className="flex items-center gap-3.5 w-full text-left group"
                                                 >
-                                                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                                                        <FiMapPin className="w-5 h-5 text-gray-500" />
+                                                    <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 text-gray-500 group-hover:bg-pink-100 group-hover:text-[#E41D57] transition-all duration-300">
+                                                        <FiMapPin className="w-5 h-5" />
                                                     </div>
-                                                    <div>
-                                                        <div className="font-semibold text-gray-900">{loc.city}</div>
-                                                        <div className="text-sm text-gray-500">{loc.country}</div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-sm font-bold text-gray-900 group-hover:text-black transition-colors truncate">
+                                                            {pred.structured_formatting?.main_text || pred.description}
+                                                        </div>
+                                                        <div className="text-xs text-gray-400 group-hover:text-gray-500 transition-colors truncate mt-0.5">
+                                                            {pred.structured_formatting?.secondary_text || ''}
+                                                        </div>
                                                     </div>
                                                 </button>
                                             ))}
                                         </div>
                                     </div>
+                                ) : (
+                                    locationSuggestionsData && locationSuggestionsData.length > 0 && (
+                                        <div className="mt-2 pl-2">
+                                            <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Suggested destinations</div>
+                                            <div className="space-y-3.5 mt-2">
+                                                <button className="flex items-center gap-3.5 w-full text-left group" onClick={handleNearbyClick}>
+                                                    <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 text-gray-500 group-hover:bg-pink-100 group-hover:text-[#E41D57] transition-all duration-300">
+                                                        <FiMapPin className="w-5 h-5" />
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-sm font-bold text-gray-900 group-hover:text-black transition-colors">Nearby</div>
+                                                        <div className="text-[10px] text-gray-400 group-hover:text-gray-500 transition-colors italic font-normal mt-0.5">Find what's around you using GPS</div>
+                                                    </div>
+                                                </button>
+                                                {locationSuggestionsData.slice(0, 5).map((loc, idx) => (
+                                                    <button
+                                                        key={idx}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setSearchData(prev => ({
+                                                                ...prev,
+                                                                location: loc.city,
+                                                                latitude: null,
+                                                                longitude: null
+                                                            }));
+                                                            setMobileSearchStep('dates');
+                                                        }}
+                                                        className="flex items-center gap-3.5 w-full text-left group"
+                                                    >
+                                                        <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 text-gray-500 group-hover:bg-pink-100 group-hover:text-[#E41D57] transition-all duration-300">
+                                                            <FiMapPin className="w-5 h-5" />
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="text-sm font-bold text-gray-900 group-hover:text-black transition-colors truncate">{loc.city}</div>
+                                                            <div className="text-xs text-gray-400 group-hover:text-gray-500 transition-colors truncate mt-0.5">{loc.country}</div>
+                                                            <div className="text-[10px] text-gray-400 group-hover:text-gray-500 transition-colors italic font-normal mt-0.5 truncate">{getLocationSubtitle(loc.city)}</div>
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )
                                 )}
                             </div>
                         ) : (

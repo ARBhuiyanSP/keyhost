@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from 'react-query';
-import { useNavigate } from 'react-router-dom';
-import { FiCalendar, FiSearch, FiFilter, FiEye, FiUser, FiHome, FiDollarSign, FiMapPin, FiCheck, FiX, FiCreditCard } from 'react-icons/fi';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { FiCalendar, FiSearch, FiFilter, FiEye, FiUser, FiHome, FiDollarSign, FiMapPin, FiCheck, FiX, FiCreditCard, FiAlertTriangle, FiLogIn, FiLogOut, FiChevronRight } from 'react-icons/fi';
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import useToast from '../../hooks/useToast';
+import { formatPrice } from '../../utils/textUtils';
 
 const ExpandablePropertyTitle = ({ title, maxLength = 25 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -31,11 +32,15 @@ const ExpandablePropertyTitle = ({ title, maxLength = 25 }) => {
 };
 const PropertyOwnerBookings = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const initialSearch = searchParams.get('search') || '';
+  const initialStatus = searchParams.get('status') || '';
+
   const { showSuccess, showError } = useToast();
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState({
-    status: '',
-    search: '',
+    status: initialStatus,
+    search: initialSearch,
     page: 1,
     limit: 10
   });
@@ -46,6 +51,10 @@ const PropertyOwnerBookings = () => {
   const [partialAmount, setPartialAmount] = useState('');
   const [discountAmount, setDiscountAmount] = useState('');
   const [discountReason, setDiscountReason] = useState('');
+  const [showDeductionModal, setShowDeductionModal] = useState(false);
+  const [deductionData, setDeductionData] = useState({ amount: '', reason: '' });
+  const [isSubmittingDeduction, setIsSubmittingDeduction] = useState(false);
+  const [hasAutoOpened, setHasAutoOpened] = useState(false);
 
   // Fetch property owner's bookings
   const { data: bookingsData, isLoading, refetch } = useQuery(
@@ -71,8 +80,8 @@ const PropertyOwnerBookings = () => {
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({
       ...prev,
-      [key]: value,
-      page: 1
+      page: 1,
+      [key]: value
     }));
   };
 
@@ -94,6 +103,16 @@ const PropertyOwnerBookings = () => {
       setShowDetailsModal(true);
     }
   };
+
+  useEffect(() => {
+    if (initialSearch && bookingsData?.bookings?.length === 1 && !hasAutoOpened) {
+      const booking = bookingsData.bookings[0];
+      if (booking.booking_reference === initialSearch) {
+        setHasAutoOpened(true);
+        handleViewBooking(booking);
+      }
+    }
+  }, [bookingsData, initialSearch, hasAutoOpened]);
 
   const handleBookingAction = async (bookingId, action) => {
     const actionText = action === 'checkin' ? 'check in' : action === 'checkout' ? 'check out' : action;
@@ -171,6 +190,45 @@ const PropertyOwnerBookings = () => {
     } catch (error) {
       console.error(`Error ${action} booking:`, error);
       showError(error.response?.data?.message || `Failed to ${actionText} booking`);
+    }
+  };
+
+  const handleDeductionClaim = (booking) => {
+    setSelectedBooking(booking);
+    setDeductionData({ amount: '', reason: '' });
+    setShowDeductionModal(true);
+  };
+
+  const submitDeductionClaim = async () => {
+    if (!deductionData.amount || isNaN(deductionData.amount) || parseFloat(deductionData.amount) <= 0) {
+      showError('Please enter a valid amount greater than 0.');
+      return;
+    }
+    if (!deductionData.reason.trim()) {
+      showError('A reason is required to process a deduction claim.');
+      return;
+    }
+
+    setIsSubmittingDeduction(true);
+    try {
+      const response = await api.post(`/property-owner/bookings/${selectedBooking.id}/deduction-claim`, { 
+        amount: deductionData.amount, 
+        reason: deductionData.reason 
+      });
+      if (response.data.success) {
+        showSuccess('Deduction claim sent to Admin for review');
+        // Invalidate queries to refresh data
+        queryClient.invalidateQueries('property-owner-earnings-dashboard');
+        queryClient.invalidateQueries(['owner-bookings', filters]);
+        setShowDeductionModal(false);
+        refetch();
+      } else {
+        showError(response.data.message || 'Failed to submit claim');
+      }
+    } catch (error) {
+      showError(error.response?.data?.message || 'Failed to submit deduction claim');
+    } finally {
+      setIsSubmittingDeduction(false);
     }
   };
 
@@ -377,243 +435,281 @@ const PropertyOwnerBookings = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Booking Management</h1>
-          <p className="text-gray-600 mt-2">Manage bookings for your properties</p>
+    <div className="min-h-screen bg-gray-50/50 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        {/* Premium Page Header */}
+        <div className="relative overflow-hidden rounded-2xl p-6 md:p-8 text-white shadow-lg mb-8" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)' }}>
+          <div className="absolute -right-10 -top-10 w-40 h-40 bg-white/5 rounded-full blur-xl pointer-events-none"></div>
+          <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-white/5 rounded-full blur-xl pointer-events-none"></div>
+          
+          <div className="relative z-10">
+            <h1 className="text-3xl font-extrabold tracking-tight">Bookings</h1>
+            <p className="mt-2 text-indigo-200/90 text-sm max-w-xl">
+              Track check-in/out schedules, manage guest reservation requests, update booking payment settlements, and process security deposit deductions.
+            </p>
+          </div>
         </div>
 
-        {/* Filters */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Search Bookings
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <FiSearch className="h-5 w-5 text-gray-400" />
-                </div>
-                <input
-                  type="text"
-                  placeholder="Search by reference, guest name, or property..."
-                  value={filters.search}
-                  onChange={(e) => handleFilterChange('search', e.target.value)}
-                  className="input-field pl-10"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Status
-              </label>
-              <select
-                value={filters.status}
-                onChange={(e) => handleFilterChange('status', e.target.value)}
-                className="input-field"
-              >
-                <option value="">All Statuses</option>
-                <option value="pending">Pending</option>
-                <option value="request_accepted">Request Accepted</option>
-                <option value="confirmed">Confirmed</option>
-                <option value="checked_in">Checked In</option>
-                <option value="checked_out">Checked Out</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </div>
-
-            <div className="flex items-end">
+        {/* Tabbed Booking Status Filtering */}
+        <div className="flex border-b border-gray-200 mb-6 space-x-2 overflow-x-auto pb-1 scrollbar-none">
+          {[
+            { id: '', label: 'All Bookings' },
+            { id: 'pending', label: 'Pending' },
+            { id: 'request_accepted', label: 'Request Accepted' },
+            { id: 'confirmed', label: 'Confirmed' },
+            { id: 'checked_in', label: 'Checked In' },
+            { id: 'checked_out', label: 'Checked Out' },
+            { id: 'cancelled', label: 'Cancelled' }
+          ].map((tab) => {
+            const isActive = filters.status === tab.id;
+            return (
               <button
-                onClick={() => setFilters({ status: '', search: '', page: 1, limit: 10 })}
-                className="btn-secondary w-full"
+                key={tab.label}
+                onClick={() => handleFilterChange('status', tab.id)}
+                type="button"
+                className={`py-3 px-4 text-sm font-bold border-b-2 whitespace-nowrap transition-all duration-150 flex items-center gap-2 rounded-t-lg focus:outline-none ${
+                  isActive
+                    ? 'border-blue-600 text-blue-600 bg-blue-50/40'
+                    : 'border-transparent text-gray-550 hover:text-gray-700 hover:bg-gray-50/50'
+                }`}
               >
-                <FiFilter className="inline mr-2" />
-                Clear Filters
+                {tab.label}
               </button>
+            );
+          })}
+        </div>
+
+        {/* Filters Card */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6">
+          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+            <div className="relative w-full sm:max-w-md">
+              <input
+                type="text"
+                value={filters.search}
+                onChange={(e) => handleFilterChange('search', e.target.value)}
+                placeholder="Search by reference, guest name, or property..."
+                className="w-full px-3 py-2.5 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow text-sm"
+              />
+              <FiSearch className="absolute left-3.5 top-3.5 h-4.5 w-4.5 text-gray-400" />
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+              <div className="flex items-center justify-between sm:justify-start gap-2">
+                <span className="text-xs font-semibold text-gray-500 whitespace-nowrap">Page size:</span>
+                <select
+                  value={filters.limit}
+                  onChange={(e) => handleFilterChange('limit', parseInt(e.target.value))}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white w-full sm:w-auto"
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  onClick={() => setFilters({ status: '', search: '', page: 1, limit: 10 })}
+                  type="button"
+                  className="flex-1 sm:flex-none px-4 py-2 border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 focus:outline-none"
+                >
+                  Clear
+                </button>
+
+                <button
+                  onClick={() => refetch()}
+                  type="button"
+                  className="flex-1 sm:flex-none bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-semibold transition-colors flex items-center justify-center gap-1.5"
+                >
+                  Refresh
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Bookings Table */}
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900">
-              Bookings ({bookingsData?.pagination?.totalItems || 0})
-            </h2>
+        {/* Desktop Bookings Table (hidden on mobile) */}
+        <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+          <div className="px-5 py-3.5 border-b border-gray-100 flex justify-between items-center" style={{background: 'linear-gradient(90deg, #f8faff 0%, #f0f4ff 100%)'}}>
+            <div className="flex items-center gap-3">
+              <FiCalendar className="w-4 h-4 text-blue-500" />
+              <h2 className="text-sm font-bold text-gray-800">
+                Bookings
+              </h2>
+              <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full">{bookingsData?.pagination?.totalItems || 0} total</span>
+            </div>
           </div>
 
           {isLoading ? (
-            <div className="p-6">
+            <div className="p-12 flex justify-center bg-white">
               <LoadingSpinner />
             </div>
           ) : bookingsData?.bookings?.length > 0 ? (
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="sticky left-0 z-10 bg-gray-50 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
-                      Actions
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Dates
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Amount
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Booking
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Guest
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Property
-                    </th>
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr style={{background: '#f8fafc'}}>
+                    <th scope="col" className="px-4 py-2.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100">Ref & Date</th>
+                    <th scope="col" className="px-4 py-2.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100">Property</th>
+                    <th scope="col" className="px-4 py-2.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100">Guest</th>
+                    <th scope="col" className="px-4 py-2.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100">Stay Dates</th>
+                    <th scope="col" className="px-4 py-2.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100">Amount</th>
+                    <th scope="col" className="px-4 py-2.5 text-center text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100">Status</th>
+                    <th scope="col" className="px-4 py-2.5 text-right text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {bookingsData.bookings.map((booking) => (
-                    <tr key={booking.id} className="hover:bg-gray-50 group">
-                      <td className="sticky left-0 z-10 bg-white group-hover:bg-gray-50 px-6 py-4 whitespace-nowrap text-left text-sm font-medium shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] border-r border-gray-100">
-                        <div className="flex items-center justify-start space-x-2">
+                <tbody>
+                  {bookingsData.bookings.map((booking, idx) => (
+                    <tr key={booking.id}
+                      className="group border-b border-gray-50 hover:bg-blue-50/30 transition-all duration-100 cursor-default"
+                      style={idx % 2 === 1 ? {background: '#fafbff'} : {}}
+                    >
+                      {/* Ref & Created Date */}
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <div className="font-bold text-[11px] text-blue-700 tracking-wide">{booking.booking_reference}</div>
+                        <div className="text-[10px] text-gray-400 mt-0.5">{new Date(booking.created_at).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: '2-digit'})}</div>
+                      </td>
+
+                      {/* Property */}
+                      <td className="px-4 py-3 max-w-[200px]">
+                        <ExpandablePropertyTitle title={booking.property_title} maxLength={32} />
+                        {booking.is_hms_enabled && booking.hms_room_number && (
+                          <span className="inline-flex items-center mt-0.5 px-1.5 py-0.5 bg-indigo-50 text-indigo-600 text-[9px] font-bold rounded">
+                            Rm {booking.hms_room_number}
+                          </span>
+                        )}
+                        <div className="text-[10px] text-gray-400 flex items-center mt-0.5 gap-0.5">
+                          <FiMapPin className="w-2.5 h-2.5 shrink-0" />
+                          <span className="truncate max-w-[140px]">{booking.property_city}</span>
+                        </div>
+                      </td>
+
+                      {/* Guest */}
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <div className="h-7 w-7 rounded-full flex items-center justify-center text-[10px] font-extrabold shrink-0"
+                            style={{background: 'linear-gradient(135deg, #dbeafe, #bfdbfe)', color: '#1d4ed8'}}>
+                            {booking.guest_name?.split(' ').map(n => n[0]).join('').substring(0, 2) || 'G'}
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-gray-800 leading-tight">{booking.guest_name || 'Guest'}</div>
+                            <div className="text-[10px] text-gray-400 truncate max-w-[110px]">{booking.guest_email}</div>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Dates */}
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <div className="text-[11px] font-semibold text-gray-700">
+                          {new Date(booking.check_in_date).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}
+                        </div>
+                        <div className="text-[10px] text-gray-400">
+                          → {new Date(booking.check_out_date).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: '2-digit'})}
+                        </div>
+                        <div className="text-[9px] text-gray-400 font-medium mt-0.5">{booking.number_of_guests} guest{booking.number_of_guests > 1 ? 's' : ''}</div>
+                      </td>
+
+                      {/* Amount */}
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <div className="text-xs font-bold text-gray-800">৳{formatPrice(booking.total_amount)}</div>
+                        <span className={`inline-flex mt-0.5 items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${getPaymentStatusColor(booking.payment_status)}`}>
+                          {booking.payment_status || 'pending'}
+                        </span>
+                        {booking.due_amount <= 0 && booking.paid_amount >= booking.total_amount ? (
+                          <div className="text-[9px] text-green-600 font-bold mt-0.5">✓ Fully Paid</div>
+                        ) : booking.paid_amount > 0 ? (
+                          <div className="text-[9px] text-gray-500 mt-0.5">Due: ৳{formatPrice(booking.due_amount)}</div>
+                        ) : null}
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-4 py-3 text-center whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${getStatusColor(booking.status)}`}>
+                          {booking.status?.replace(/_/g, ' ')}
+                        </span>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-0.5">
                           <button
                             onClick={() => handleViewBooking(booking)}
-                            className="text-primary-600 hover:text-primary-900"
+                            type="button"
+                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors focus:outline-none"
                             title="View Details"
                           >
-                            <FiEye className="w-4 h-4" />
+                            <FiEye className="h-3.5 w-3.5" />
                           </button>
+
+                          {(booking.payment_status === 'pending' || booking.payment_status === 'processing') && (
+                            <button
+                              onClick={() => handleOpenPaymentModal(booking)}
+                              type="button"
+                              className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors focus:outline-none"
+                              title="Update Payment"
+                            >
+                              <FiCreditCard className="h-3.5 w-3.5" />
+                            </button>
+                          )}
 
                           {canConfirm(booking) && (
                             <button
                               onClick={() => handleBookingAction(booking.id, 'confirm')}
-                              className="text-green-600 hover:text-green-900"
+                              type="button"
+                              className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors focus:outline-none"
                               title="Accept Booking"
                             >
-                              <FiCheck className="w-4 h-4" />
+                              <FiCheck className="h-3.5 w-3.5" />
                             </button>
                           )}
 
                           {canCheckIn(booking) && (
                             <button
                               onClick={() => handleBookingAction(booking.id, 'checkin')}
-                              className="text-blue-600 hover:text-blue-900"
-                              title="Check In"
+                              type="button"
+                              className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors focus:outline-none"
+                              title="Check In Guest"
                             >
-                              <FiUser className="w-4 h-4" />
+                              <FiLogIn className="h-3.5 w-3.5" />
                             </button>
                           )}
 
                           {canCheckOut(booking) && (
                             <button
                               onClick={() => handleBookingAction(booking.id, 'checkout')}
-                              className="text-purple-600 hover:text-purple-900"
-                              title="Check Out"
+                              type="button"
+                              className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors focus:outline-none"
+                              title="Check Out Guest"
                             >
-                              <FiUser className="w-4 h-4" />
+                              <FiLogOut className="h-3.5 w-3.5" />
                             </button>
                           )}
 
                           {canCancel(booking) && (
                             <button
                               onClick={() => handleBookingAction(booking.id, 'cancel')}
-                              className="text-red-600 hover:text-red-900"
+                              type="button"
+                              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors focus:outline-none"
                               title="Cancel Booking"
                             >
-                              <FiX className="w-4 h-4" />
+                              <FiX className="h-3.5 w-3.5" />
                             </button>
                           )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {new Date(booking.check_in_date).toLocaleDateString()}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          to {new Date(booking.check_out_date).toLocaleDateString()}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {booking.number_of_guests} guests
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(booking.status)}`}>
-                          {booking.status?.replace('_', ' ')}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900 flex items-center">
-                          <FiDollarSign className="w-3 h-3 mr-1" />
-                          <span className="font-bold text-red-600">BDT {booking.total_amount}</span>
-                        </div>
-                        {booking.due_amount <= 0 && booking.paid_amount >= booking.total_amount ? (
-                          <div className="flex items-center gap-1 text-xs font-semibold text-green-600 mt-0.5">
-                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                            </svg>
-                            Fully Paid ✓
-                          </div>
-                        ) : booking.paid_amount > 0 && booking.paid_amount < booking.total_amount ? (
-                          <div className="text-xs text-green-600 mt-0.5 whitespace-nowrap">
-                            <div className="mb-0.5">Paid: BDT {parseFloat(booking.paid_amount).toFixed(0)}</div>
-                            <div>Due: BDT {parseFloat(booking.due_amount).toFixed(0)}</div>
-                          </div>
-                        ) : null}
-                        <div className="flex items-center space-x-2 mt-1">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getPaymentStatusColor(booking.payment_status)}`}>
-                            {booking.payment_status || 'pending'}
-                          </span>
-                          {(booking.payment_status === 'pending' || booking.payment_status === 'processing') && (
+
+                          {(booking.status === 'checked_in' || booking.status === 'checked_out') &&
+                            parseFloat(booking.security_deposit) > 0 &&
+                            (!booking.security_deposit_status || booking.security_deposit_status === 'pending') && (
                             <button
-                              onClick={() => handleOpenPaymentModal(booking)}
-                              className="text-blue-600 hover:text-blue-900"
-                              title="Update Payment"
+                              onClick={() => handleDeductionClaim(booking)}
+                              type="button"
+                              className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors focus:outline-none"
+                              title="Claim Security Deposit"
                             >
-                              <FiCreditCard className="w-4 h-4" />
+                              <FiAlertTriangle className="h-3.5 w-3.5" />
                             </button>
                           )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
-                            {booking.booking_reference}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {new Date(booking.created_at).toLocaleDateString()}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
-                            <span className="text-primary-600 font-medium text-xs">
-                              {booking.guest_name?.split(' ').map(n => n[0]).join('') || 'G'}
-                            </span>
-                          </div>
-                          <div className="ml-3">
-                            <div className="text-sm font-medium text-gray-900">
-                              {booking.guest_name || 'Guest'}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              {booking.guest_email}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-4 align-top">
-                        <div className="w-40 max-w-[180px]">
-                          <ExpandablePropertyTitle title={booking.property_title} maxLength={22} />
-                          <div className="text-xs text-gray-500 flex items-center mt-1.5">
-                            <FiMapPin className="w-3 h-3 mr-1 flex-shrink-0" />
-                            <span className="truncate whitespace-normal" title={booking.property_city}>{booking.property_city}</span>
-                          </div>
                         </div>
                       </td>
                     </tr>
@@ -622,47 +718,255 @@ const PropertyOwnerBookings = () => {
               </table>
             </div>
           ) : (
-            <div className="text-center py-12">
-              <FiCalendar className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">No bookings found</h3>
-              <p className="text-gray-600">Try adjusting your search criteria</p>
-            </div>
-          )}
-
-          {/* Pagination */}
-          {bookingsData?.pagination && bookingsData.pagination.totalPages > 1 && (
-            <div className="px-6 py-4 border-t border-gray-200">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-gray-700">
-                  Showing {((bookingsData.pagination.currentPage - 1) * bookingsData.pagination.itemsPerPage) + 1} to{' '}
-                  {Math.min(bookingsData.pagination.currentPage * bookingsData.pagination.itemsPerPage, bookingsData.pagination.totalItems)} of{' '}
-                  {bookingsData.pagination.totalItems} results
-                </div>
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => handleFilterChange('page', bookingsData.pagination.prevPage)}
-                    disabled={!bookingsData.pagination.hasPrevPage}
-                    className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Previous
-                  </button>
-
-                  <span className="px-4 py-2 text-sm text-gray-700">
-                    Page {bookingsData.pagination.currentPage} of {bookingsData.pagination.totalPages}
-                  </span>
-
-                  <button
-                    onClick={() => handleFilterChange('page', bookingsData.pagination.nextPage)}
-                    disabled={!bookingsData.pagination.hasNextPage}
-                    className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Next
-                  </button>
-                </div>
+            <div className="p-16 text-center">
+              <div className="w-14 h-14 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <FiCalendar className="h-6 w-6 text-gray-300" />
               </div>
+              <p className="font-bold text-gray-700 text-sm">No bookings found</p>
+              <p className="text-xs text-gray-400 mt-1">Adjust your search filters and try again</p>
             </div>
           )}
         </div>
+
+        {/* Mobile Bookings Cards List (hidden on desktop) */}
+        <div className="grid grid-cols-1 gap-3 md:hidden mb-6">
+          {isLoading ? (
+            <div className="p-12 flex justify-center bg-white rounded-2xl border border-gray-100 shadow-sm">
+              <LoadingSpinner />
+            </div>
+          ) : bookingsData?.bookings?.length > 0 ? (
+            bookingsData.bookings.map((booking) => (
+              <div key={booking.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                {/* Card Header */}
+                <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-gray-50">
+                  <div className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-full flex items-center justify-center text-xs font-extrabold shrink-0"
+                      style={{background: 'linear-gradient(135deg, #dbeafe, #bfdbfe)', color: '#1d4ed8'}}>
+                      {booking.guest_name?.split(' ').map(n => n[0]).join('').substring(0, 2) || 'G'}
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-900 leading-tight">{booking.guest_name || 'Guest'}</h4>
+                      <p className="text-[10px] text-blue-600 font-bold tracking-wide">{booking.booking_reference}</p>
+                    </div>
+                  </div>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${getStatusColor(booking.status)}`}>
+                    {booking.status?.replace(/_/g, ' ')}
+                  </span>
+                </div>
+
+                {/* Card Body Grid */}
+                <div className="px-4 py-3 grid grid-cols-2 gap-x-4 gap-y-2.5">
+                  {/* Property */}
+                  <div className="col-span-2">
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Property</p>
+                    <p className="text-xs font-semibold text-gray-800 leading-snug">{booking.property_title}</p>
+                    {booking.is_hms_enabled && booking.hms_room_number && (
+                      <span className="inline-flex items-center mt-0.5 px-1.5 py-0.5 bg-indigo-50 text-indigo-600 text-[9px] font-bold rounded">
+                        Rm {booking.hms_room_number} · {booking.hms_room_type}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Check-in */}
+                  <div>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Check-in</p>
+                    <p className="text-xs font-semibold text-gray-700">{new Date(booking.check_in_date).toLocaleDateString(undefined, {day: 'numeric', month: 'short', year: 'numeric'})}</p>
+                  </div>
+
+                  {/* Check-out */}
+                  <div>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Check-out</p>
+                    <p className="text-xs font-semibold text-gray-700">{new Date(booking.check_out_date).toLocaleDateString(undefined, {day: 'numeric', month: 'short', year: 'numeric'})}</p>
+                  </div>
+
+                  {/* Total */}
+                  <div>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Total Amount</p>
+                    <p className="text-sm font-bold text-gray-900">৳{formatPrice(booking.total_amount)}</p>
+                  </div>
+
+                  {/* Payment */}
+                  <div>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Payment</p>
+                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${getPaymentStatusColor(booking.payment_status)}`}>
+                      {booking.payment_status || 'pending'}
+                    </span>
+                    {booking.due_amount <= 0 && booking.paid_amount >= booking.total_amount ? (
+                      <p className="text-[9px] text-green-600 font-bold mt-0.5">✓ Fully Paid</p>
+                    ) : booking.paid_amount > 0 ? (
+                      <p className="text-[9px] text-gray-500 mt-0.5">Due: ৳{formatPrice(booking.due_amount)}</p>
+                    ) : null}
+                  </div>
+
+                  {/* Guests */}
+                  <div>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Guests</p>
+                    <p className="text-xs font-semibold text-gray-700">{booking.number_of_guests} person{booking.number_of_guests > 1 ? 's' : ''}</p>
+                  </div>
+
+                  {/* City */}
+                  <div>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">City</p>
+                    <p className="text-xs font-semibold text-gray-700">{booking.property_city || '—'}</p>
+                  </div>
+                </div>
+
+                {/* Action Bar */}
+                <div className="px-4 py-2.5 bg-gray-50/80 border-t border-gray-100 flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => handleViewBooking(booking)}
+                    type="button"
+                    className="flex-1 min-w-0 flex items-center justify-center gap-1 px-2 py-2 bg-white border border-gray-200 hover:border-blue-300 hover:bg-blue-50 text-gray-600 hover:text-blue-700 rounded-xl font-semibold text-[10px] transition-all focus:outline-none"
+                  >
+                    <FiEye className="h-3 w-3 shrink-0" /><span>Details</span>
+                  </button>
+
+                  {(booking.payment_status === 'pending' || booking.payment_status === 'processing') && (
+                    <button
+                      onClick={() => handleOpenPaymentModal(booking)}
+                      type="button"
+                      className="flex-1 min-w-0 flex items-center justify-center gap-1 px-2 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-xl font-semibold text-[10px] transition-all focus:outline-none"
+                    >
+                      <FiCreditCard className="h-3 w-3 shrink-0" /><span>Pay</span>
+                    </button>
+                  )}
+
+                  {canConfirm(booking) && (
+                    <button
+                      onClick={() => handleBookingAction(booking.id, 'confirm')}
+                      type="button"
+                      className="flex-1 min-w-0 flex items-center justify-center gap-1 px-2 py-2 bg-green-50 hover:bg-green-100 border border-green-200 text-green-700 rounded-xl font-semibold text-[10px] transition-all focus:outline-none"
+                    >
+                      <FiCheck className="h-3 w-3 shrink-0" /><span>Accept</span>
+                    </button>
+                  )}
+
+                  {canCheckIn(booking) && (
+                    <button
+                      onClick={() => handleBookingAction(booking.id, 'checkin')}
+                      type="button"
+                      className="flex-1 min-w-0 flex items-center justify-center gap-1 px-2 py-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 rounded-xl font-semibold text-[10px] transition-all focus:outline-none"
+                    >
+                      <FiLogIn className="h-3 w-3 shrink-0" /><span>Check In</span>
+                    </button>
+                  )}
+
+                  {canCheckOut(booking) && (
+                    <button
+                      onClick={() => handleBookingAction(booking.id, 'checkout')}
+                      type="button"
+                      className="flex-1 min-w-0 flex items-center justify-center gap-1 px-2 py-2 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 rounded-xl font-semibold text-[10px] transition-all focus:outline-none"
+                    >
+                      <FiLogOut className="h-3 w-3 shrink-0" /><span>Check Out</span>
+                    </button>
+                  )}
+
+                  {canCancel(booking) && (
+                    <button
+                      onClick={() => handleBookingAction(booking.id, 'cancel')}
+                      type="button"
+                      className="flex-1 min-w-0 flex items-center justify-center gap-1 px-2 py-2 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 rounded-xl font-semibold text-[10px] transition-all focus:outline-none"
+                    >
+                      <FiX className="h-3 w-3 shrink-0" /><span>Cancel</span>
+                    </button>
+                  )}
+
+                  {(booking.status === 'checked_in' || booking.status === 'checked_out') &&
+                    parseFloat(booking.security_deposit) > 0 &&
+                    (!booking.security_deposit_status || booking.security_deposit_status === 'pending') && (
+                    <button
+                      onClick={() => handleDeductionClaim(booking)}
+                      type="button"
+                      className="flex-1 min-w-0 flex items-center justify-center gap-1 px-2 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 rounded-xl font-semibold text-[10px] transition-all focus:outline-none"
+                    >
+                      <FiAlertTriangle className="h-3 w-3 shrink-0" /><span>Claim</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+              <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <FiCalendar className="h-5 w-5 text-gray-300" />
+              </div>
+              <p className="font-bold text-gray-700 text-sm">No bookings found</p>
+              <p className="text-xs text-gray-400 mt-1">Adjust your search filters</p>
+            </div>
+          )}
+        </div>
+
+        {/* Pagination Card */}
+        {bookingsData?.pagination && bookingsData.pagination.totalPages > 1 && (
+          <div className="px-6 py-4 border border-gray-200 rounded-xl bg-white flex items-center justify-between shadow-sm">
+            <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold text-gray-500">
+                  Showing <span className="font-bold text-gray-900">{((bookingsData.pagination.currentPage - 1) * bookingsData.pagination.itemsPerPage) + 1}</span> to <span className="font-bold text-gray-900">{Math.min(bookingsData.pagination.currentPage * bookingsData.pagination.itemsPerPage, bookingsData.pagination.totalItems)}</span> of <span className="font-bold text-gray-900">{bookingsData.pagination.totalItems}</span> results
+                </p>
+              </div>
+
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => handleFilterChange('page', bookingsData.pagination.prevPage)}
+                  disabled={!bookingsData.pagination.hasPrevPage}
+                  type="button"
+                  className="relative inline-flex items-center px-4 py-1.5 border border-gray-300 text-xs font-bold rounded-lg text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Previous
+                </button>
+                
+                {/* Dynamically render page numbers */}
+                {Array.from({ length: bookingsData.pagination.totalPages }, (_, i) => i + 1).map(num => (
+                  <button
+                    key={num}
+                    onClick={() => handleFilterChange('page', num)}
+                    type="button"
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      bookingsData.pagination.currentPage === num 
+                        ? 'bg-blue-600 text-white shadow-sm' 
+                        : 'border border-gray-200 text-gray-600 bg-white hover:bg-gray-50'
+                    }`}
+                  >
+                    {num}
+                  </button>
+                ))}
+
+                <button
+                  onClick={() => handleFilterChange('page', bookingsData.pagination.nextPage)}
+                  disabled={!bookingsData.pagination.hasNextPage}
+                  type="button"
+                  className="relative inline-flex items-center px-4 py-1.5 border border-gray-300 text-xs font-bold rounded-lg text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+            
+            {/* Mobile Pagination */}
+            <div className="flex-1 flex justify-between sm:hidden text-xs">
+              <button
+                onClick={() => handleFilterChange('page', bookingsData.pagination.prevPage)}
+                disabled={!bookingsData.pagination.hasPrevPage}
+                type="button"
+                className="relative inline-flex items-center px-4 py-2 border border-gray-300 font-bold rounded-lg text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <span className="flex items-center font-bold text-gray-550">
+                Page {bookingsData.pagination.currentPage} of {bookingsData.pagination.totalPages}
+              </span>
+              <button
+                onClick={() => handleFilterChange('page', bookingsData.pagination.nextPage)}
+                disabled={!bookingsData.pagination.hasNextPage}
+                type="button"
+                className="relative inline-flex items-center px-4 py-2 border border-gray-300 font-bold rounded-lg text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Booking Details Modal */}
@@ -683,6 +987,10 @@ const PropertyOwnerBookings = () => {
                   <div>
                     <h4 className="text-md font-semibold text-gray-900 mb-2">Guest Information</h4>
                     <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm text-gray-600">Total Amount</span>
+                        <span className="text-lg font-bold text-gray-900">BDT {formatPrice(selectedBooking.total_amount)}</span>
+                      </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Name:</span>
                         <span className="font-medium">{selectedBooking.guest_name || 'N/A'}</span>
@@ -710,6 +1018,12 @@ const PropertyOwnerBookings = () => {
                         <span className="text-gray-600">Location:</span>
                         <span className="font-medium">{selectedBooking.property_city}</span>
                       </div>
+                      {selectedBooking.is_hms_enabled && selectedBooking.hms_room_number && (
+                        <div className="flex justify-between text-sm pt-2 border-t border-gray-100">
+                          <span className="text-gray-600 font-bold">Room:</span>
+                          <span className="font-bold text-primary-600">{selectedBooking.hms_room_number} ({selectedBooking.hms_room_type})</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -738,13 +1052,67 @@ const PropertyOwnerBookings = () => {
                     </div>
                   </div>
 
+
+                  {/* Security Deposit Information */}
+                  {selectedBooking.security_deposit > 0 && (
+                    <div>
+                      <h4 className="text-md font-semibold text-gray-900 mb-2">Security Deposit</h4>
+                      <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600">Deposit Amount:</span>
+                          <span className="font-bold text-gray-900">BDT {formatPrice(selectedBooking.security_deposit)}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600">Status:</span>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            selectedBooking.security_deposit_status === 'processed' 
+                              ? 'bg-green-100 text-green-700' 
+                              : selectedBooking.security_deposit_status === 'claim_requested'
+                              ? 'bg-amber-100 text-amber-700'
+                              : 'bg-gray-100 text-gray-700'
+                          }`}>
+                            {selectedBooking.security_deposit_status?.replace('_', ' ') || 'Pending'}
+                          </span>
+                        </div>
+                        {selectedBooking.security_deposit_status === 'claim_requested' && (
+                          <div className="mt-2 p-2 bg-white border border-amber-200 rounded text-xs">
+                            <p className="font-bold text-amber-800 mb-1">Your Claim Request:</p>
+                            <p className="text-gray-900 font-medium">Amount: ৳{formatPrice(selectedBooking.security_deposit_claim_amount)}</p>
+                            <p className="text-gray-600 italic mt-1">"{selectedBooking.security_deposit_claim_reason}"</p>
+                          </div>
+                        )}
+                        {(!selectedBooking.security_deposit_status || selectedBooking.security_deposit_status === 'pending') && 
+                          parseFloat(selectedBooking.security_deposit) > 0 && 
+                          (selectedBooking.status === 'checked_in' || selectedBooking.status === 'checked_out') && (
+                          <button
+                            onClick={() => {
+                              setDeductionData({ amount: '', reason: '' });
+                              setShowDeductionModal(true);
+                            }}
+                            className="w-full mt-2 bg-amber-600 text-white py-2 rounded text-sm font-medium hover:bg-amber-700 transition-colors flex items-center justify-center"
+                          >
+                            <FiAlertTriangle className="mr-2" />
+                            Request Security Deduction
+                          </button>
+                        )}
+                        {selectedBooking.security_deposit_status === 'processed' && selectedBooking.security_deposit_deduction_amount > 0 && (
+                          <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-xs">
+                            <p className="font-bold text-green-800 mb-1">Claim Processed & Received:</p>
+                            <p className="text-gray-900 font-bold text-lg">৳{formatPrice(selectedBooking.security_deposit_deduction_amount)}</p>
+                            <p className="text-gray-600 mt-1">This amount has been credited to your earnings.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Payment Information */}
                   <div>
                     <h4 className="text-md font-semibold text-gray-900 mb-2">Payment Information</h4>
                     <div className="bg-gray-50 rounded-lg p-4 space-y-2">
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Total Amount:</span>
-                        <span className="font-medium text-lg text-primary-600">BDT {selectedBooking.total_amount}</span>
+                        <span className="font-medium text-lg text-primary-600">BDT {formatPrice(selectedBooking.total_amount)}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Payment Status:</span>
@@ -776,20 +1144,20 @@ const PropertyOwnerBookings = () => {
                           <div className="text-center bg-white rounded-lg p-2 shadow-sm">
                             <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Total (DR)</div>
                             <div className="text-lg font-bold text-red-600">
-                              BDT {selectedBooking.payments.reduce((sum, p) => sum + parseFloat(p.dr_amount || 0), 0).toFixed(0)}
+                              BDT {formatPrice(selectedBooking.payments.reduce((sum, p) => sum + parseFloat(p.dr_amount || 0), 0))}
                             </div>
                           </div>
                           <div className="text-center bg-white rounded-lg p-2 shadow-sm">
                             <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Paid (CR)</div>
                             <div className="text-lg font-bold text-green-600">
-                              BDT {selectedBooking.payments.reduce((sum, p) => sum + parseFloat(p.cr_amount || 0), 0).toFixed(0)}
+                              BDT {formatPrice(selectedBooking.payments.reduce((sum, p) => sum + parseFloat(p.cr_amount || 0), 0))}
                             </div>
                           </div>
                           <div className="text-center bg-white rounded-lg p-2 shadow-sm">
                             <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Due</div>
                             <div className="text-lg font-bold text-orange-600">
-                              BDT {(selectedBooking.payments.reduce((sum, p) => sum + parseFloat(p.dr_amount || 0), 0) -
-                                selectedBooking.payments.reduce((sum, p) => sum + parseFloat(p.cr_amount || 0), 0)).toFixed(0)}
+                              BDT {formatPrice(selectedBooking.payments.reduce((sum, p) => sum + parseFloat(p.dr_amount || 0), 0) -
+                                selectedBooking.payments.reduce((sum, p) => sum + parseFloat(p.cr_amount || 0), 0))}
                             </div>
                           </div>
                         </div>
@@ -818,11 +1186,11 @@ const PropertyOwnerBookings = () => {
                                   </div>
                                 </div>
                                 <div className="text-right">
-                                  {payment.dr_amount > 0 && <div className="font-semibold text-red-600">DR: BDT {parseFloat(payment.dr_amount).toFixed(2)}</div>}
-                                  {payment.cr_amount > 0 && <div className="font-semibold text-green-600">CR: BDT {parseFloat(payment.cr_amount).toFixed(2)}</div>}
+                                  {payment.dr_amount > 0 && <div className="font-semibold text-red-600">DR: BDT {formatPrice(payment.dr_amount)}</div>}
+                                  {payment.cr_amount > 0 && <div className="font-semibold text-green-600">CR: BDT {formatPrice(payment.cr_amount)}</div>}
                                   <div className="text-gray-600 mt-0.5">
                                     Bal: <span className={`font-semibold ${payment.running_balance > 0 ? 'text-orange-600' : 'text-green-600'}`}>
-                                      BDT {parseFloat(payment.running_balance || 0).toFixed(2)}
+                                      BDT {formatPrice(payment.running_balance || 0)}
                                     </span>
                                   </div>
                                 </div>
@@ -877,6 +1245,9 @@ const PropertyOwnerBookings = () => {
                           <span className="font-medium">{selectedBooking.property_title}</span>
                         </div>
                         <div className="flex justify-between text-sm border-t pt-2">
+                          <p className="text-xs text-red-700 mb-4">
+                            Security Deposit Amount: <span className="font-bold">৳{formatPrice(selectedBooking.security_deposit || 0)}</span>
+                          </p>
                           <span className="text-gray-600">Payment Status:</span>
                           <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getPaymentStatusColor(selectedBooking.payment_status)}`}>
                             {selectedBooking.payment_status || 'pending'}
@@ -1255,6 +1626,95 @@ const PropertyOwnerBookings = () => {
           </div>
         )
       }
+      {/* Deduction Claim Modal */}
+      {showDeductionModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-slideUp">
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-100 rounded-lg">
+                  <FiAlertTriangle className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">Security Deduction</h3>
+                  <p className="text-sm text-gray-500">Booking Ref: #{selectedBooking?.booking_reference}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowDeductionModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <FiX className="w-6 h-6 text-gray-400" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div className="flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-gray-100">
+                <div className="text-sm">
+                  <p className="text-gray-500 font-medium">Security Deposit Held</p>
+                  <p className="text-xl font-bold text-gray-900">BDT {parseFloat(selectedBooking?.security_deposit || 0).toFixed(2)}</p>
+                </div>
+                <div className="text-right text-xs text-gray-400">
+                  <p>Maximum possible</p>
+                  <p>deduction amount</p>
+                </div>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3 text-amber-800 text-sm italic">
+                <FiAlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <p>Are you sure you want to submit a deduction claim for this booking?</p>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Deduction Amount (BDT)</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-medium">BDT</span>
+                    <input 
+                      type="number"
+                      value={deductionData.amount}
+                      onChange={(e) => setDeductionData({ ...deductionData, amount: e.target.value })}
+                      className="w-full pl-14 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all outline-none"
+                      placeholder="Enter amount (e.g. 1000)"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Reason (Optional)</label>
+                  <textarea 
+                    value={deductionData.reason}
+                    onChange={(e) => setDeductionData({ ...deductionData, reason: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all outline-none min-h-[80px]"
+                    placeholder="Describe damages if any..."
+                  ></textarea>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 bg-gray-50 flex justify-end gap-3">
+              <button 
+                onClick={() => setShowDeductionModal(false)}
+                className="px-6 py-2.5 font-semibold text-gray-600 hover:text-gray-900 transition-colors"
+                disabled={isSubmittingDeduction}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={submitDeductionClaim}
+                disabled={isSubmittingDeduction || !deductionData.amount || !deductionData.reason}
+                className="px-8 py-2.5 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-200 flex items-center gap-2 disabled:bg-gray-300 disabled:shadow-none"
+              >
+                {isSubmittingDeduction ? (
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                ) : <FiCheck className="w-5 h-5" />}
+                Submit Claim
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div >
   );
 };
