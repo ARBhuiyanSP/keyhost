@@ -14,12 +14,14 @@ const ICON_OPTIONS = [
   { label: 'Apartment', value: '/images/nav-icon-apartment.png', preview: '🏠' },
   { label: 'Hotel', value: '/images/nav-icon-hotel.png', preview: '🏨' },
   { label: 'Flight', value: '/images/flight.png', preview: '✈️' },
+  { label: 'Bus', value: '/images/bus.png', preview: '🚌' },
 ];
 
 // Smart icon picker based on name
 const getSmartIcon = (name) => {
   const n = (name || '').toLowerCase();
   if (n.includes('flight') || n.includes('air')) return '/images/flight.png';
+  if (n.includes('bus')) return '/images/bus.png';
   if (n.includes('hotel')) return '/images/nav-icon-hotel.png';
   if (n.includes('apartment') || n.includes('villa') || n.includes('house') || n.includes('home')) return '/images/nav-icon-apartment.png';
   return '/images/nav-icon-room.png';

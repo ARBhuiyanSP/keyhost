@@ -10,6 +10,7 @@ import StickySearchHeader from '../components/layout/StickySearchHeader';
 import PropertyImageSlider from '../components/property/PropertyImageSlider';
 import LazyPropertyCard from '../components/property/LazyPropertyCard';
 import FlightSearchResults from '../components/search/FlightSearchResults';
+import BusSearchResults from '../components/bus/BusSearchResults';
 import MobileSearchModal from '../components/search/MobileSearchModal';
 import { sanitizeText, formatPrice } from '../utils/textUtils';
 const PropertyMap = lazy(() => import('../components/property/PropertyMap'));
@@ -352,7 +353,12 @@ const SearchResults = () => {
 
   const currentPropertyType = (filters.property_type || '').toLowerCase();
   const isMonthly = filters.booking_type === 'monthly';
-  // Special layout for Flight
+  // Dedicated layout for Bus
+  if (currentPropertyType === 'bus') {
+    return <BusSearchResults searchParams={filters} />;
+  }
+
+  // Dedicated layout for Flight
   if (currentPropertyType === 'flight') {
     return (
       <div className="min-h-screen bg-[#F4F6F9]">
@@ -372,7 +378,7 @@ const SearchResults = () => {
               className="flex-1 flex items-center justify-center bg-white rounded-full px-4 py-2 border border-gray-200 shadow-sm text-center opacity-100"
             >
               <div className="flex flex-col items-center leading-tight overflow-hidden w-full">
-                <span className="text-sm font-semibold text-gray-900 truncate w-full">
+                <span className="text-sm font-semibold text-gray-900 truncate w-full capitalize">
                   Flight
                 </span>
                 <span className="text-xs text-gray-500 truncate w-full">

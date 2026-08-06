@@ -65,6 +65,9 @@ const AdminReports = lazy(() => import('./pages/admin/AdminReports'));
 const AdminRefunds = lazy(() => import('./pages/admin/AdminRefunds'));
 const AdminSecurityDeposits = lazy(() => import('./pages/admin/AdminSecurityDeposits'));
 const AdminHMSSettings = lazy(() => import('./pages/admin/AdminHMSSettings'));
+const AdminBusSchedules = lazy(() => import('./pages/admin/AdminBusSchedules'));
+const AdminBusBookings = lazy(() => import('./pages/admin/AdminBusBookings'));
+const AdminBusReports = lazy(() => import('./pages/admin/AdminBusReports'));
 
 // Shared Reports Pages
 const BookingReports = lazy(() => import('./pages/shared/reports/BookingReports'));
@@ -297,6 +300,21 @@ function App() {
           <Route path="/admin/display-categories" element={
             <ProtectedRoute requireAuth requireRole="admin">
               <AdminDisplayCategories />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/bus-schedules" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminBusSchedules />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/bus-bookings" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminBusBookings />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/bus-reports" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminBusReports />
             </ProtectedRoute>
           } />
           <Route path="/admin/bookings" element={

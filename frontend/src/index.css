@@ -387,6 +387,13 @@
    ============================================================ */
 .react-datepicker-wrapper { @apply w-full; }
 .react-datepicker__input-container input { @apply input-field text-charcoal-500 bg-white; }
+.no-datepicker-border .react-datepicker__input-container input {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  padding: 0 !important;
+}
 
 .react-datepicker                  { @apply border border-taupe-500 rounded-lg shadow-lg; }
 .react-datepicker__header          { @apply bg-primary-600 text-white rounded-t-lg; }

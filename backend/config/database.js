@@ -1,12 +1,13 @@
 const mysql = require('mysql2');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 // Create connection pool for better performance
 const pool = mysql.createPool({
   host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'keyhhhpg_keyhost_db',
+  database: process.env.DB_NAME || 'keyhost_booking_system',
   port: process.env.DB_PORT || 3306,
   waitForConnections: true,
   connectionLimit: 10,

@@ -32,6 +32,8 @@ const supportRoutes = require('./routes/support');
 const contactRoutes = require('./routes/contact');
 const hmsHRRoutes = require('./routes/property-owner/hms-hr');
 const hmsAccountsRoutes = require('./routes/property-owner/hms-accounts');
+const guestBusRoutes = require('./routes/guest/bus');
+const adminBusRoutes = require('./routes/admin/bus');
 
 // Import middleware
 const { verifyToken } = require('./middleware/auth');
@@ -129,8 +131,11 @@ const apiRoutes = [
   { path: '/nagad', route: nagadPaymentRoutes },
   { path: '/reports', route: reportRoutes },
   { path: '/messages', route: messagesRoutes },
+  { path: '/admin/bus', route: adminBusRoutes },
   { path: '/admin', route: adminRoutes },
   { path: '/property-owner', route: propertyOwnerRoutes },
+  { path: '/bus', route: guestBusRoutes },
+  { path: '/guest/bus', route: guestBusRoutes },
   { path: '/guest', route: guestRoutes },
   { path: '/settings', route: settingsRoutes },
   { path: '/rewards-points', route: rewardsPointsRoutes },

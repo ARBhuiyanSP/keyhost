@@ -27,16 +27,20 @@ const PropertyTypeIcon = ({ name = '', active = false, iconUrl = '' }) => {
       imgSrc = '/images/nav-icon-hotel.png';
     } else if (normalized.includes('flight')) {
       imgSrc = '/images/flight.png';
+    } else if (normalized.includes('bus')) {
+      imgSrc = '/images/bus.png';
     } else if (normalized.includes('monthly') || normalized.includes('rent')) {
       imgSrc = '/images/nav-icon-monthly.png';
     }
   }
 
+  const isBus = normalized.includes('bus');
+
   return (
     <img
       src={imgSrc}
       alt={name}
-      className={`w-7 h-7 object-contain transition-all duration-300 group-hover:scale-110 ${active
+      className={`object-contain transition-all duration-300 group-hover:scale-110 ${isBus ? 'w-9 h-9 scale-110' : 'w-7 h-7'} ${active
         ? 'opacity-100 grayscale-0 scale-110 animate-shake-active'
         : 'opacity-100 grayscale-0 hover:opacity-80'
         }`}
@@ -260,20 +264,7 @@ const Navbar = () => {
   const isContactHost = location.pathname.includes('/contact-host');
 
 
-  /* 🔥 ADD THIS EFFECT — react-datepicker wrapper hide */
-  useEffect(() => {
-    const style = document.createElement('style');
-    style.innerHTML = `
-        .react-datepicker-wrapper {
-          display: none !important;
-      }
-        `;
-    document.head.appendChild(style);
 
-    return () => {
-      document.head.removeChild(style);
-    };
-  }, []);
   /* 🔥 END */
 
   // Ensure settings are loaded
@@ -724,9 +715,9 @@ const Navbar = () => {
   const handleTypeClick = (typeName = '') => {
     const normalized = (typeName || '').toLowerCase();
 
-    // Redirect to separate search page for flights
-    if (normalized === 'flight') {
-      navigate('/search?property_type=flight');
+    // Redirect to separate search page for flights and bus
+    if (normalized === 'flight' || normalized === 'bus') {
+      navigate(`/search?property_type=${normalized}`);
       return;
     }
 
@@ -1279,9 +1270,9 @@ const Navbar = () => {
         {/* Home page, Search page, and Property Detail page desktop search bar inside header */}
         {(isHome || isSearchPage || isPropertyDetail || isContactHost) && headerActiveType !== 'flight' && (
           <div className={`hidden md:block home-nav-search static z-[90000] overflow-visible ${isHeaderSearchActive || (!isDetailOrContact && !isSearchPage) ? 'py-3' : 'py-0'}`}>
-            {/* Flight Trip Type Toggles */}
-            {headerActiveType === 'flight' && (
-              <div className={`flex items-center gap-6 mb-4 pl-6 ${headerActiveType === 'flight' ? 'max-w-6xl' : 'max-w-4xl'} mx-auto transition-all duration-300 ${!isHeaderSearchActive && (isDetailOrContact || isSearchPage) ? 'opacity-0 h-0 overflow-hidden -mt-4' : 'opacity-100'}`}>
+            {/* Flight / Bus Trip Type Toggles */}
+            {(headerActiveType === 'flight' || headerActiveType === 'bus') && (
+              <div className={`flex items-center gap-6 mb-4 pl-6 ${headerActiveType === 'flight' || headerActiveType === 'bus' ? 'max-w-6xl' : 'max-w-4xl'} mx-auto transition-all duration-300 ${!isHeaderSearchActive && (isDetailOrContact || isSearchPage) ? 'opacity-0 h-0 overflow-hidden -mt-4' : 'opacity-100'}`}>
                 <label
                   className="flex items-center gap-2 cursor-pointer group"
                   onClick={() => {
@@ -1314,7 +1305,7 @@ const Navbar = () => {
             <form
               ref={searchFormRef}
               onSubmit={handleSearch}
-              className={`pr-2 static rounded-full border transition-all duration-300 ease-out flex items-center ${headerActiveType === 'flight' ? 'max-w-6xl' : 'max-w-4xl'} mx-auto z-[90] overflow-visible relative 
+              className={`pr-2 static rounded-full border transition-all duration-300 ease-out flex items-center ${headerActiveType === 'flight' || headerActiveType === 'bus' ? 'max-w-6xl' : 'max-w-4xl'} mx-auto z-[90] overflow-visible relative 
                 ${isHeaderSearchActive ? 'bg-[#EBEBEB] border-transparent scale-100 opacity-100' : 'bg-white shadow-md border-gray-200'} 
                 ${!isHeaderSearchActive && (isDetailOrContact || isSearchPage) ? 'scale-0 opacity-0 pointer-events-none h-0 p-0 overflow-hidden absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2' : ''}
               `}
@@ -1340,7 +1331,7 @@ const Navbar = () => {
                 >
                   <div className="w-full">
                     <div className="text-xs font-semibold text-gray-900">
-                      {headerActiveType === 'flight' ? 'From' : 'Where'}
+                      {headerActiveType === 'flight' || headerActiveType === 'bus' ? 'From' : 'Where'}
                     </div>
                     <input
                       type="text"
@@ -1566,8 +1557,8 @@ const Navbar = () => {
 
                 </div>
 
-                {/* TO Field (Flight Only) */}
-                {headerActiveType === 'flight' && (
+                {/* TO Field (Flight & Bus) */}
+                {(headerActiveType === 'flight' || headerActiveType === 'bus') && (
                   <>
                     <div className={`h-8 w-px bg-gray-200 transition-opacity duration-300 ease-out`} />
                     <div

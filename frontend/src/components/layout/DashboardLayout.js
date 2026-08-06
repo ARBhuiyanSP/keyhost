@@ -220,6 +220,15 @@ const DashboardLayout = () => {
                         { name: 'Flight Bookings', path: '/admin/flight-bookings' },
                     ]
                 },
+                {
+                    name: 'Bus',
+                    icon: FiTruck,
+                    submenu: [
+                        { name: 'Bus Routes & Schedules', path: '/admin/bus-schedules' },
+                        { name: 'Bus Bookings', path: '/admin/bus-bookings' },
+                        { name: 'Bus Reports & Sales', path: '/admin/bus-reports' },
+                    ]
+                },
                 { name: 'Users', path: '/admin/users', icon: FiUsers },
                 { name: 'Contact Messages', path: '/admin/contact-messages', icon: FiMessageSquare },
                 { name: 'Reviews', path: '/admin/reviews', icon: FiActivity },
