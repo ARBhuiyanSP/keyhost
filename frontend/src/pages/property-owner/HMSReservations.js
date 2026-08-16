@@ -417,6 +417,8 @@ const HMSReservations = () => {
         () => api.get(`/property-owner/hms/reservations/${selectedPropertyId}`),
         {
             enabled: !!selectedPropertyId,
+            refetchOnMount: 'always',
+            refetchOnWindowFocus: true,
             select: (response) => response.data?.data?.reservations || []
         }
     );

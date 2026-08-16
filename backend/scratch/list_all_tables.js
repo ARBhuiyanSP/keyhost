@@ -1,23 +1,17 @@
-const mysql = require('mysql2/promise');
-require('dotenv').config();
+const { pool } = require('../config/database');
 
-async function main() {
-  const connection = await mysql.createConnection({
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'keyhost_booking_system',
-    port: process.env.DB_PORT || 3306
-  });
-
+async function run() {
   try {
-    const [rows] = await connection.query('SHOW TABLES');
-    console.log('Tables in database:', rows.map(r => Object.values(r)[0]));
+    const [rows] = await pool.query('SHOW TABLES');
+    console.log('Tables in Database:');
+    rows.forEach(row => {
+      console.log(Object.values(row)[0]);
+    });
+    process.exit(0);
   } catch (err) {
     console.error(err);
-  } finally {
-    await connection.end();
+    process.exit(1);
   }
 }
 
-main();
+run();

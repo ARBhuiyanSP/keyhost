@@ -1,13 +1,361 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery } from 'react-query';
-import { FiSearch, FiFilter, FiEye, FiEdit, FiShield, FiShieldOff, FiX, FiSave, FiUsers, FiBriefcase, FiUserCheck, FiActivity } from 'react-icons/fi';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { FiSearch, FiFilter, FiEye, FiEdit, FiShield, FiShieldOff, FiX, FiSave, FiUsers, FiBriefcase, FiUserCheck, FiActivity, FiLogIn, FiHome, FiArrowLeft, FiTrash2 } from 'react-icons/fi';
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import useToast from '../../hooks/useToast';
+import usePermission from '../../hooks/usePermission';
 import { getImageUrl } from '../../utils/imageUrl';
+
+const PERMISSION_GROUPS = [
+  {
+    groupKey: 'property_management',
+    groupName: '🏠 Property & Catalog Management',
+    description: 'Control property listings, unit types, amenities, categories, and promotional coupons.',
+    resources: [
+      {
+        key: 'properties',
+        label: 'Properties & Units',
+        description: 'Add properties, view listings, update property specs, upload photos.',
+        actions: [
+          { key: 'properties.read', label: 'Read' },
+          { key: 'properties.create_update', label: 'Edit' },
+          { key: 'properties.delete', label: 'Delete' }
+        ]
+      },
+      {
+        key: 'property_types',
+        label: 'Property Types',
+        description: 'Manage property types (Hotel, Apartment, Villa, Resort, Guest House).',
+        actions: [
+          { key: 'property_types.read', label: 'Read' },
+          { key: 'property_types.create_update', label: 'Edit' },
+          { key: 'property_types.delete', label: 'Delete' }
+        ]
+      },
+      {
+        key: 'amenities',
+        label: 'Amenities Catalog',
+        description: 'Manage property amenities, room features, and facility tags.',
+        actions: [
+          { key: 'amenities.read', label: 'Read' },
+          { key: 'amenities.create_update', label: 'Edit' },
+          { key: 'amenities.delete', label: 'Delete' }
+        ]
+      },
+      {
+        key: 'display_categories',
+        label: 'Display Categories',
+        description: 'Configure featured collection tags, homepage categories, and display filters.',
+        actions: [
+          { key: 'display_categories.read', label: 'Read' },
+          { key: 'display_categories.create_update', label: 'Edit' },
+          { key: 'display_categories.delete', label: 'Delete' }
+        ]
+      },
+      {
+        key: 'coupons',
+        label: 'Coupons & Discounts',
+        description: 'Create discount codes, set promotional offers, manage validity dates.',
+        actions: [
+          { key: 'coupons.read', label: 'Read' },
+          { key: 'coupons.create_update', label: 'Edit' },
+          { key: 'coupons.delete', label: 'Delete' }
+        ]
+      }
+    ]
+  },
+  {
+    groupKey: 'booking_management',
+    groupName: '📅 Bookings, PMS & Calendar Sync',
+    description: 'Manage reservations, rates availability calendar, checkins/checkouts, and iCal sync.',
+    resources: [
+      {
+        key: 'bookings',
+        label: 'Bookings & Reservations',
+        description: 'View reservations, create manual bookings, modify dates, cancel checkins.',
+        actions: [
+          { key: 'bookings.read', label: 'Read' },
+          { key: 'bookings.create_update', label: 'Edit' },
+          { key: 'bookings.delete', label: 'Delete' }
+        ]
+      },
+      {
+        key: 'calendar',
+        label: 'Rates & Availability Calendar',
+        description: 'View calendar rates, override daily pricing, block room availability.',
+        actions: [
+          { key: 'calendar.read', label: 'Read' },
+          { key: 'calendar.create_update', label: 'Edit' }
+        ]
+      },
+      {
+        key: 'ical',
+        label: 'iCal Channel Manager Sync',
+        description: 'Export and import external calendar feeds (Airbnb, Booking.com, Agoda).',
+        actions: [
+          { key: 'ical.read', label: 'Read' },
+          { key: 'ical.create_update', label: 'Edit' },
+          { key: 'ical.delete', label: 'Delete' }
+        ]
+      }
+    ]
+  },
+  {
+    groupKey: 'hms_operations',
+    groupName: '🏨 HMS Hotel Operations',
+    description: 'Hotel room inventory, housekeeping tasks, maintenance logs, and property HR.',
+    resources: [
+      {
+        key: 'hms_rooms',
+        label: 'HMS Rooms & Inventory',
+        description: 'Setup hotel rooms, set floor numbers, configure room types & pricing.',
+        actions: [
+          { key: 'hms_rooms.read', label: 'Read' },
+          { key: 'hms_rooms.create_update', label: 'Edit' },
+          { key: 'hms_rooms.delete', label: 'Delete' }
+        ]
+      },
+      {
+        key: 'hms_housekeeping',
+        label: 'Housekeeping & Maintenance',
+        description: 'Assign cleaning tasks, track room status (Clean, Dirty, OOO), log maintenance.',
+        actions: [
+          { key: 'hms_housekeeping.read', label: 'Read' },
+          { key: 'hms_housekeeping.create_update', label: 'Edit' },
+          { key: 'hms_housekeeping.delete', label: 'Delete' }
+        ]
+      },
+      {
+        key: 'hms_accounts',
+        label: 'HMS Accounting & Vouchers',
+        description: 'Record petty cash, manage hotel income/expense ledgers, print vouchers.',
+        actions: [
+          { key: 'hms_accounts.read', label: 'Read' },
+          { key: 'hms_accounts.create_update', label: 'Edit' },
+          { key: 'hms_accounts.delete', label: 'Delete' }
+        ]
+      },
+      {
+        key: 'hms_hr',
+        label: 'HMS Staff & Employees',
+        description: 'Manage property staff employees, shifts, duty rosters, and HR records.',
+        actions: [
+          { key: 'hms_hr.read', label: 'Read' },
+          { key: 'hms_hr.create_update', label: 'Edit' },
+          { key: 'hms_hr.delete', label: 'Delete' }
+        ]
+      }
+    ]
+  },
+  {
+    groupKey: 'financial_management',
+    groupName: '💰 Financials, Earnings & Payouts',
+    description: 'Track revenue, invoices, host payouts, refunds, and security deposits.',
+    resources: [
+      {
+        key: 'earnings',
+        label: 'Earnings & Revenue Ledgers',
+        description: 'View total earnings, gross payouts, platform commission breakdowns.',
+        actions: [
+          { key: 'earnings.read', label: 'Read' },
+          { key: 'earnings.create_update', label: 'Edit' },
+          { key: 'earnings.delete', label: 'Delete' }
+        ]
+      },
+      {
+        key: 'payouts',
+        label: 'Host Owner Payouts',
+        description: 'Process host withdrawal requests, approve bank transfers, view history.',
+        actions: [
+          { key: 'payouts.read', label: 'Read' },
+          { key: 'payouts.create_update', label: 'Edit' },
+          { key: 'payouts.delete', label: 'Delete' }
+        ]
+      },
+      {
+        key: 'refunds',
+        label: 'Refund Processing',
+        description: 'Review guest refund applications, disburse bKash/Nagad/Cards refunds.',
+        actions: [
+          { key: 'refunds.read', label: 'Read' },
+          { key: 'refunds.create_update', label: 'Edit' }
+        ]
+      },
+      {
+        key: 'security_deposits',
+        label: 'Security Deposits',
+        description: 'Manage hold balances, process damage claims, release guest deposits.',
+        actions: [
+          { key: 'security_deposits.read', label: 'Read' },
+          { key: 'security_deposits.create_update', label: 'Edit' }
+        ]
+      }
+    ]
+  },
+  {
+    groupKey: 'communication_support',
+    groupName: '💬 Messages, Support & Reviews',
+    description: 'Manage customer communications, support ticket resolution, and review ratings.',
+    resources: [
+      {
+        key: 'messages',
+        label: 'Direct Messaging & Chat',
+        description: 'Send and receive guest-host messages, view conversation threads.',
+        actions: [
+          { key: 'messages.read', label: 'Read' },
+          { key: 'messages.create_update', label: 'Edit' }
+        ]
+      },
+      {
+        key: 'support',
+        label: 'Support Tickets',
+        description: 'View support tickets, update ticket statuses, respond to customer cases.',
+        actions: [
+          { key: 'support.read', label: 'Read' },
+          { key: 'support.create_update', label: 'Edit' },
+          { key: 'support.delete', label: 'Delete' }
+        ]
+      },
+      {
+        key: 'contact_messages',
+        label: 'Contact Inquiries',
+        description: 'Read public contact inquiry messages, reply via email or SMS.',
+        actions: [
+          { key: 'contact_messages.read', label: 'Read' },
+          { key: 'contact_messages.create_update', label: 'Edit' },
+          { key: 'contact_messages.delete', label: 'Delete' }
+        ]
+      },
+      {
+        key: 'reviews',
+        label: 'Reviews & Feedback',
+        description: 'Moderate guest reviews, reply to ratings, manage review approvals.',
+        actions: [
+          { key: 'reviews.read', label: 'Read' },
+          { key: 'reviews.create_update', label: 'Edit' },
+          { key: 'reviews.delete', label: 'Delete' }
+        ]
+      }
+    ]
+  },
+  {
+    groupKey: 'user_management',
+    groupName: '👥 Users, Roles & Rewards',
+    description: 'Manage user profiles, account permissions, host staff, and loyalty points.',
+    resources: [
+      {
+        key: 'users',
+        label: 'Users & Accounts',
+        description: 'View user profiles, edit account details, verify host IDs, block accounts.',
+        actions: [
+          { key: 'users.read', label: 'Read' },
+          { key: 'users.create_update', label: 'Edit' },
+          { key: 'users.delete', label: 'Delete' }
+        ]
+      },
+      {
+        key: 'roles',
+        label: 'Role Permissions & Defaults',
+        description: 'Add custom roles, edit role permissions, configure global default sets.',
+        actions: [
+          { key: 'roles.read', label: 'Read' },
+          { key: 'roles.create_update', label: 'Edit' },
+          { key: 'roles.delete', label: 'Delete' }
+        ]
+      },
+      {
+        key: 'staff',
+        label: 'Host Staff Members',
+        description: 'Add host staff, assign custom staff permissions, view staff logs.',
+        actions: [
+          { key: 'staff.read', label: 'Read' },
+          { key: 'staff.create_update', label: 'Edit' },
+          { key: 'staff.delete', label: 'Delete' }
+        ]
+      },
+      {
+        key: 'rewards',
+        label: 'Rewards & Loyalty Points',
+        description: 'View point transactions, adjust points balances, set redemption rules.',
+        actions: [
+          { key: 'rewards.read', label: 'Read' },
+          { key: 'rewards.create_update', label: 'Edit' }
+        ]
+      }
+    ]
+  },
+  {
+    groupKey: 'analytics_reports',
+    groupName: '📊 Analytics & Platform Reports',
+    description: 'Platform performance dashboards, financial reports, host reports, occupancy stats.',
+    resources: [
+      {
+        key: 'analytics',
+        label: 'Analytics Dashboard',
+        description: 'View platform growth charts, booking trends, user conversion stats.',
+        actions: [
+          { key: 'analytics.read', label: 'Read' }
+        ]
+      },
+      {
+        key: 'reports',
+        label: 'Platform & Financial Reports',
+        description: 'Generate occupancy reports, payout reports, cancellation statistics.',
+        actions: [
+          { key: 'reports.read', label: 'Read' },
+          { key: 'reports.create_update', label: 'Edit' }
+        ]
+      }
+    ]
+  }
+];
+
+const ALL_RESOURCES = PERMISSION_GROUPS.flatMap(g => g.resources);
+
+// Which roles can see each permission GROUP (admin always sees everything)
+const ROLE_GROUP_VISIBILITY = {
+  property_management: ['property_owner'],
+  booking_management:  ['property_owner', 'guest'],
+  hms_operations:      ['property_owner'],
+  financial_management:['property_owner', 'guest'],
+  communication_support:['property_owner', 'guest'],
+  user_management:     ['property_owner', 'guest'],
+  analytics_reports:   ['property_owner'],
+};
+
+// Resource-level overrides — keys not listed are inherited from the group rule above
+const ROLE_RESOURCE_VISIBILITY = {
+  // Booking group: calendar/ical are host-only
+  calendar:           ['property_owner'],
+  ical:               ['property_owner'],
+  // Financial group: earnings/payouts/deposits are host-only; refunds apply to both
+  earnings:           ['property_owner'],
+  payouts:            ['property_owner'],
+  security_deposits:  ['property_owner'],
+  // Communication group: contact_messages are admin/host only
+  contact_messages:   ['property_owner'],
+  // User management group: users/roles are admin-only; staff is host-only; rewards is guest+host
+  users:              [],   // admin only — hidden in per-user modal (admin sees all)
+  roles:              [],   // admin only
+  staff:              ['property_owner'],
+  rewards:            ['property_owner', 'guest'],
+};
+
+/**
+ * Returns the filtered PERMISSION_GROUPS relevant to a given role.
+ * Admin always gets ALL groups unfiltered.
+ */
+const getGroupsForRole = (userType) => {
+  // Always return all permission groups and resources for all users
+  return PERMISSION_GROUPS;
+};
 
 const AdminUsers = () => {
   const { showSuccess, showError } = useToast();
+  const navigate = useNavigate();
+  const { can } = usePermission();
 
   const [filters, setFilters] = useState({
     user_type: '',
@@ -144,9 +492,144 @@ const AdminUsers = () => {
     return null;
   };
 
+  const [permissionsUser, setPermissionsUser] = useState(null);
+  const [permissionsData, setPermissionsData] = useState({});
+
+  const getInitialPermissions = (user) => {
+    const initial = {};
+    // Prefer the user's individual platform_permissions if they exist;
+    // otherwise fall back to the role-default permissions from the DB.
+    const current = user.platform_permissions;
+    const roleDefault = rolesData?.find(r => r.role === user.user_type)?.permissions || {};
+
+    const groups = getGroupsForRole(user.user_type);
+    groups.forEach(group => {
+      group.resources.forEach(res => {
+        res.actions.forEach(act => {
+          if (current && typeof current === 'object') {
+            initial[act.key] = current[act.key] === true;
+          } else {
+            // No individual override — show the role defaults
+            initial[act.key] = roleDefault[act.key] === true;
+          }
+        });
+      });
+    });
+    return initial;
+  };
+
+  const handleManagePermissions = (user) => {
+    setPermissionsUser(user);
+    setPermissionsData(getInitialPermissions(user));
+  };
+
+  const handleSavePermissions = async () => {
+    try {
+      const response = await api.put(`/admin/users/${permissionsUser.id}/platform-permissions`, {
+        platform_permissions: permissionsData
+      });
+
+      if (response.data?.success) {
+        showSuccess('Platform permissions updated successfully!');
+        setPermissionsUser(null);
+        refetch();
+      } else {
+        showError(response.data?.message || 'Failed to update permissions');
+      }
+    } catch (error) {
+      console.error('Error saving platform permissions:', error);
+      showError('Failed to save permissions. Please try again.');
+    }
+  };
+
+  // Fetch all platform roles (system + custom)
+  const { data: rolesData, refetch: refetchRoles } = useQuery(
+    'admin-roles',
+    async () => {
+      const response = await api.get('/admin/roles');
+      return response.data?.data?.roles || [];
+    }
+  );
+
+  const handleRestoreUserDefaults = async () => {
+    try {
+      const confirmed = window.confirm('Are you sure you want to restore this user to global role default permissions? This will clear all custom overrides.');
+      if (!confirmed) return;
+
+      const response = await api.put(`/admin/users/${permissionsUser.id}/platform-permissions`, {
+        platform_permissions: null
+      });
+
+      if (response.data?.success) {
+        showSuccess('User permissions restored to global defaults!');
+        setPermissionsUser(null);
+        refetch();
+      } else {
+        showError(response.data?.message || 'Failed to restore default permissions');
+      }
+    } catch (error) {
+      console.error('Error restoring default permissions:', error);
+      showError('Failed to restore default permissions. Please try again.');
+    }
+  };
+
+  const location = useLocation();
+
   const handleViewUser = (user) => {
     setSelectedUser(user);
     setShowViewModal(true);
+  };
+
+  const handleImpersonateUser = async (user) => {
+    try {
+      const isHost = user.user_type === 'property_owner';
+      const roleText = isHost ? 'Host' : 'Guest';
+      const confirmed = window.confirm(`Are you sure you want to switch to ${user.first_name}'s ${roleText} account?`);
+      if (!confirmed) return;
+
+      const response = await api.post(`/admin/users/${user.id}/impersonate`);
+      if (response.data?.success) {
+        const { token, refreshToken, user: targetUser } = response.data.data;
+        
+        // 1. Back up current admin auth storage
+        const currentAdminAuth = localStorage.getItem('auth-storage');
+        localStorage.setItem('admin-impersonator-auth', currentAdminAuth);
+
+        // 2. Set new auth storage for target user
+        localStorage.setItem('auth-storage', JSON.stringify({
+          state: {
+            user: targetUser,
+            isAuthenticated: true,
+            token: token,
+            refreshToken: refreshToken
+          },
+          version: 0
+        }));
+
+        // 3. Set dashboard mode to host or guest
+        if (targetUser.user_type === 'property_owner') {
+          localStorage.setItem('dashboard_role_mode', 'host');
+        } else {
+          localStorage.setItem('dashboard_role_mode', 'guest');
+        }
+
+        showSuccess(`Switched to ${targetUser.first_name}'s account successfully!`);
+
+        // 4. Redirect to appropriate dashboard
+        setTimeout(() => {
+          if (targetUser.user_type === 'property_owner') {
+            window.location.href = '/property-owner';
+          } else {
+            window.location.href = '/guest';
+          }
+        }, 800);
+      } else {
+        showError(response.data?.message || 'Failed to switch user account');
+      }
+    } catch (error) {
+      console.error('Error switching user:', error);
+      showError(error.response?.data?.message || 'Failed to switch user account. Please try again.');
+    }
   };
 
   const handleEditUser = (user) => {
@@ -238,15 +721,19 @@ const AdminUsers = () => {
   };
 
   const getUserTypeBadge = (userType) => {
+    const matchedRole = rolesData?.find(r => r.role === userType);
+    const displayName = matchedRole ? matchedRole.display_name : userType;
+
     const colors = {
       admin: 'bg-purple-50 text-purple-700 border-purple-200',
       property_owner: 'bg-blue-50 text-blue-700 border-blue-200',
-      guest: 'bg-emerald-50 text-emerald-700 border-emerald-200'
+      guest: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      staff: 'bg-amber-50 text-amber-700 border-amber-200'
     };
 
     return (
-      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold border uppercase tracking-wider ${colors[userType] || 'bg-gray-50 text-gray-700 border-gray-250'}`}>
-        {userType?.replace('_', ' ')}
+      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold border uppercase tracking-wider ${colors[userType] || 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}>
+        {displayName}
       </span>
     );
   };
@@ -260,6 +747,10 @@ const AdminUsers = () => {
     }
   };
 
+  // Compute role-filtered groups for the currently open permissions modal
+  const activePermGroups = permissionsUser ? getGroupsForRole(permissionsUser.user_type) : [];
+  const activePermResources = activePermGroups.flatMap(g => g.resources);
+
   if (isLoading) return <LoadingSpinner />;
 
   const { users = [], pagination = {}, stats = {} } = usersData || {};
@@ -268,8 +759,284 @@ const AdminUsers = () => {
     <div className="min-h-screen bg-gray-50/50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
+        {permissionsUser ? (
+          /* Redesigned Custom Permissions Checklist view */
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-6 animate-fade-in">
+            {/* Header / Sub actions */}
+            <div className="flex items-center justify-between pb-4 border-b border-gray-150 flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setPermissionsUser(null)}
+                className="text-xs font-bold text-teal-600 hover:text-teal-800 flex items-center gap-1.5 transition active:scale-95 bg-teal-50 px-3 py-1.5 rounded-lg"
+              >
+                <FiArrowLeft className="h-4 w-4" />
+                Back to Users
+              </button>
+              <div className="text-xs font-bold text-gray-500">
+                Customizing Permissions for: <span className="text-teal-700 uppercase font-black">{permissionsUser.first_name} {permissionsUser.last_name}</span> ({permissionsUser.email})
+              </div>
+            </div>
 
-        {/* Premium Metric Statistics Cards */}
+            {/* Context Banner */}
+            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm">
+              <div>
+                <span className="text-slate-500 font-semibold">Base Role: </span>
+                <span className="font-bold text-slate-900 capitalize">{permissionsUser.user_type.replace('_', ' ')}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="check-all-platform"
+                  checked={Object.values(permissionsData).every(v => v === true)}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    const updated = {};
+                    Object.keys(permissionsData).forEach(k => {
+                      updated[k] = checked;
+                    });
+                    setPermissionsData(updated);
+                  }}
+                  className="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500/20 focus:ring-offset-0 cursor-pointer transition duration-150"
+                />
+                <label htmlFor="check-all-platform" className="text-xs font-extrabold text-red-600 cursor-pointer select-none">Check All Permissions</label>
+              </div>
+            </div>
+
+            {/* Permissions Matrix Checklist Table */}
+            <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-sm bg-white overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-100 text-left">
+                <thead className="bg-slate-50/80 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                  <tr>
+                    <th className="px-6 py-4 w-1/2">Permission Group / Feature Module</th>
+                    <th className="px-4 py-4 text-center border-l border-slate-100">
+                      <div className="flex flex-col items-center justify-center gap-1.5">
+                        <span className="text-[9px] font-extrabold tracking-widest text-slate-400">Read</span>
+                        <input
+                          type="checkbox"
+                          checked={activePermResources.every(res => {
+                            const readAct = res.actions.find(a => a.key.endsWith('.read'));
+                            return !readAct || !!permissionsData[readAct.key];
+                          })}
+                          onChange={(e) => {
+                            const val = e.target.checked;
+                            const updated = { ...permissionsData };
+                            activePermResources.forEach(res => {
+                              const readAct = res.actions.find(a => a.key.endsWith('.read'));
+                              if (readAct) updated[readAct.key] = val;
+                            });
+                            setPermissionsData(updated);
+                          }}
+                          className="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500/20 focus:ring-offset-0 cursor-pointer transition duration-150"
+                        />
+                      </div>
+                    </th>
+                    <th className="px-4 py-4 text-center border-l border-slate-100">
+                      <div className="flex flex-col items-center justify-center gap-1.5">
+                        <span className="text-[9px] font-extrabold tracking-widest text-slate-400">Edit / Create</span>
+                        <input
+                          type="checkbox"
+                          checked={activePermResources.every(res => {
+                            const editAct = res.actions.find(a => a.key.endsWith('.create_update'));
+                            return !editAct || !!permissionsData[editAct.key];
+                          })}
+                          onChange={(e) => {
+                            const val = e.target.checked;
+                            const updated = { ...permissionsData };
+                            activePermResources.forEach(res => {
+                              const editAct = res.actions.find(a => a.key.endsWith('.create_update'));
+                              if (editAct) updated[editAct.key] = val;
+                            });
+                            setPermissionsData(updated);
+                          }}
+                          className="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500/20 focus:ring-offset-0 cursor-pointer transition duration-150"
+                        />
+                      </div>
+                    </th>
+                    <th className="px-4 py-4 text-center border-l border-slate-100">
+                      <div className="flex flex-col items-center justify-center gap-1.5">
+                        <span className="text-[9px] font-extrabold tracking-widest text-slate-400">Delete</span>
+                        <input
+                          type="checkbox"
+                          checked={activePermResources.every(res => {
+                            const delAct = res.actions.find(a => a.key.endsWith('.delete'));
+                            return !delAct || !!permissionsData[delAct.key];
+                          })}
+                          onChange={(e) => {
+                            const val = e.target.checked;
+                            const updated = { ...permissionsData };
+                            activePermResources.forEach(res => {
+                              const delAct = res.actions.find(a => a.key.endsWith('.delete'));
+                              if (delAct) updated[delAct.key] = val;
+                            });
+                            setPermissionsData(updated);
+                          }}
+                          className="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500/20 focus:ring-offset-0 cursor-pointer transition duration-150"
+                        />
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {activePermGroups.map((group) => {
+                    const groupResourceKeys = group.resources.flatMap(r => r.actions.map(a => a.key));
+                    const isGroupAllChecked = groupResourceKeys.every(k => permissionsData[k] === true);
+
+                    return (
+                      <React.Fragment key={group.groupKey}>
+                        {/* Group Header */}
+                        <tr className="bg-slate-50/50 border-y border-slate-100/80">
+                          <td colSpan="4" className="px-6 py-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="w-1.5 h-6 bg-teal-600 rounded-full inline-block"></span>
+                                <div>
+                                  <span className="text-xs font-black text-slate-800 uppercase tracking-wider">{group.groupName}</span>
+                                  <span className="text-[10px] text-slate-500 ml-2.5 font-medium hidden sm:inline">({group.description})</span>
+                                </div>
+                              </div>
+                              <div>
+                                <label
+                                  htmlFor={`check-group-${group.groupKey}`}
+                                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border ${
+                                    isGroupAllChecked 
+                                      ? 'bg-teal-50 border-teal-200 text-teal-700' 
+                                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                  } text-[10px] font-extrabold cursor-pointer select-none transition-all active:scale-95`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    id={`check-group-${group.groupKey}`}
+                                    checked={isGroupAllChecked}
+                                    onChange={(e) => {
+                                      const checked = e.target.checked;
+                                      const updated = { ...permissionsData };
+                                      groupResourceKeys.forEach(k => {
+                                        updated[k] = checked;
+                                      });
+                                      setPermissionsData(updated);
+                                    }}
+                                    className="w-3.5 h-3.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500/20 focus:ring-offset-0 cursor-pointer"
+                                  />
+                                  Check Group All
+                                </label>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+
+                        {/* Resource Rows */}
+                        {group.resources.map((res) => {
+                          const readAct = res.actions.find(a => a.key.endsWith('.read'));
+                          const editAct = res.actions.find(a => a.key.endsWith('.create_update'));
+                          const delAct = res.actions.find(a => a.key.endsWith('.delete'));
+
+                          return (
+                            <tr key={res.key} className="hover:bg-slate-50/40 transition-colors duration-150">
+                              <td className="px-6 py-4 pl-10">
+                                <div className="text-xs font-bold text-slate-700">{res.label}</div>
+                                <div className="text-[10px] text-slate-400 mt-0.5 leading-relaxed font-medium">{res.description}</div>
+                              </td>
+                              {/* Read */}
+                              <td className="px-4 py-4 text-center border-l border-slate-100/50">
+                                {readAct ? (
+                                  <div className="flex justify-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!permissionsData[readAct.key]}
+                                      onChange={(e) => {
+                                        setPermissionsData(prev => ({
+                                          ...prev,
+                                          [readAct.key]: e.target.checked
+                                        }));
+                                      }}
+                                      className="w-4.5 h-4.5 rounded-lg border-slate-300 text-teal-600 focus:ring-teal-500/20 focus:ring-offset-0 cursor-pointer transition-all duration-150"
+                                    />
+                                  </div>
+                                ) : (
+                                  <span className="inline-block w-4 h-4 rounded-full bg-slate-100 text-slate-300 text-[10px] font-bold select-none leading-4">-</span>
+                                )}
+                              </td>
+                              {/* Edit */}
+                              <td className="px-4 py-4 text-center border-l border-slate-100/50">
+                                {editAct ? (
+                                  <div className="flex justify-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!permissionsData[editAct.key]}
+                                      onChange={(e) => {
+                                        setPermissionsData(prev => ({
+                                          ...prev,
+                                          [editAct.key]: e.target.checked
+                                        }));
+                                      }}
+                                      className="w-4.5 h-4.5 rounded-lg border-slate-300 text-teal-600 focus:ring-teal-500/20 focus:ring-offset-0 cursor-pointer transition-all duration-150"
+                                    />
+                                  </div>
+                                ) : (
+                                  <span className="inline-block w-4 h-4 rounded-full bg-slate-100 text-slate-300 text-[10px] font-bold select-none leading-4">-</span>
+                                )}
+                              </td>
+                              {/* Delete */}
+                              <td className="px-4 py-4 text-center border-l border-slate-100/50">
+                                {delAct ? (
+                                  <div className="flex justify-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!permissionsData[delAct.key]}
+                                      onChange={(e) => {
+                                        setPermissionsData(prev => ({
+                                          ...prev,
+                                          [delAct.key]: e.target.checked
+                                        }));
+                                      }}
+                                      className="w-4.5 h-4.5 rounded-lg border-slate-300 text-teal-600 focus:ring-teal-500/20 focus:ring-offset-0 cursor-pointer transition-all duration-150"
+                                    />
+                                  </div>
+                                ) : (
+                                  <span className="inline-block w-4 h-4 rounded-full bg-slate-100 text-slate-300 text-[10px] font-bold select-none leading-4">-</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Action Footer */}
+            <div className="bg-gray-50 -mx-6 -mb-6 px-6 py-4 rounded-b-2xl border-t border-slate-100 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={handleRestoreUserDefaults}
+                className="px-4 py-2 text-xs font-bold text-red-600 hover:text-red-700 transition flex items-center gap-1 active:scale-95"
+              >
+                Restore Role Defaults
+              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPermissionsUser(null)}
+                  className="px-4 py-2 border border-gray-300 rounded-xl text-sm font-semibold text-gray-700 bg-white hover:bg-gray-55 transition active:scale-95"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSavePermissions}
+                  className="px-6 py-2 bg-[#004e59] hover:bg-[#003840] text-white rounded-xl text-sm font-semibold transition shadow-sm active:scale-95 flex items-center gap-1.5"
+                >
+                  <FiSave className="h-4 w-4" />
+                  Save Custom Overrides
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Premium Metric Statistics Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex items-center space-x-4">
             <div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg">
@@ -381,6 +1148,15 @@ const AdminUsers = () => {
                 <FiFilter className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
                 {isFetching ? 'Refreshing...' : 'Refresh'}
               </button>
+              {can('roles.read') && (
+                <button
+                  onClick={() => navigate('/admin/role-permissions')}
+                  className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm font-semibold transition-all duration-200 flex items-center gap-1.5 active:scale-95 shadow-sm"
+                >
+                  <FiShield className="h-4 w-4" />
+                  Role Defaults
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -512,6 +1288,24 @@ const AdminUsers = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end space-x-1">
+                          {user.user_type !== 'admin' && (
+                            <>
+                              <button
+                                onClick={() => handleImpersonateUser(user)}
+                                className="p-2 text-gray-550 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                title="Switch to User Account"
+                              >
+                                <FiLogIn className="h-4.5 w-4.5" />
+                              </button>
+                              <button
+                                onClick={() => handleManagePermissions(user)}
+                                className="p-2 text-gray-550 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                                title="Edit Platform Permissions"
+                              >
+                                <FiShield className="h-4.5 w-4.5" />
+                              </button>
+                            </>
+                          )}
                           <button
                             onClick={() => handleViewUser(user)}
                             className="p-2 text-gray-550 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -655,6 +1449,22 @@ const AdminUsers = () => {
                   )}
 
                   <div className="flex items-center space-x-2">
+                    {(user.user_type === 'property_owner' || user.user_type === 'guest') && (
+                      <>
+                        <button
+                          onClick={() => handleImpersonateUser(user)}
+                          className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-650 hover:text-indigo-855 rounded-lg font-bold text-xs transition-colors flex items-center gap-1"
+                        >
+                          <FiLogIn className="h-3.5 w-3.5" /> Switch
+                        </button>
+                        <button
+                          onClick={() => handleManagePermissions(user)}
+                          className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-650 hover:text-purple-855 rounded-lg font-bold text-xs transition-colors flex items-center gap-1"
+                        >
+                          <FiShield className="h-3.5 w-3.5" /> Perms
+                        </button>
+                      </>
+                    )}
                     <button
                       onClick={() => handleViewUser(user)}
                       className="px-3 py-1.5 bg-gray-100 hover:bg-blue-50 text-gray-600 hover:text-blue-600 rounded-lg font-bold text-xs transition-colors flex items-center gap-1"
@@ -756,7 +1566,9 @@ const AdminUsers = () => {
             </div>
           </div>
         )}
-      </div>
+        </>
+      )}
+    </div>
 
       {/* View User Modal */}
       {showViewModal && selectedUser && (
@@ -1012,17 +1824,19 @@ const AdminUsers = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">User Type</label>
+                  <label className="block text-sm font-medium text-gray-700">User Type / Role</label>
                   <select
                     name="user_type"
                     value={editFormData.user_type}
                     onChange={handleEditFormChange}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 capitalize"
                     required
                   >
-                    <option value="guest">Guest</option>
-                    <option value="property_owner">Property Owner</option>
-                    <option value="admin">Admin</option>
+                    {rolesData?.map(roleItem => (
+                      <option key={roleItem.role} value={roleItem.role}>
+                        {roleItem.display_name}
+                      </option>
+                    ))}
                   </select>
                 </div>
 

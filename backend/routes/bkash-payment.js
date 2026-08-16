@@ -5,6 +5,7 @@ const { syncPaymentToHMSAccounts } = require('../utils/hms-sync');
 const { verifyToken } = require('../middleware/auth');
 const { sendBookingPaidSms } = require('../utils/sms');
 const BkashPaymentGateway = require('../utils/bkash-gateway');
+const { syncCommissionForBooking } = require('../utils/commission-sync');
 
 const router = express.Router();
 
@@ -351,6 +352,18 @@ router.post('/execute', verifyToken, async (req, res) => {
         }
       }
       
+      // Fetch charge rate setting (fallback to 1.5%)
+      let chargeRate = 1.5;
+      try {
+        const [chargeSetting] = await pool.execute("SELECT setting_value FROM system_settings WHERE setting_key = 'bkash_charge_rate'");
+        if (chargeSetting.length > 0) {
+          chargeRate = parseFloat(chargeSetting[0].setting_value);
+        }
+      } catch (err) {
+        console.error('Failed to fetch bkash_charge_rate setting:', err.message);
+      }
+      const gwFee = Math.round((finalAmount * chargeRate / 100) * 100) / 100;
+
       // Create CR entry for admin (money received from guest)
       // CRITICAL: Use INSERT ... SET and immediately UPDATE to ensure dr_amount=0
       const crReference = `CR-${Date.now()}-${payment.booking_id}`;
@@ -363,6 +376,8 @@ router.post('/execute', verifyToken, async (req, res) => {
           amount = ?,
           dr_amount = 0,
           cr_amount = ?,
+          gateway_fee = ?,
+          gateway_channel = 'bKash Wallet',
           transaction_type = 'guest_payment',
           gateway_transaction_id = ?,
           notes = ?,
@@ -374,6 +389,7 @@ router.post('/execute', verifyToken, async (req, res) => {
         crReference,
         finalAmount,
         finalAmount,
+        gwFee,
         executeResult.transactionID || null,
         `Guest payment received via bKash - Total: ৳${booking.total_amount}${pointsDiscount > 0 ? `, Points discount: ৳${pointsDiscount.toFixed(2)}` : ''}`
       ]);
@@ -430,12 +446,14 @@ router.post('/execute', verifyToken, async (req, res) => {
       `, [payment.booking_id]);
 
       try {
-        await sendBookingPaidSms(payment.booking_id);
+        await sendBookingPaidSms(payment.booking_id, executeResult?.transactionID || payment.gateway_transaction_id);
       } catch (smsErr) {
         console.error(`Failed to send payment confirmation SMS for booking ${payment.booking_id}:`, smsErr.message);
       }
 
       // Mark admin commission as paid (all payments go to admin)
+      // Recalculate commission based on total paid across ALL payments
+      await syncCommissionForBooking(payment.booking_id);
       await pool.execute(`
         UPDATE admin_earnings 
         SET payment_status = 'paid', 
@@ -576,13 +594,15 @@ async function completeBkashPayment(payment, executeResult, res, bookingId) {
     }
 
     const booking = bookingData[0];
+    const payRecordAmt = parseFloat(payment?.amount || 0);
+    const execResultAmt = parseFloat(executeResult?.amount || 0);
+    const bookingTotalAmt = parseFloat(booking?.total_amount || 0);
 
-    // Check booking isn't already paid (idempotency)
-    if (booking.payment_status === 'paid') {
-      return res.redirect(`${frontendUrl}/booking-confirmation/${bookingId}`);
-    }
+    const paidAmt = payRecordAmt > 0 
+      ? payRecordAmt 
+      : (execResultAmt > 0 ? execResultAmt : bookingTotalAmt);
 
-    // Check owner acceptance
+    // Check owner acceptance (DR entry)
     const [drPayments] = await pool.execute(`
       SELECT id FROM payments 
       WHERE booking_id = ? AND transaction_type = 'owner_accepted' AND dr_amount > 0
@@ -596,113 +616,137 @@ async function completeBkashPayment(payment, executeResult, res, bookingId) {
               amount, dr_amount, cr_amount, transaction_type, status, notes,
               payment_date, created_at, updated_at
           ) VALUES (?, ?, 'booking', ?, ?, 0, 'owner_accepted', 'completed', ?, NOW(), NOW(), NOW())
-      `, [bookingId, autoDrRef, payment.amount, payment.amount, `Automatic DR entry for successful payment - ৳${payment.amount}`]);
+      `, [bookingId, autoDrRef, paidAmt, paidAmt, `Automatic DR entry for successful payment - ৳${paidAmt}`]);
     }
 
-    // Check if CR entry already exists (prevent duplicate)
-    const [existingCrPayments] = await pool.execute(`
-      SELECT id FROM payments 
-      WHERE booking_id = ? AND transaction_type = 'guest_payment' AND cr_amount > 0
+    // Fetch charge rate setting (fallback to 1.5%)
+    let chargeRate = 1.5;
+    try {
+      const [chargeSetting] = await pool.execute("SELECT setting_value FROM system_settings WHERE setting_key = 'bkash_charge_rate'");
+      if (chargeSetting.length > 0) {
+        chargeRate = parseFloat(chargeSetting[0].setting_value);
+      }
+    } catch (err) {
+      console.error('Failed to fetch bkash_charge_rate setting:', err.message);
+    }
+    const gwFee = Math.round((paidAmt * chargeRate / 100) * 100) / 100;
+
+    // Always record CR entry for actual payment received
+    const crReference = `CR-BKASH-${Date.now()}-${bookingId}`;
+    const txnNotes = executeResult?.isDemo
+      ? `Guest payment received via bKash (Demo) - Paid: ৳${paidAmt}`
+      : `Guest payment received via bKash TXN:${executeResult?.transactionID || payment.gateway_transaction_id} - Paid: ৳${paidAmt}`;
+
+    const [crInsertResult] = await pool.execute(`
+      INSERT INTO payments SET
+        booking_id = ?,
+        payment_reference = ?,
+        payment_method = 'bkash',
+        payment_type = 'booking',
+        amount = ?,
+        dr_amount = 0,
+        cr_amount = ?,
+        gateway_fee = ?,
+        gateway_channel = 'bKash Wallet',
+        transaction_type = 'guest_payment',
+        notes = ?,
+        status = 'completed',
+        payment_date = NOW(),
+        created_at = NOW()
+    `, [bookingId, crReference, paidAmt, paidAmt, gwFee, txnNotes]);
+
+    // Force dr_amount = 0 in case of triggers
+    await pool.execute(`
+      UPDATE payments SET dr_amount = 0, updated_at = NOW()
+      WHERE id = ? AND transaction_type = 'guest_payment'
+    `, [crInsertResult.insertId]);
+
+    // Update DR entry status to completed
+    await pool.execute(`
+      UPDATE payments
+      SET status = 'completed', updated_at = NOW()
+      WHERE booking_id = ? AND transaction_type = 'owner_accepted' AND dr_amount > 0
     `, [bookingId]);
 
-    if (existingCrPayments.length === 0) {
-      // Clean up duplicate DR entries if any
-      const [allDrPayments] = await pool.execute(`
-        SELECT id, transaction_type, dr_amount 
-        FROM payments 
-        WHERE booking_id = ? AND dr_amount > 0
-      `, [bookingId]);
+    // Calculate total paid so far vs grand total
+    const [payRows] = await pool.execute(
+      `SELECT SUM(cr_amount) as total_paid FROM payments WHERE booking_id = ? AND status = 'completed'`,
+      [bookingId]
+    );
+    const [billRows] = await pool.execute(
+      `SELECT SUM(amount) as total_bills FROM hms_bills WHERE booking_id = ?`,
+      [bookingId]
+    );
+    const totalPaid = parseFloat(payRows[0]?.total_paid || 0);
+    const grandTotal = parseFloat(booking.total_amount || 0) + parseFloat(billRows[0]?.total_bills || 0);
+    const finalPaymentStatus = totalPaid >= grandTotal ? 'paid' : 'partial';
 
-      const ownerAcceptedDrs = allDrPayments.filter(p => p.transaction_type === 'owner_accepted');
-      if (ownerAcceptedDrs.length > 1) {
-        for (let i = 1; i < ownerAcceptedDrs.length; i++) {
-          await pool.execute(`DELETE FROM payments WHERE id = ?`, [ownerAcceptedDrs[i].id]);
-        }
-      }
-
-      // Create CR entry (money received from guest)
-      const crReference = `CR-${Date.now()}-${bookingId}`;
-      const txnNotes = executeResult.isDemo
-        ? `Guest payment received via bKash (Demo) - Total: ৳${booking.total_amount}`
-        : `Guest payment received via bKash TXN:${executeResult.transactionID} - Total: ৳${booking.total_amount}`;
-
-      const [crInsertResult] = await pool.execute(`
-        INSERT INTO payments SET
-          booking_id = ?,
-          payment_reference = ?,
+    // Update booking status
+    await pool.execute(`
+      UPDATE bookings 
+      SET payment_status = ?, status = 'confirmed',
           payment_method = 'bkash',
-          payment_type = 'booking',
-          amount = ?,
-          dr_amount = 0,
-          cr_amount = ?,
-          transaction_type = 'guest_payment',
-          notes = ?,
-          status = 'completed',
-          payment_date = NOW(),
-          created_at = NOW()
-      `, [bookingId, crReference, booking.total_amount, booking.total_amount, txnNotes]);
+          confirmed_at = COALESCE(confirmed_at, NOW()), updated_at = NOW()
+      WHERE id = ?
+    `, [finalPaymentStatus, bookingId]);
 
-      // Force dr_amount = 0 in case of triggers
-      await pool.execute(`
-        UPDATE payments SET dr_amount = 0, updated_at = NOW()
-        WHERE id = ? AND transaction_type = 'guest_payment'
-      `, [crInsertResult.insertId]);
+    // Send SMS
+    try {
+      await sendBookingPaidSms(bookingId);
+    } catch (smsErr) {
+      console.error(`SMS error for booking ${bookingId}:`, smsErr.message);
+    }
 
-      // Update DR entry status to completed
-      await pool.execute(`
-        UPDATE payments
-        SET status = 'completed', updated_at = NOW()
-        WHERE booking_id = ? AND transaction_type = 'owner_accepted' AND dr_amount > 0
-      `, [bookingId]);
+    // Recalculate commission based on total paid across ALL payments
+    await syncCommissionForBooking(bookingId);
 
-      // Confirm booking as paid
-      await pool.execute(`
-        UPDATE bookings 
-        SET payment_status = 'paid', status = 'confirmed',
-            payment_method = 'bkash',
-            confirmed_at = NOW(), updated_at = NOW()
-        WHERE id = ?
-      `, [bookingId]);
-
-      // Send SMS
-      try {
-        await sendBookingPaidSms(bookingId);
-      } catch (smsErr) {
-        console.error(`SMS error for booking ${bookingId}:`, smsErr.message);
-      }
-
-      // Mark admin commission as paid
+    // Mark admin commission as paid if fully paid
+    if (finalPaymentStatus === 'paid') {
       await pool.execute(`
         UPDATE admin_earnings 
         SET payment_status = 'paid', payment_date = NOW(), updated_at = NOW()
         WHERE booking_id = ? AND payment_status = 'pending'
       `, [bookingId]);
-
-      // Award rewards points
-      try {
-        const [existingPoints] = await pool.execute(`
-          SELECT id FROM rewards_point_transactions 
-          WHERE booking_id = ? AND transaction_type = 'earned'
-        `, [bookingId]);
-
-        if (existingPoints.length === 0) {
-          const { awardPointsForBooking } = require('../utils/rewardsPoints');
-          const result = await awardPointsForBooking(payment.guest_id, booking.total_amount, bookingId);
-          console.log(`✅ Points awarded: ${result.pointsAwarded} for booking ${bookingId}`);
-        }
-      } catch (pointsError) {
-        console.error('Points awarding error in bKash callback:', pointsError);
-      }
-
-      // Sync to HMS Accounts
-      try {
-        await syncPaymentToHMSAccounts(crInsertResult.insertId);
-      } catch (hmsError) {
-        console.error('HMS Sync error in bKash callback:', hmsError);
-      }
     }
 
-    // Redirect browser to confirmation page
+    // Award rewards points
+    try {
+      const [existingPoints] = await pool.execute(`
+        SELECT id FROM rewards_point_transactions 
+        WHERE booking_id = ? AND transaction_type = 'earned'
+      `, [bookingId]);
+
+      if (existingPoints.length === 0) {
+        const { awardPointsForBooking } = require('../utils/rewardsPoints');
+        await awardPointsForBooking(payment.guest_id || booking.guest_id, paidAmt, bookingId);
+      }
+    } catch (pointsError) {
+      console.error('Points awarding error in bKash callback:', pointsError);
+    }
+
+    // Sync to HMS Accounts
+    try {
+      await syncPaymentToHMSAccounts(crInsertResult.insertId);
+    } catch (hmsError) {
+      console.error('HMS Sync error in bKash callback:', hmsError);
+    }
+
+    // Sync live owner payout balance
+    try {
+      const ownerPayoutRoutes = require('./admin/admin-owner-payouts');
+      if (booking?.owner_id && ownerPayoutRoutes.syncOwnerBalances) {
+        await ownerPayoutRoutes.syncOwnerBalances(booking.owner_id);
+      }
+    } catch (syncErr) {
+      console.error('Owner balance sync error in bKash callback:', syncErr);
+    }
+
+    // Redirect browser: If booking has payment_link_token (HMS public payment), redirect back to HMS pay page with success flag
+    if (booking.payment_link_token) {
+      return res.redirect(`${frontendUrl}/hms/pay/${booking.payment_link_token}?payment=success`);
+    }
+
+    // Otherwise redirect to standard guest confirmation page
     return res.redirect(`${frontendUrl}/booking-confirmation/${bookingId}`);
 
   } catch (err) {
@@ -867,7 +911,7 @@ router.post('/hms/public-request', async (req, res) => {
              (
                  b.total_amount 
                  + COALESCE((SELECT SUM(amount) FROM hms_bills WHERE booking_id = b.id), 0)
-                 - COALESCE((SELECT SUM(amount) FROM payments WHERE booking_id = b.id AND status = 'completed'), 0)
+                 - COALESCE((SELECT SUM(cr_amount) FROM payments WHERE booking_id = b.id AND status = 'completed'), 0)
              ) as total_amount,
              b.guest_name, b.guest_email, b.guest_phone,
              p.title as property_title
@@ -902,7 +946,7 @@ router.post('/hms/public-request', async (req, res) => {
       );
     }
 
-    // Store payment initiated marker
+    // Store payment initiated marker with target due amount
     const paymentReference = `BKASH_${paymentResult.paymentID}`;
     await pool.execute(`
       INSERT INTO payments SET
@@ -913,11 +957,12 @@ router.post('/hms/public-request', async (req, res) => {
         transaction_type = 'payment_initiated',
         status = 'pending',
         gateway_transaction_id = ?,
+        amount = ?,
         notes = 'bKash payment initiated for HMS booking via link',
         payment_date = NOW(),
         cr_amount = 0,
         dr_amount = 0
-    `, [booking.id, paymentReference, paymentResult.paymentID]);
+    `, [booking.id, paymentReference, paymentResult.paymentID, booking.total_amount]);
 
     res.json(formatResponse(true, 'bKash payment initiated', { bkash_url: paymentResult.bkashURL, bkash_token: bkashGateway.accessToken }));
   } catch (error) {

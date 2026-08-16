@@ -2,6 +2,7 @@ import api from './api';
 
 const SW_PATH = '/sw.js';
 const STORAGE_KEY = 'keyhost_push_subscribed';
+const OPTED_OUT_KEY = 'keyhost_push_opted_out'; // Set when user intentionally turns off notifications
 
 // Convert base64 VAPID key to Uint8Array (required by browser API)
 function urlBase64ToUint8Array(base64String) {
@@ -45,6 +46,11 @@ export function isSubscribed() {
   return localStorage.getItem(STORAGE_KEY) === 'true';
 }
 
+// Returns true if user has intentionally turned off push notifications
+export function hasOptedOut() {
+  return localStorage.getItem(OPTED_OUT_KEY) === 'true';
+}
+
 // Subscribe user to push notifications
 export async function subscribeToPush() {
   try {
@@ -86,6 +92,7 @@ export async function subscribeToPush() {
     });
 
     localStorage.setItem(STORAGE_KEY, 'true');
+    localStorage.removeItem(OPTED_OUT_KEY); // Clear opted-out flag on successful subscribe
     console.log('[Push] ✅ Subscribed successfully');
     return true;
   } catch (err) {
@@ -107,6 +114,7 @@ export async function unsubscribeFromPush() {
       }
     }
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.setItem(OPTED_OUT_KEY, 'true'); // Mark as intentionally opted out
     console.log('[Push] Unsubscribed');
     return true;
   } catch (err) {

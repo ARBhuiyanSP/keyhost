@@ -15,12 +15,12 @@ const {
   validateId,
   validatePagination
 } = require('../middleware/validation');
-const { verifyToken, requireGuest } = require('../middleware/auth');
+const { verifyToken, requireGuest, requirePlatformPermission } = require('../middleware/auth');
 
 const router = express.Router();
 
 // Create new booking
-router.post('/', verifyToken, requireGuest, validateBooking, async (req, res) => {
+router.post('/', verifyToken, requireGuest, requirePlatformPermission('can_make_bookings'), validateBooking, async (req, res) => {
   try {
     const {
       property_id,

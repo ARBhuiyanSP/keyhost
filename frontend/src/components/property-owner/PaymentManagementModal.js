@@ -17,7 +17,13 @@ const PaymentManagementModal = ({ isOpen, onClose, reservation, propertyId }) =>
         notes: ''
     });
 
+    const [paymentLink, setPaymentLink] = useState('');
+    const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+
     React.useEffect(() => {
+        setPaymentLink('');
+        setIsGeneratingLink(false);
+        setActiveTab('manual');
         if (reservation) {
             const roomAmount = parseFloat(reservation.total_amount || 0);
             const extraBills = parseFloat(reservation.extra_billing_amount || 0);
@@ -31,12 +37,10 @@ const PaymentManagementModal = ({ isOpen, onClose, reservation, propertyId }) =>
                 notes: ''
             });
         }
-    }, [reservation]);
-    const [paymentLink, setPaymentLink] = useState('');
-    const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+    }, [reservation?.id, isOpen]);
 
     const manualMutation = useMutation(
-        (data) => api.patch(`/property-owner/hms/reservations/${reservation.id}/manual-payment`, data),
+        (data) => api.patch(`/property-owner/hms/reservations/${reservation?.id}/manual-payment`, data),
         {
             onSuccess: () => {
                 queryClient.invalidateQueries(['hms-reservations', propertyId]);
@@ -48,6 +52,7 @@ const PaymentManagementModal = ({ isOpen, onClose, reservation, propertyId }) =>
     );
 
     const generateLink = async () => {
+        if (!reservation?.id) return;
         setIsGeneratingLink(true);
         try {
             const response = await api.get(`/property-owner/hms/reservations/${reservation.id}/payment-link`);

@@ -8,12 +8,14 @@ import useSettingsStore from '../../store/settingsStore';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import { GoogleLogin, GoogleOAuthProvider } from '@react-oauth/google';
 import api from '../../utils/api';
+import { useFbPixel } from '../../hooks/useFbPixel';
 
 const Register = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { register: registerUser, isLoading } = useAuthStore();
   const { settings } = useSettingsStore();
+  const { trackCompleteRegistration } = useFbPixel();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -135,6 +137,8 @@ const Register = () => {
     if (result.success) {
       const user = result.data?.data?.user || result.data?.user;
       toast.success('Registration successful!');
+      // Track CompleteRegistration event
+      trackCompleteRegistration();
 
       // Also check from authStore directly (similar to Login.js)
       const authStoreUser = useAuthStore.getState().user;

@@ -10,6 +10,7 @@ import {
 } from 'react-icons/fi';
 import useAuthStore from '../../store/authStore';
 import useSettingsStore from '../../store/settingsStore';
+import usePermission from '../../hooks/usePermission';
 import api from '../../utils/api';
 
 const TakaIcon = ({ className = "w-4 h-4" }) => (
@@ -21,11 +22,15 @@ const TakaIcon = ({ className = "w-4 h-4" }) => (
 const DashboardLayout = () => {
     const { user, logout, isAdmin, isPropertyOwner } = useAuthStore();
     const { settings } = useSettingsStore();
+    const { can } = usePermission();
     const navigate = useNavigate();
     const location = useLocation();
 
-    // Initialize active dashboard mode ('host' or 'guest') for hosts
+    // Initialize active dashboard mode ('admin', 'host' or 'guest')
     const [dashboardMode, setDashboardMode] = useState(() => {
+        if (isAdmin()) {
+            return localStorage.getItem('dashboard_role_mode') || 'admin';
+        }
         if (isPropertyOwner() && !isAdmin()) {
             return localStorage.getItem('dashboard_role_mode') || 'host';
         }
@@ -34,7 +39,18 @@ const DashboardLayout = () => {
 
     // Synchronize dashboard mode with the URL path
     useEffect(() => {
-        if (isPropertyOwner() && !isAdmin()) {
+        if (isAdmin()) {
+            if (location.pathname.startsWith('/admin')) {
+                setDashboardMode('admin');
+                localStorage.setItem('dashboard_role_mode', 'admin');
+            } else if (location.pathname.startsWith('/property-owner') || location.pathname.startsWith('/staff')) {
+                setDashboardMode('host');
+                localStorage.setItem('dashboard_role_mode', 'host');
+            } else if (location.pathname.startsWith('/guest') || location.pathname === '/') {
+                setDashboardMode('guest');
+                localStorage.setItem('dashboard_role_mode', 'guest');
+            }
+        } else if (isPropertyOwner() && !isAdmin()) {
             if (location.pathname.startsWith('/guest')) {
                 setDashboardMode('guest');
                 localStorage.setItem('dashboard_role_mode', 'guest');
@@ -197,19 +213,20 @@ const DashboardLayout = () => {
     };
 
     const getMenu = () => {
-        if (isAdmin()) {
-            return [
+        if (dashboardMode === 'admin') {
+            const adminMenu = [
                 { name: 'Dashboard', path: '/admin', icon: FiGrid },
+                { name: 'Master Calendar', path: '/admin/calendar', icon: FiCalendar, permission: 'bookings.read' },
                 {
                     name: 'Properties',
                     icon: FiHome,
                     submenu: [
-                        { name: 'All Bookings', path: '/admin/bookings' },
-                        { name: 'All Properties', path: '/admin/properties' },
-                        { name: 'Property Types', path: '/admin/property-types' },
-                        { name: 'Amenities', path: '/admin/amenities' },
-                        { name: 'Display Categories', path: '/admin/display-categories' },
-                        { name: 'Coupons', path: '/admin/coupons' }
+                        { name: 'All Bookings', path: '/admin/bookings', permission: 'bookings.read' },
+                        { name: 'All Properties', path: '/admin/properties', permission: 'properties.read' },
+                        { name: 'Property Types', path: '/admin/property-types', permission: 'property_types.read' },
+                        { name: 'Amenities', path: '/admin/amenities', permission: 'amenities.read' },
+                        { name: 'Display Categories', path: '/admin/display-categories', permission: 'display_categories.read' },
+                        { name: 'Coupons', path: '/admin/coupons', permission: 'coupons.read' }
                     ]
                 },
                 {
@@ -220,18 +237,32 @@ const DashboardLayout = () => {
                         { name: 'Flight Bookings', path: '/admin/flight-bookings' },
                     ]
                 },
-                { name: 'Users', path: '/admin/users', icon: FiUsers },
-                { name: 'Contact Messages', path: '/admin/contact-messages', icon: FiMessageSquare },
-                { name: 'Reviews', path: '/admin/reviews', icon: FiActivity },
-                { name: 'Rewards Points', path: '/admin/rewards-points', icon: FiActivity },
-                { name: 'Earnings', path: '/admin/earnings', icon: TakaIcon },
-                { name: 'Accounting', path: '/admin/accounting', icon: TakaIcon },
-                { name: 'Refunds', path: '/admin/refunds', icon: TakaIcon },
-                { name: 'Security Deposits', path: '/admin/security-deposits', icon: FiShield },
-                { name: 'Analytics', path: '/admin/analytics', icon: FiActivity },
                 {
-                    name: 'Reports', icon: FiPieChart, submenu: [
+                    name: 'Corporate Admin',
+                    icon: FiShield,
+                    submenu: [
+                        { name: 'Platform Expenses', path: '/admin/expenses' },
+                        { name: 'HR & Payroll', path: '/admin/hr' },
+                        { name: 'P&L Statement', path: '/admin/reports/profit-loss' }
+                    ]
+                },
+                { name: 'Users', path: '/admin/users', icon: FiUsers, permission: 'users.read' },
+                { name: 'Role Permissions', path: '/admin/role-permissions', icon: FiShield, permission: 'roles.read' },
+                { name: 'Contact Messages', path: '/admin/contact-messages', icon: FiMessageSquare, permission: 'contact_messages.read' },
+                { name: 'Reviews', path: '/admin/reviews', icon: FiActivity, permission: 'reviews.read' },
+                { name: 'Rewards Points', path: '/admin/rewards-points', icon: FiActivity, permission: 'rewards.read' },
+                { name: 'Earnings', path: '/admin/earnings', icon: TakaIcon, permission: 'earnings.read' },
+                { name: 'Accounting', path: '/admin/accounting', icon: TakaIcon, permission: 'hms_accounts.read' },
+                { name: 'Refunds', path: '/admin/refunds', icon: TakaIcon, permission: 'refunds.read' },
+                { name: 'Security Deposits', path: '/admin/security-deposits', icon: FiShield, permission: 'security_deposits.read' },
+                { name: 'Analytics', path: '/admin/analytics', icon: FiActivity, permission: 'analytics.read' },
+                {
+                    name: 'Reports', icon: FiPieChart, permission: 'reports.read', submenu: [
+                        { name: 'Occupancy Report', path: '/admin/reports/overview' },
+                        { name: 'Host Performance', path: '/admin/reports/host-performance' },
+                        { name: 'Revenue Report', path: '/admin/reports/revenue' },
                         { name: 'User Analytics', path: '/admin/reports/user-analytics' },
+
                         { name: 'Property Analytics', path: '/admin/reports/property-analytics' },
                         { name: 'Booking Reports', path: '/admin/reports/bookings' },
                         { name: 'Financial Reports', path: '/admin/reports/financials' },
@@ -240,36 +271,44 @@ const DashboardLayout = () => {
                         { name: 'User Reports', path: '/admin/reports/users' }
                     ]
                 },
-                { name: 'Support', path: '/support', icon: FiLifeBuoy },
+                { name: 'Support', path: '/support', icon: FiLifeBuoy, permission: 'support.read' },
                 { name: 'Settings', path: '/admin/settings', icon: FiSettings },
                 { name: 'HMS Settings', path: '/admin/hms-settings', icon: FiSettings },
             ];
-        } else if (isPropertyOwner() || user?.user_type === 'staff') {
-            if (isPropertyOwner() && dashboardMode === 'guest') {
-                return [
+
+            return adminMenu.filter(item => {
+                if (item.permission && !can(item.permission)) return false;
+                if (item.submenu) {
+                    const filteredSub = item.submenu.filter(sub => !sub.permission || can(sub.permission));
+                    if (filteredSub.length === 0) return false;
+                    item.submenu = filteredSub;
+                }
+                return true;
+            });
+        } else if (dashboardMode === 'host' || user?.user_type === 'staff') {
+            if (!isAdmin() && isPropertyOwner() && dashboardMode === 'guest') {
+                const guestMenu = [
                     { name: 'Dashboard', path: '/guest', icon: FiGrid },
                     { name: 'Find Property', path: '/properties', icon: FiSearch },
-                    { name: 'My Bookings', path: '/guest/bookings', icon: FiCalendar },
-                    { name: 'My Refunds', path: '/guest/refunds', icon: TakaIcon },
-                    { name: 'Messages', path: '/messages', icon: FiMessageSquare },
-                    { name: 'Favorites', path: '/guest/favorites', icon: FiHeart },
-                    { name: 'Rewards', path: '/guest/rewards-points', icon: TakaIcon },
-                    { name: 'Reports', path: '/guest/reports', icon: FiPieChart },
-                    { name: 'Support', path: '/support', icon: FiLifeBuoy },
+                    { name: 'My Bookings', path: '/guest/bookings', icon: FiCalendar, permission: 'can_view_booking_history' },
+                    { name: 'My Refunds', path: '/guest/refunds', icon: TakaIcon, permission: 'can_request_refunds' },
+                    { name: 'Messages', path: '/messages', icon: FiMessageSquare, permission: 'can_access_messages' },
+                    { name: 'Favorites', path: '/guest/favorites', icon: FiHeart, permission: 'can_view_favorites' },
+                    { name: 'Rewards', path: '/guest/rewards-points', icon: TakaIcon, permission: 'can_use_rewards' },
+                    { name: 'Reports', path: '/guest/reports', icon: FiPieChart, permission: 'can_view_booking_history' },
+                    { name: 'Support', path: '/support', icon: FiLifeBuoy, permission: 'support.read' },
                     { name: 'Exit Dashboard', path: '/', icon: FiLogOut }
                 ];
+                return guestMenu.filter(item => !item.permission || can(item.permission));
             }
 
             const isStaff = user?.user_type === 'staff';
             const hasPermission = (perm) => {
-                if (!isStaff) return true; // Property owner has all permissions
-                const perms = typeof user?.permissions === 'string' 
-                    ? JSON.parse(user.permissions) 
-                    : (user?.permissions || {});
-                return perms['*'] || perms[perm];
+                if (isAdmin()) return true;
+                return can(perm);
             };
 
-            const hasHMSAccess = user?.hms_status === 'active' || user?.hms_status === 'trialing' || isStaff;
+            const hasHMSAccess = isAdmin() || ((user?.hms_status === 'active' || user?.hms_status === 'trialing' || isStaff) && can('can_use_hms'));
             
             const getTerminology = (propertyType) => {
                 const type = (propertyType || '').toLowerCase();
@@ -414,27 +453,32 @@ const DashboardLayout = () => {
 
             // Account and Support
             menu.push({ divider: true, label: 'Account' });
-            menu.push({ name: 'Messages', path: '/messages', icon: FiMessageSquare });
-            menu.push({ name: 'Support', path: '/support', icon: FiLifeBuoy });
+            if (can('can_access_messages')) {
+                menu.push({ name: 'Messages', path: '/messages', icon: FiMessageSquare });
+            }
+            if (can('support.read')) {
+                menu.push({ name: 'Support', path: '/support', icon: FiLifeBuoy });
+            }
 
             menu.push({ divider: true, label: 'System' });
             menu.push({ name: 'Exit Dashboard', path: '/', icon: FiLogOut });
 
             return menu;
         } else { // Guest
-            return [
+            const guestMenu = [
                 { name: 'Dashboard', path: '/guest', icon: FiGrid },
                 { name: 'Find Property', path: '/properties', icon: FiSearch },
-                { name: 'My Bookings', path: '/guest/bookings', icon: FiCalendar },
-                { name: 'My Refunds', path: '/guest/refunds', icon: TakaIcon },
-                { name: 'Messages', path: '/messages', icon: FiMessageSquare },
-                { name: 'Favorites', path: '/guest/favorites', icon: FiHeart },
-                { name: 'Rewards', path: '/guest/rewards-points', icon: TakaIcon },
-                { name: 'Reports', path: '/guest/reports', icon: FiPieChart },
-                { name: 'Support', path: '/support', icon: FiLifeBuoy },
+                { name: 'My Bookings', path: '/guest/bookings', icon: FiCalendar, permission: 'can_view_booking_history' },
+                { name: 'My Refunds', path: '/guest/refunds', icon: TakaIcon, permission: 'can_request_refunds' },
+                { name: 'Messages', path: '/messages', icon: FiMessageSquare, permission: 'can_access_messages' },
+                { name: 'Favorites', path: '/guest/favorites', icon: FiHeart, permission: 'can_view_favorites' },
+                { name: 'Rewards', path: '/guest/rewards-points', icon: TakaIcon, permission: 'can_use_rewards' },
+                { name: 'Reports', path: '/guest/reports', icon: FiPieChart, permission: 'can_view_booking_history' },
+                { name: 'Support', path: '/support', icon: FiLifeBuoy, permission: 'support.read' },
                 // Added link to go back to Home for guest
                 { name: 'Exit Dashboard', path: '/', icon: FiLogOut }
             ];
+            return guestMenu.filter(item => !item.permission || can(item.permission) || isAdmin());
         }
     };
 
@@ -443,14 +487,13 @@ const DashboardLayout = () => {
 
     // Determine sidebar theme colors based on user role
     const getSidebarTheme = () => {
-        if (isAdmin()) return { bg: 'bg-[#1e1b4b]', logoBg: 'bg-[#312e81]' }; // Deep Indigo for Admin
-        if (isPropertyOwner()) {
-            if (dashboardMode === 'guest') {
-                return { bg: 'bg-[#0f2936]', logoBg: 'bg-[#1a3a4a]' }; // Guest mode sidebar theme for Host
-            }
-            return { bg: 'bg-[#064e3b]', logoBg: 'bg-[#065f46]' }; // Host mode sidebar theme for Host
+        if (dashboardMode === 'admin') {
+            return { bg: 'bg-[#1e1b4b]', logoBg: 'bg-[#312e81]' }; // Deep Indigo for Admin
         }
-        return { bg: 'bg-[#0f2936]', logoBg: 'bg-[#1a3a4a]' }; // Default Teal/Navy for Guest
+        if (dashboardMode === 'host') {
+            return { bg: 'bg-[#064e3b]', logoBg: 'bg-[#065f46]' }; // Host mode sidebar theme (Teal/Green)
+        }
+        return { bg: 'bg-[#0f2936]', logoBg: 'bg-[#1a3a4a]' }; // Guest/Default mode sidebar theme (Dark Navy)
     };
 
     const sidebarTheme = getSidebarTheme();
@@ -625,6 +668,61 @@ const DashboardLayout = () => {
 
             {/* Main Content */}
             <div className={`flex-1 flex flex-col transition-all duration-300 min-w-0 ml-0`}>
+                {localStorage.getItem('admin-impersonator-auth') && (
+                    <div style={{
+                        background: '#1e1b4b',
+                        color: '#ffffff',
+                        padding: '10px 24px',
+                        fontSize: '13px',
+                        fontWeight: 'bold',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        borderBottom: '2px solid #312e81',
+                        boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)'
+                    }} className="print:hidden">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{
+                                width: '10px',
+                                height: '10px',
+                                borderRadius: '50%',
+                                background: '#ef4444',
+                                display: 'inline-block',
+                                boxShadow: '0 0 8px #ef4444'
+                            }} className="animate-pulse" />
+                            <span>Impersonating {user?.user_type === 'property_owner' ? 'Host' : 'Guest'} Account: <strong style={{ textDecoration: 'underline' }}>{user?.first_name} {user?.last_name} ({user?.email})</strong></span>
+                        </div>
+                        <button 
+                            onClick={() => {
+                                const adminAuth = localStorage.getItem('admin-impersonator-auth');
+                                if (adminAuth) {
+                                    localStorage.setItem('auth-storage', adminAuth);
+                                    localStorage.removeItem('admin-impersonator-auth');
+                                    localStorage.removeItem('dashboard_role_mode');
+                                    window.location.href = '/admin/users';
+                                }
+                            }}
+                            style={{
+                                background: '#ef4444',
+                                color: '#ffffff',
+                                border: 'none',
+                                borderRadius: '6px',
+                                padding: '6px 14px',
+                                fontSize: '11px',
+                                fontWeight: '800',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                cursor: 'pointer',
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                transition: 'all 0.2s'
+                            }}
+                            onMouseOver={(e) => e.target.style.background = '#dc2626'}
+                            onMouseOut={(e) => e.target.style.background = '#ef4444'}
+                        >
+                            Exit Impersonation
+                        </button>
+                    </div>
+                )}
                 {/* Top Header */}
                 <header className="h-16 bg-white shadow-sm flex items-center justify-between px-4 md:px-6 sticky top-0 z-20">
                     <div className="flex items-center gap-4">
@@ -659,6 +757,79 @@ const DashboardLayout = () => {
                                     </>
                                 )}
                             </button>
+                        )}
+
+                        {/* 3-Way Mode Switcher (For Admins) */}
+                        {isAdmin() && (
+                            <div className="relative">
+                                <button
+                                    onClick={() => setExpandedMenus(prev => ({ ...prev, adminModeDropdown: !prev.adminModeDropdown }))}
+                                    className={`flex items-center gap-2 px-4 py-2 text-xs md:text-sm font-bold rounded-full transition-all duration-200 border shadow-sm focus:outline-none ${
+                                        dashboardMode === 'admin'
+                                            ? 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300'
+                                            : dashboardMode === 'host'
+                                            ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100 hover:border-blue-300'
+                                            : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 hover:border-emerald-300'
+                                    }`}
+                                >
+                                    {dashboardMode === 'admin' && (
+                                        <>
+                                            <FiShield className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
+                                            <span>Admin Mode</span>
+                                        </>
+                                    )}
+                                    {dashboardMode === 'host' && (
+                                        <>
+                                            <FiHome className="w-3.5 h-3.5 text-blue-600" />
+                                            <span>Host Mode</span>
+                                        </>
+                                    )}
+                                    {dashboardMode === 'guest' && (
+                                        <>
+                                            <FiUser className="w-3.5 h-3.5 text-emerald-600" />
+                                            <span>Guest Mode</span>
+                                        </>
+                                    )}
+                                    <FiChevronDown className="w-3.5 h-3.5 ml-1" />
+                                </button>
+                                {expandedMenus.adminModeDropdown && (
+                                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-1.5 border border-gray-100 z-50">
+                                        <button
+                                            onClick={() => {
+                                                setExpandedMenus(prev => ({ ...prev, adminModeDropdown: false }));
+                                                setDashboardMode('admin');
+                                                localStorage.setItem('dashboard_role_mode', 'admin');
+                                                navigate('/admin');
+                                            }}
+                                            className={`w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2 ${dashboardMode === 'admin' ? 'bg-indigo-50/50 text-indigo-600 font-bold' : ''}`}
+                                        >
+                                            <span>🛡️ Admin Panel</span>
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setExpandedMenus(prev => ({ ...prev, adminModeDropdown: false }));
+                                                setDashboardMode('host');
+                                                localStorage.setItem('dashboard_role_mode', 'host');
+                                                navigate('/property-owner');
+                                            }}
+                                            className={`w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2 ${dashboardMode === 'host' ? 'bg-blue-50/50 text-blue-600 font-bold' : ''}`}
+                                        >
+                                            <span>🏡 Host Dashboard</span>
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setExpandedMenus(prev => ({ ...prev, adminModeDropdown: false }));
+                                                setDashboardMode('guest');
+                                                localStorage.setItem('dashboard_role_mode', 'guest');
+                                                navigate('/guest');
+                                            }}
+                                            className={`w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2 ${dashboardMode === 'guest' ? 'bg-emerald-50/50 text-emerald-600 font-bold' : ''}`}
+                                        >
+                                            <span>🧳 Guest Portal</span>
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                         )}
 
                         {/* Switch to Travel Button (For regular Guests only) */}
@@ -736,6 +907,16 @@ const DashboardLayout = () => {
                                         >
                                             <FiUser className="w-4 h-4" />
                                             Profile
+                                        </Link>
+                                    )}
+                                    {isAdmin() && (
+                                        <Link
+                                            to="/admin/settings"
+                                            onClick={() => setExpandedMenus(prev => ({ ...prev, topDropdown: false }))}
+                                            className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2 border-b border-gray-100"
+                                        >
+                                            <FiSettings className="w-4 h-4" />
+                                            Settings
                                         </Link>
                                     )}
                                     <button

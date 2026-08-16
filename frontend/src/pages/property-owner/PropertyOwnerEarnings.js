@@ -9,6 +9,12 @@ const PropertyOwnerEarnings = () => {
   const { showSuccess, showError } = useToast();
   const queryClient = useQueryClient();
   const [selectedPeriod, setSelectedPeriod] = useState('12');
+  
+  // Payout request states
+  const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
+  const [payoutMethod, setPayoutMethod] = useState('bank_transfer');
+  const [payoutNotes, setPayoutNotes] = useState('');
+  const [isSubmittingPayout, setIsSubmittingPayout] = useState(false);
 
   // Fetch earnings dashboard data
   const { data: dashboardData, isLoading: dashboardLoading, error: dashboardError } = useQuery(
@@ -210,7 +216,8 @@ const PropertyOwnerEarnings = () => {
       total_received_claims: 0,
       pending_amount: 0,
       paid_amount: 0,
-      available_for_payout: 0
+      available_for_payout: 0,
+      total_gateway_fees: 0
     },
     lifetime = {
       total_bookings: 0,
@@ -221,7 +228,8 @@ const PropertyOwnerEarnings = () => {
       total_received_claims: 0,
       pending_amount: 0,
       paid_amount: 0,
-      available_for_payout: 0
+      available_for_payout: 0,
+      total_gateway_fees: 0
     },
     monthlyEarnings = [],
     recentEarnings = [],
@@ -238,18 +246,42 @@ const PropertyOwnerEarnings = () => {
       sslcommerz: 0,
       bkash: 0,
       nagad: 0
+    },
+    commissionBreakdown = {
+      cash: 0,
+      sslcommerz: 0,
+      bkash: 0,
+      nagad: 0
     }
   } = analyticsData || {};
 
-  const handlePayoutRequest = async () => {
+  const handlePayoutRequestClick = () => {
+    // Check if there is an active payout request in payoutsData
+    const hasActive = payoutsData?.payouts?.some(p => ['pending', 'processing'].includes(p.status));
+    if (hasActive) {
+      showError('You already have an active payout request. Please wait for it to be processed.');
+      return;
+    }
+    if ((parseFloat(lifetime.available_for_payout) || 0) <= 0) {
+      showError('No available balance to request payout.');
+      return;
+    }
+    setIsPayoutModalOpen(true);
+  };
+
+  const handleSubmitPayoutRequest = async () => {
+    if (!payoutNotes.trim()) return;
+    setIsSubmittingPayout(true);
     try {
       const response = await api.post('/property-owner/earnings/payout-request', {
-        amount: lifetime.available_for_payout,
-        payment_method: 'bank_transfer'
+        payment_method: payoutMethod,
+        notes: payoutNotes
       });
       
       if (response.data.success) {
         showSuccess('Payout request submitted successfully');
+        setIsPayoutModalOpen(false);
+        setPayoutNotes('');
         // Refresh payout requests and dashboard data
         await queryClient.invalidateQueries('property-owner-payouts');
         await queryClient.invalidateQueries('property-owner-earnings-dashboard');
@@ -259,6 +291,8 @@ const PropertyOwnerEarnings = () => {
     } catch (error) {
       console.error('Payout request error:', error);
       showError(error.response?.data?.message || 'Failed to submit payout request');
+    } finally {
+      setIsSubmittingPayout(false);
     }
   };
 
@@ -300,7 +334,7 @@ const PropertyOwnerEarnings = () => {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 md:gap-6 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-4 md:gap-6 mb-8">
           {/* Total Earnings */}
           <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100 border-b-4 border-b-emerald-500 flex flex-col justify-between h-full hover:shadow-md transition-shadow duration-200">
             <div className="flex justify-between items-start gap-2">
@@ -323,8 +357,22 @@ const PropertyOwnerEarnings = () => {
             <p className="text-lg md:text-xl font-black text-gray-800 mt-3">{formatCurrency(lifetime.total_commission)}</p>
           </div>
 
+          {/* Gateway Fees */}
+          <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100 border-b-4 border-b-orange-500 flex flex-col justify-between h-full hover:shadow-md transition-shadow duration-200">
+            <div className="flex justify-between items-start gap-2">
+              <span className="text-[10px] md:text-xs font-bold text-gray-400 uppercase tracking-wider leading-tight">Gateway Fees</span>
+              <div className="p-1.5 bg-orange-50 text-orange-600 rounded-lg shrink-0">
+                <FiCreditCard className="w-4 h-4 md:w-5 md:h-5" />
+              </div>
+            </div>
+            <p className="text-lg md:text-xl font-black text-gray-800 mt-3">{formatCurrency(lifetime.total_gateway_fees)}</p>
+          </div>
+
           {/* Available for Payout */}
-          <div className={`bg-white rounded-xl shadow-sm p-4 border border-gray-100 border-b-4 ${lifetime.available_for_payout < 0 ? 'border-b-red-500' : 'border-b-yellow-500'} flex flex-col justify-between h-full hover:shadow-md transition-shadow duration-200`}>
+          <div 
+            onClick={handlePayoutRequestClick}
+            className={`bg-white rounded-xl shadow-sm p-4 border border-gray-100 border-b-4 ${lifetime.available_for_payout < 0 ? 'border-b-red-500' : 'border-b-yellow-500'} flex flex-col justify-between h-full hover:shadow-md transition-shadow duration-200 cursor-pointer`}
+          >
             <div className="flex justify-between items-start gap-2">
               <span className="text-[10px] md:text-xs font-bold text-gray-400 uppercase tracking-wider leading-tight">Available for Payout</span>
               <div className={`p-1.5 ${lifetime.available_for_payout < 0 ? 'bg-red-50 text-red-600' : 'bg-yellow-50 text-yellow-600'} rounded-lg shrink-0`}>
@@ -377,7 +425,7 @@ const PropertyOwnerEarnings = () => {
                 <p className="text-gray-600 text-sm">You have {formatCurrency(lifetime.available_for_payout)} available for payout</p>
               </div>
               <button
-                onClick={handlePayoutRequest}
+                onClick={handlePayoutRequestClick}
                 className="bg-primary-600 text-white px-6 py-2.5 rounded-lg hover:bg-primary-700 transition-colors flex items-center justify-center w-full sm:w-auto font-medium shadow-sm"
               >
                 <FiSend className="w-4 h-4 mr-2" />
@@ -432,19 +480,66 @@ const PropertyOwnerEarnings = () => {
                 <span className="text-gray-600">Cash / Walk-in</span>
                 <span className="font-semibold">{formatCurrency(paymentBreakdown.cash)}</span>
               </div>
+              {commissionBreakdown.cash > 0 && (
+                <div className="flex justify-between items-center text-xs text-red-500 font-medium -mt-2 mb-2 pl-2">
+                  <span>└─ Platform Commission</span>
+                  <span>-{formatCurrency(commissionBreakdown.cash)}</span>
+                </div>
+              )}
+
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">bKash Checkout</span>
                 <span className="font-semibold">{formatCurrency(paymentBreakdown.bkash)}</span>
               </div>
+              {commissionBreakdown.bkash > 0 && (
+                <div className="flex justify-between items-center text-xs text-red-500 font-medium -mt-2 mb-1 pl-2">
+                  <span>└─ Platform Commission</span>
+                  <span>-{formatCurrency(commissionBreakdown.bkash)}</span>
+                </div>
+              )}
+              {analyticsData?.gatewayFeeBreakdown?.bkash > 0 && (
+                <div className="flex justify-between items-center text-xs text-orange-500 font-medium -mt-1 mb-2 pl-2">
+                  <span>└─ Gateway Processing Fee</span>
+                  <span>-{formatCurrency(analyticsData.gatewayFeeBreakdown.bkash)}</span>
+                </div>
+              )}
+
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">SSLCommerz Cards</span>
                 <span className="font-semibold">{formatCurrency(paymentBreakdown.sslcommerz)}</span>
               </div>
-              {paymentBreakdown.nagad > 0 && (
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Nagad</span>
-                  <span className="font-semibold">{formatCurrency(paymentBreakdown.nagad)}</span>
+              {commissionBreakdown.sslcommerz > 0 && (
+                <div className="flex justify-between items-center text-xs text-red-500 font-medium -mt-2 mb-1 pl-2">
+                  <span>└─ Platform Commission</span>
+                  <span>-{formatCurrency(commissionBreakdown.sslcommerz)}</span>
                 </div>
+              )}
+              {analyticsData?.gatewayFeeBreakdown?.sslcommerz > 0 && (
+                <div className="flex justify-between items-center text-xs text-orange-500 font-medium -mt-1 mb-2 pl-2">
+                  <span>└─ Gateway Processing Fee</span>
+                  <span>-{formatCurrency(analyticsData.gatewayFeeBreakdown.sslcommerz)}</span>
+                </div>
+              )}
+
+              {paymentBreakdown.nagad > 0 && (
+                <>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600">Nagad</span>
+                    <span className="font-semibold">{formatCurrency(paymentBreakdown.nagad)}</span>
+                  </div>
+                  {commissionBreakdown.nagad > 0 && (
+                    <div className="flex justify-between items-center text-xs text-red-500 font-medium -mt-2 mb-1 pl-2">
+                      <span>└─ Platform Commission</span>
+                      <span>-{formatCurrency(commissionBreakdown.nagad)}</span>
+                    </div>
+                  )}
+                  {analyticsData?.gatewayFeeBreakdown?.nagad > 0 && (
+                    <div className="flex justify-between items-center text-xs text-orange-500 font-medium -mt-1 mb-2 pl-2">
+                      <span>└─ Gateway Processing Fee</span>
+                      <span>-{formatCurrency(analyticsData.gatewayFeeBreakdown.nagad)}</span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -709,11 +804,109 @@ const PropertyOwnerEarnings = () => {
             </div>
           )}
         </div>
-          </>
-        )}
-      </div>
+      </>
+    )}
+
+      {/* Payout Request Modal */}
+      {isPayoutModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in no-print">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-gray-150 transform transition-all duration-300 scale-100 flex flex-col gap-5">
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="text-lg font-black text-gray-900">Request Owner Payout</h3>
+                <p className="text-xs text-gray-400 mt-1">Submit a request to withdraw your settled online earnings.</p>
+              </div>
+              <button 
+                onClick={() => setIsPayoutModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 font-extrabold text-sm p-1.5 rounded-full hover:bg-gray-100 transition-all focus:outline-none"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-black uppercase text-emerald-800 tracking-wider">Available for Payout</span>
+                <div className="text-xl font-black text-emerald-950 mt-0.5 font-sans">
+                  {formatCurrency(lifetime.available_for_payout)}
+                </div>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center shadow-xs">
+                <FiDollarSign className="w-5 h-5 text-white" />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] font-black uppercase text-gray-500 tracking-wider block mb-1.5">
+                  Payment Method
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { value: 'bank_transfer', label: 'Bank Transfer' },
+                    { value: 'bkash', label: 'bKash' },
+                    { value: 'nagad', label: 'Nagad' }
+                  ].map((method) => (
+                    <button
+                      key={method.value}
+                      type="button"
+                      onClick={() => setPayoutMethod(method.value)}
+                      className={`px-3 py-2.5 rounded-xl border text-[11px] font-extrabold tracking-tight transition-all text-center focus:outline-none ${
+                        payoutMethod === method.value
+                          ? 'border-emerald-600 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-600/25'
+                          : 'border-gray-200 hover:border-gray-300 text-gray-600 bg-white'
+                      }`}
+                    >
+                      {method.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase text-gray-500 tracking-wider block mb-1.5">
+                  Account Details / Notes
+                </label>
+                <textarea
+                  rows={3}
+                  value={payoutNotes}
+                  onChange={(e) => setPayoutNotes(e.target.value)}
+                  placeholder={
+                    payoutMethod === 'bank_transfer'
+                      ? "Bank Name, Account Name, Account Number, Branch & Routing No"
+                      : "bKash personal/agent wallet phone number"
+                  }
+                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/25 focus:outline-none placeholder-gray-400 font-medium"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setIsPayoutModalOpen(false)}
+                className="px-4 py-2.5 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl text-xs font-bold transition-all focus:outline-none"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingPayout || !payoutNotes.trim()}
+                onClick={handleSubmitPayoutRequest}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 focus:outline-none"
+              >
+                {isSubmittingPayout && (
+                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                )}
+                <span>Submit Request</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  );
+  </div>
+);
 };
 
 export default PropertyOwnerEarnings;

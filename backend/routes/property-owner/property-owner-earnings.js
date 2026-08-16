@@ -60,24 +60,29 @@ router.get('/dashboard', async (req, res) => {
         COALESCE(SUM(b.security_deposit_deduction_amount), 0) as total_received_claims,
         COALESCE(SUM(CASE WHEN b.payment_status = 'pending' THEN b.property_owner_earnings ELSE 0 END), 0) as pending_amount,
         COALESCE(SUM(CASE WHEN b.payment_status = 'paid' THEN b.property_owner_earnings ELSE 0 END), 0) as paid_amount,
+        COALESCE(SUM(
+          (SELECT SUM(p_fee.gateway_fee) FROM payments p_fee
+           WHERE p_fee.booking_id = b.id AND p_fee.status = 'completed')
+        ), 0) as total_gateway_fees,
         -- Withdrawable amount = Total - Commission (same as property_owner_earnings)
         -- EXCLUDE bookings already paid out through completed payouts
         -- ONLY INCLUDE bookings where Keyhost collected the payment
         COALESCE(SUM(
           CASE WHEN completed_payouts.booking_id IS NULL
-            AND (b.booking_source = 'website' OR b.source = 'Internal' OR b.payment_method = 'sslcommerz')
+            AND (b.booking_source = 'website' OR b.source = 'Internal' OR b.payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online', 'bank_transfer'))
           THEN b.property_owner_earnings ELSE 0 END
         ), 0) as withdrawable_amount,
-        -- Available for payout (paid bookings not yet in payout requests)
+        -- Available for payout: platform-collected amount (excludes cash the host collected directly)
         COALESCE(SUM(
-          CASE WHEN b.payment_status = 'paid' AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+          CASE WHEN (b.payment_status IN ('paid', 'partial') OR EXISTS (SELECT 1 FROM payments WHERE booking_id = b.id AND status = 'completed'))
+            AND b.status IN ('confirmed', 'checked_in', 'checked_out')
             AND (
               b.booking_source = 'website' 
               OR b.source = 'Internal' 
-              OR b.payment_method = 'sslcommerz'
+              OR b.payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online', 'bank_transfer')
               OR EXISTS (
                 SELECT 1 FROM payments 
-                WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online')
+                WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online', 'bank_transfer')
               )
             )
             AND b.id NOT IN (
@@ -86,13 +91,19 @@ router.get('/dashboard', async (req, res) => {
               JOIN owner_payouts op ON opi.payout_id = op.id
               WHERE op.property_owner_id = ? AND op.payment_status IN ('pending', 'processing', 'completed')
             )
-          THEN CASE 
-            WHEN b.booking_source = 'website' THEN b.property_owner_earnings
-            ELSE COALESCE((
-              SELECT SUM(cr_amount) FROM payments 
-              WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online')
-            ), 0) - COALESCE(b.admin_commission_amount, 0)
-          END ELSE 0 END
+          THEN GREATEST(0,
+            b.property_owner_earnings 
+            - COALESCE((
+              SELECT SUM(p2.cr_amount) FROM payments p2
+              WHERE p2.booking_id = b.id AND p2.status = 'completed'
+                AND p2.payment_method = 'cash'
+                AND p2.transaction_type IN ('guest_payment','payment','settlement')
+            ), 0)
+            - COALESCE((
+              SELECT SUM(p3.gateway_fee) FROM payments p3
+              WHERE p3.booking_id = b.id AND p3.status = 'completed'
+            ), 0)
+          ) ELSE 0 END
         ), 0) as available_for_payout
       FROM bookings b
       JOIN properties p ON b.property_id = p.id
@@ -133,24 +144,29 @@ router.get('/dashboard', async (req, res) => {
         COALESCE(SUM(b.security_deposit_deduction_amount), 0) as total_received_claims,
         COALESCE(SUM(CASE WHEN b.payment_status = 'pending' THEN b.property_owner_earnings ELSE 0 END), 0) as pending_amount,
         COALESCE(SUM(CASE WHEN b.payment_status = 'paid' THEN b.property_owner_earnings ELSE 0 END), 0) as paid_amount,
+        COALESCE(SUM(
+          (SELECT SUM(p_fee.gateway_fee) FROM payments p_fee
+           WHERE p_fee.booking_id = b.id AND p_fee.status = 'completed')
+        ), 0) as total_gateway_fees,
         -- Withdrawable amount = Total - Commission (same as property_owner_earnings)
         -- EXCLUDE bookings already paid out through completed payouts
         -- ONLY INCLUDE bookings where Keyhost collected the payment
         COALESCE(SUM(
           CASE WHEN completed_payouts.booking_id IS NULL
-            AND (b.booking_source = 'website' OR b.source = 'Internal' OR b.payment_method = 'sslcommerz')
+            AND (b.booking_source = 'website' OR b.source = 'Internal' OR b.payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online', 'bank_transfer'))
           THEN b.property_owner_earnings ELSE 0 END
         ), 0) as withdrawable_amount,
-        -- Available for payout (paid bookings not yet in payout requests)
+        -- Available for payout: platform-collected amount (excludes cash the host collected directly)
         COALESCE(SUM(
-          CASE WHEN b.payment_status = 'paid' AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+          CASE WHEN (b.payment_status IN ('paid', 'partial') OR EXISTS (SELECT 1 FROM payments WHERE booking_id = b.id AND status = 'completed'))
+            AND b.status IN ('confirmed', 'checked_in', 'checked_out')
             AND (
               b.booking_source = 'website' 
               OR b.source = 'Internal' 
-              OR b.payment_method = 'sslcommerz'
+              OR b.payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online', 'bank_transfer')
               OR EXISTS (
                 SELECT 1 FROM payments 
-                WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online')
+                WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online', 'bank_transfer')
               )
             )
             AND b.id NOT IN (
@@ -159,13 +175,25 @@ router.get('/dashboard', async (req, res) => {
               JOIN owner_payouts op ON opi.payout_id = op.id
               WHERE op.property_owner_id = ? AND op.payment_status IN ('pending', 'processing', 'completed')
             )
-          THEN CASE 
-            WHEN b.booking_source = 'website' THEN b.property_owner_earnings
-            ELSE COALESCE((
-              SELECT SUM(cr_amount) FROM payments 
-              WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online')
-            ), 0) - COALESCE(b.admin_commission_amount, 0)
-          END ELSE 0 END
+          THEN GREATEST(0,
+            (CASE 
+              WHEN b.booking_source = 'website' THEN b.property_owner_earnings
+              ELSE COALESCE((
+                SELECT SUM(cr_amount) FROM payments 
+                WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online')
+              ), 0) - COALESCE(b.admin_commission_amount, 0)
+            END)
+            - COALESCE((
+              SELECT SUM(p2.cr_amount) FROM payments p2
+              WHERE p2.booking_id = b.id AND p2.status = 'completed'
+                AND p2.payment_method = 'cash'
+                AND p2.transaction_type IN ('guest_payment','payment','settlement')
+            ), 0)
+            - COALESCE((
+              SELECT SUM(p3.gateway_fee) FROM payments p3
+              WHERE p3.booking_id = b.id AND p3.status = 'completed'
+            ), 0)
+          ) ELSE 0 END
         ), 0) as available_for_payout
       FROM bookings b
       JOIN properties p ON b.property_id = p.id
@@ -283,39 +311,75 @@ router.get('/dashboard', async (req, res) => {
     // Fetch payout stats to adjust withdrawable and available amounts
     const [[lifetimePayoutStats]] = await pool.execute(`
       SELECT
-        COALESCE(SUM(CASE WHEN payment_status = 'pending' THEN total_earnings ELSE 0 END), 0) as pending_payouts,
-        COALESCE(SUM(CASE WHEN payment_status = 'processing' THEN total_earnings ELSE 0 END), 0) as processing_payouts,
-        COALESCE(SUM(CASE WHEN payment_status = 'completed' THEN total_earnings ELSE 0 END), 0) as completed_payouts
+        COALESCE(SUM(CASE WHEN payment_status IN ('pending', 'processing') THEN net_payout ELSE 0 END), 0) as pending_payouts,
+        COALESCE(SUM(CASE WHEN payment_status = 'completed' THEN net_payout ELSE 0 END), 0) as completed_payouts
       FROM owner_payouts
       WHERE property_owner_id = ?
     `, [propertyOwnerId]);
 
     const [[currentMonthPayoutStats]] = await pool.execute(`
       SELECT
-        COALESCE(SUM(CASE WHEN payment_status = 'pending' THEN total_earnings ELSE 0 END), 0) as pending_payouts,
-        COALESCE(SUM(CASE WHEN payment_status = 'processing' THEN total_earnings ELSE 0 END), 0) as processing_payouts,
-        COALESCE(SUM(CASE WHEN payment_status = 'completed' THEN total_earnings ELSE 0 END), 0) as completed_payouts
+        COALESCE(SUM(CASE WHEN payment_status IN ('pending', 'processing') THEN net_payout ELSE 0 END), 0) as pending_payouts,
+        COALESCE(SUM(CASE WHEN payment_status = 'completed' THEN net_payout ELSE 0 END), 0) as completed_payouts
       FROM owner_payouts
       WHERE property_owner_id = ?
         AND YEAR(created_at) = ?
         AND MONTH(created_at) = ?
     `, [propertyOwnerId, currentYear, currentMonth]);
 
+    // Live platform-owed earnings: online earnings minus any cash already collected by host at property
+    const [[liveOnlineEarningsRes]] = await pool.execute(`
+      SELECT 
+        COALESCE(SUM(
+          b.property_owner_earnings
+          - COALESCE((
+              SELECT SUM(p.cr_amount) FROM payments p
+              WHERE p.booking_id = b.id AND p.status = 'completed'
+                AND p.payment_method = 'cash'
+                AND p.transaction_type IN ('guest_payment','payment','settlement')
+            ), 0)
+        ), 0) as online_earnings,
+        COALESCE(SUM(
+          (SELECT SUM(p2.gateway_fee) FROM payments p2
+           WHERE p2.booking_id = b.id AND p2.status = 'completed')
+        ), 0) as total_gateway_fees
+      FROM bookings b
+      JOIN properties p ON b.property_id = p.id
+      WHERE p.owner_id = ?
+        AND b.payment_status = 'paid'
+        AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+        AND (
+          b.payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online', 'bank_transfer', 'cash')
+          OR b.booking_source = 'website'
+          OR b.source = 'Internal'
+          OR EXISTS (
+            SELECT 1 FROM payments p2
+            WHERE p2.booking_id = b.id AND p2.status = 'completed'
+          )
+        )
+    `, [propertyOwnerId]);
+
+    const totalOnlineEarnings = Math.max(0, 
+      parseFloat(liveOnlineEarningsRes?.online_earnings || 0) - parseFloat(liveOnlineEarningsRes?.total_gateway_fees || 0)
+    );
+
     const adjustSummaryWithPayouts = (summary, stats) => {
       if (!summary) return summary;
-      const pendingTotal = parseFloat(stats?.pending_payouts || 0) + parseFloat(stats?.processing_payouts || 0);
+      const pendingTotal = parseFloat(stats?.pending_payouts || 0);
       const completedTotal = parseFloat(stats?.completed_payouts || 0);
       const adjusted = { ...summary };
-      const originalAvailable = parseFloat(summary.available_for_payout || 0);
-      const originalWithdrawable = parseFloat(summary.withdrawable_amount || 0);
+
+      // Real live available for payout = total platform-owed earnings minus already paid/pending payouts
+      const realAvailable = Math.max(0, totalOnlineEarnings - completedTotal - pendingTotal);
 
       adjusted.pending_payouts = pendingTotal;
       adjusted.completed_payouts = completedTotal;
-      adjusted.withdrawable_amount = Math.max(originalWithdrawable - (pendingTotal + completedTotal), 0);
-      adjusted.available_for_payout = Math.max(originalAvailable - (pendingTotal + completedTotal), 0);
+      adjusted.withdrawable_amount = realAvailable;
+      adjusted.available_for_payout = realAvailable;
 
       return adjusted;
     };
+
 
     const adjustedCurrentMonthSummary = adjustSummaryWithPayouts(currentMonthSummary[0], currentMonthPayoutStats);
     const adjustedLifetimeSummary = adjustSummaryWithPayouts(lifetimeSummary[0], lifetimePayoutStats);
@@ -508,21 +572,45 @@ router.get('/analytics', async (req, res) => {
       LIMIT 5
     `, [propertyOwnerId, parseInt(period)]);
 
-    // Get payment method breakdown (using payments table)
-    const [paymentBreakdown] = await pool.execute(`
-      SELECT
-        COALESCE(b.payment_method, 'Unknown') as payment_method,
-        SUM(b.property_owner_earnings) as total_amount
+    // Get booking and payment data for proportional method allocation of host earnings
+    const [paymentRows] = await pool.execute(`
+      SELECT 
+        b.id as booking_id,
+        b.total_amount,
+        b.admin_commission_amount,
+        b.property_owner_earnings,
+        b.payment_method as booking_payment_method,
+        p.payment_method as payment_method,
+        p.cr_amount,
+        p.gateway_fee as gateway_fee
       FROM bookings b
-      JOIN properties p ON b.property_id = p.id
-      WHERE p.owner_id = ? 
-      AND b.created_at >= DATE_SUB(NOW(), INTERVAL ? MONTH)
-      AND b.status IN ('confirmed', 'checked_in', 'checked_out')
-      AND b.status != 'cancelled'
-      GROUP BY COALESCE(b.payment_method, 'Unknown')
+      JOIN properties prop ON b.property_id = prop.id
+      LEFT JOIN payments p ON p.booking_id = b.id AND p.status = 'completed' AND p.payment_method IS NOT NULL AND p.cr_amount > 0
+      WHERE prop.owner_id = ?
+        AND b.created_at >= DATE_SUB(NOW(), INTERVAL ? MONTH)
+        AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+        AND b.status != 'cancelled'
     `, [propertyOwnerId, parseInt(period)]);
 
-    // Format payment breakdown
+    const bookingsMap = {};
+    paymentRows.forEach(row => {
+      if (!bookingsMap[row.booking_id]) {
+        bookingsMap[row.booking_id] = {
+          total_amount: parseFloat(row.total_amount) || 0,
+          commission: parseFloat(row.admin_commission_amount) || 0,
+          fallbackMethod: row.booking_payment_method || 'Unknown',
+          payments: []
+        };
+      }
+      if (row.payment_method && parseFloat(row.cr_amount) > 0) {
+        bookingsMap[row.booking_id].payments.push({
+          method: row.payment_method,
+          amount: parseFloat(row.cr_amount),
+          gateway_fee: parseFloat(row.gateway_fee || 0)
+        });
+      }
+    });
+
     const formattedPaymentBreakdown = {
       cash: 0,
       sslcommerz: 0,
@@ -530,16 +618,95 @@ router.get('/analytics', async (req, res) => {
       nagad: 0
     };
 
-    paymentBreakdown.forEach(item => {
-      const method = (item.payment_method || 'Unknown').toLowerCase();
-      formattedPaymentBreakdown[method] = parseFloat(item.total_amount) || 0;
+    const formattedCommissionBreakdown = {
+      cash: 0,
+      sslcommerz: 0,
+      bkash: 0,
+      nagad: 0
+    };
+
+    const formattedGatewayFeeBreakdown = {
+      cash: 0,
+      sslcommerz: 0,
+      bkash: 0,
+      nagad: 0
+    };
+
+    Object.values(bookingsMap).forEach(b => {
+      const totalPayments = b.payments.reduce((sum, p) => sum + p.amount, 0);
+      
+      const onlinePayments = b.payments.filter(p => 
+        ['sslcommerz', 'bkash', 'nagad', 'online', 'bank_transfer'].includes(p.method.toLowerCase())
+      );
+      const totalOnlinePayments = onlinePayments.reduce((sum, p) => sum + p.amount, 0);
+
+      if (totalPayments > 0) {
+        // Allocate gross payments (without commission deduction)
+        b.payments.forEach(p => {
+          const method = p.method.toLowerCase();
+          if (formattedPaymentBreakdown[method] !== undefined) {
+            formattedPaymentBreakdown[method] += p.amount;
+          } else {
+            formattedPaymentBreakdown[method] = p.amount;
+          }
+
+          // Allocate gateway fee
+          if (p.gateway_fee > 0) {
+            if (formattedGatewayFeeBreakdown[method] !== undefined) {
+              formattedGatewayFeeBreakdown[method] += p.gateway_fee;
+            } else {
+              formattedGatewayFeeBreakdown[method] = p.gateway_fee;
+            }
+          }
+        });
+
+        // Allocate commission
+        if (b.commission > 0) {
+          if (totalOnlinePayments > 0) {
+            onlinePayments.forEach(p => {
+              const share = b.commission * (p.amount / totalOnlinePayments);
+              const method = p.method.toLowerCase();
+              if (formattedCommissionBreakdown[method] !== undefined) {
+                formattedCommissionBreakdown[method] += share;
+              } else {
+                formattedCommissionBreakdown[method] = share;
+              }
+            });
+          } else {
+            const method = b.fallbackMethod.toLowerCase();
+            if (formattedCommissionBreakdown[method] !== undefined) {
+              formattedCommissionBreakdown[method] += b.commission;
+            } else {
+              formattedCommissionBreakdown[method] = b.commission;
+            }
+          }
+        }
+      } else {
+        // Fallback to booking fields if no payments recorded
+        const method = b.fallbackMethod.toLowerCase();
+        if (formattedPaymentBreakdown[method] !== undefined) {
+          formattedPaymentBreakdown[method] += b.total_amount;
+        } else {
+          formattedPaymentBreakdown[method] = b.total_amount;
+        }
+
+        if (b.commission > 0) {
+          if (formattedCommissionBreakdown[method] !== undefined) {
+            formattedCommissionBreakdown[method] += b.commission;
+          } else {
+            formattedCommissionBreakdown[method] = b.commission;
+          }
+        }
+      }
     });
 
     res.json(
       formatResponse(true, 'Property owner earnings analytics retrieved successfully', {
         earningsTrend,
         topProperties,
-        paymentBreakdown: formattedPaymentBreakdown
+        paymentBreakdown: formattedPaymentBreakdown,
+        commissionBreakdown: formattedCommissionBreakdown,
+        gatewayFeeBreakdown: formattedGatewayFeeBreakdown
       })
     );
 
@@ -596,13 +763,25 @@ router.post('/payout-request', async (req, res) => {
         b.id AS booking_id,
         b.booking_reference,
         b.total_amount,
-        CASE 
-          WHEN b.booking_source = 'website' THEN b.property_owner_earnings
-          ELSE COALESCE((
-            SELECT SUM(cr_amount) FROM payments 
-            WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online')
-          ), 0) - COALESCE(b.admin_commission_amount, 0)
-        END AS property_owner_earnings,
+        GREATEST(0,
+          (CASE 
+            WHEN b.booking_source = 'website' THEN b.property_owner_earnings
+            ELSE COALESCE((
+              SELECT SUM(cr_amount) FROM payments 
+              WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online')
+            ), 0) - COALESCE(b.admin_commission_amount, 0)
+          END)
+          - COALESCE((
+            SELECT SUM(p2.cr_amount) FROM payments p2
+            WHERE p2.booking_id = b.id AND p2.status = 'completed'
+              AND p2.payment_method = 'cash'
+              AND p2.transaction_type IN ('guest_payment','payment','settlement')
+          ), 0)
+          - COALESCE((
+            SELECT SUM(p3.gateway_fee) FROM payments p3
+            WHERE p3.booking_id = b.id AND p3.status = 'completed'
+          ), 0)
+        ) AS property_owner_earnings,
         COALESCE(ae.commission_amount, 0) AS commission_amount,
         CASE WHEN ae.payment_status = 'paid' THEN 1 ELSE 0 END AS commission_paid
       FROM bookings b
@@ -621,14 +800,24 @@ router.post('/payout-request', async (req, res) => {
             WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online')
           )
         )
-        AND (
-          CASE 
+        AND GREATEST(0,
+          (CASE 
             WHEN b.booking_source = 'website' THEN b.property_owner_earnings
             ELSE COALESCE((
               SELECT SUM(cr_amount) FROM payments 
               WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online')
             ), 0) - COALESCE(b.admin_commission_amount, 0)
-          END
+          END)
+          - COALESCE((
+            SELECT SUM(p2.cr_amount) FROM payments p2
+            WHERE p2.booking_id = b.id AND p2.status = 'completed'
+              AND p2.payment_method = 'cash'
+              AND p2.transaction_type IN ('guest_payment','payment','settlement')
+          ), 0)
+          - COALESCE((
+            SELECT SUM(p3.gateway_fee) FROM payments p3
+            WHERE p3.booking_id = b.id AND p3.status = 'completed'
+          ), 0)
         ) > 0
         AND b.id NOT IN (
           SELECT opi.booking_id

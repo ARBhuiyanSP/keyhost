@@ -17,6 +17,7 @@ import api from '../utils/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import useAuthStore from '../store/authStore';
 import useSettingsStore from '../store/settingsStore';
+import { useFbPixel } from '../hooks/useFbPixel';
 import StickySearchHeader from '../components/layout/StickySearchHeader';
 import PropertyImageSlider from '../components/property/PropertyImageSlider';
 import { useInView } from 'react-intersection-observer';
@@ -28,6 +29,7 @@ import { getImageUrl } from '../utils/imageUrl';
 const PropertyMap = lazy(() => import('../components/property/PropertyMap'));
 const PropertyDetail = () => {
   const { slug } = useParams();
+  const { trackViewContent, trackInitiateCheckout, trackAddToWishlist } = useFbPixel();
   // Extract numeric id from slug tail (e.g. "peaceful-3br-near-68" -> 68)
   // Falls back to treating the whole param as an id for old numeric-only links
   const urlParamId = slug ? (slug.match(/-?(\d+)$/) ? slug.match(/-?(\d+)$/)[1] : slug) : null;
@@ -381,6 +383,19 @@ const PropertyDetail = () => {
       document.title = siteName;
     };
   }, [property, settings, slug]);
+
+  // Track Meta Pixel ViewContent event
+  React.useEffect(() => {
+    if (property) {
+      trackViewContent(
+        property.title,
+        property.category_name || property.property_type || 'Accommodation',
+        property.id,
+        property.price_per_night || 0,
+        settings?.currency || 'BDT'
+      );
+    }
+  }, [property, settings?.currency, trackViewContent]);
 
   // Auto-select the only room/flat unit if the property is a single unit, or pre-select room from URL query param
   useEffect(() => {
@@ -754,6 +769,18 @@ const PropertyDetail = () => {
       }
     }
 
+    // Track InitiateCheckout
+    let checkoutValue = 0;
+    if (bookingType === 'monthly') {
+      checkoutValue = (monthsCount || 1) * (property.monthly_rent || property.price_per_night || 0);
+    } else {
+      const checkInD = parseDateLocal(checkIn);
+      const checkOutD = parseDateLocal(checkOut);
+      const nights = checkInD && checkOutD ? Math.ceil((checkOutD - checkInD) / (1000 * 60 * 60 * 24)) : 1;
+      checkoutValue = nights * (property.price_per_night || 0);
+    }
+    trackInitiateCheckout(checkoutValue, settings?.currency || 'BDT', property.id, 1);
+
     if (!isAuthenticated) {
       // Store booking data in localStorage so AuthModal's handlePostAuth can redirect after login
       const propertyData = property ? {
@@ -847,6 +874,8 @@ const PropertyDetail = () => {
         await api.delete(`/users/favorites/${id}`);
       } else {
         await api.post(`/users/favorites/${id}`);
+        // Track AddToWishlist
+        trackAddToWishlist(property?.title, property?.price_per_night || 0, settings?.currency || 'BDT');
       }
       // Refresh favorite status from server to ensure consistency
       await checkFavoriteStatus();

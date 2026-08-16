@@ -20,17 +20,20 @@ router.get('/profile', async (req, res) => {
   try {
     const [users] = await pool.execute(`
       SELECT 
-        id, first_name, last_name, email, phone, user_type,
-        email_verified_at, phone_verified_at, is_active,
-        profile_image, date_of_birth, gender, address,
-        city, state, country, postal_code, language,
-        timezone, email_notifications, sms_notifications,
-        auto_accept_bookings, bio,
-        nationality, nid_number, passport_number,
-        nid_document_url, passport_document_url,
-        last_login_at, created_at, updated_at
-      FROM users 
-      WHERE id = ?
+        u.id, u.first_name, u.last_name, u.email, u.phone, u.user_type,
+        u.email_verified_at, u.phone_verified_at, u.is_active,
+        u.profile_image, u.date_of_birth, u.gender, u.address,
+        u.city, u.state, u.country, u.postal_code, u.language,
+        u.timezone, u.email_notifications, u.sms_notifications,
+        u.auto_accept_bookings, u.bio,
+        u.nationality, u.nid_number, u.passport_number,
+        u.nid_document_url, u.passport_document_url,
+        u.last_login_at, u.created_at, u.updated_at,
+        COALESCE(u.platform_permissions, rdp.permissions) as platform_permissions,
+        rdp.display_name as role_display_name
+      FROM users u
+      LEFT JOIN role_default_permissions rdp ON rdp.role = u.user_type
+      WHERE u.id = ?
     `, [req.user.id]);
 
     if (users.length === 0) {
@@ -40,6 +43,15 @@ router.get('/profile', async (req, res) => {
     }
 
     const user = users[0];
+    if (user.platform_permissions) {
+      if (typeof user.platform_permissions === 'string') {
+        try {
+          user.platform_permissions = JSON.parse(user.platform_permissions);
+        } catch (e) {
+          user.platform_permissions = null;
+        }
+      }
+    }
 
     // Get additional info based on user type
     if (user.user_type === 'property_owner') {
@@ -87,6 +99,31 @@ router.get('/profile', async (req, res) => {
       user.has_hotel_property = hotelProps[0].count > 0;
       user.hms_status = finalStatus;
       user.hms_subscription = subscription;
+    }
+
+    if (user.user_type === 'staff') {
+      try {
+        const [staffProfile] = await pool.execute('SELECT permissions FROM hms_employees WHERE user_id = ?', [user.id]);
+        let permissions = staffProfile.length > 0 ? staffProfile[0].permissions : {};
+        if (typeof permissions === 'string') {
+          try { permissions = JSON.parse(permissions); } catch (e) { permissions = {}; }
+        }
+        user.permissions = permissions;
+
+        // Fetch host's platform permissions
+        if (user.host_id) {
+          const [hostUser] = await pool.execute('SELECT platform_permissions FROM users WHERE id = ?', [user.host_id]);
+          if (hostUser.length > 0) {
+            let hostPerms = hostUser[0].platform_permissions;
+            if (typeof hostPerms === 'string') {
+              try { hostPerms = JSON.parse(hostPerms); } catch (e) { hostPerms = null; }
+            }
+            user.host_platform_permissions = hostPerms;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to append permissions for staff in profile:', err);
+      }
     }
 
     res.json(

@@ -1,5 +1,6 @@
-import React, { useEffect, Suspense, lazy } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import React, { useEffect, Suspense, lazy, useState } from 'react';
+import { Routes, Route, useLocation } from 'react-router-dom';
+import { useFbPixel } from './hooks/useFbPixel';
 import useAuthStore from './store/authStore';
 import useSettingsStore from './store/settingsStore';
 import useConnectionStore from './store/connectionStore';
@@ -66,6 +67,13 @@ const AdminReports = lazy(() => import('./pages/admin/AdminReports'));
 const AdminRefunds = lazy(() => import('./pages/admin/AdminRefunds'));
 const AdminSecurityDeposits = lazy(() => import('./pages/admin/AdminSecurityDeposits'));
 const AdminHMSSettings = lazy(() => import('./pages/admin/AdminHMSSettings'));
+const AdminRolePermissions = lazy(() => import('./pages/admin/AdminRolePermissions'));
+const AdminCalendar = lazy(() => import('./pages/admin/AdminCalendar'));
+const AdminHMSSubscriptions = lazy(() => import('./pages/admin/AdminHMSSubscriptions'));
+const AdminCorporateExpenses = lazy(() => import('./pages/admin/AdminCorporateExpenses'));
+const AdminCorporateHR = lazy(() => import('./pages/admin/AdminCorporateHR'));
+const AdminProfitLossReport = lazy(() => import('./pages/admin/AdminProfitLossReport'));
+const AdminRevenueReport = lazy(() => import('./pages/admin/AdminRevenueReport'));
 
 // Shared Reports Pages
 const BookingReports = lazy(() => import('./pages/shared/reports/BookingReports'));
@@ -76,6 +84,8 @@ const PayoutReports = lazy(() => import('./pages/shared/reports/PayoutReports'))
 const UserReports = lazy(() => import('./pages/admin/UserReports'));
 const UserAnalyticsReport = lazy(() => import('./pages/admin/UserAnalyticsReport'));
 const PropertyAnalyticsReport = lazy(() => import('./pages/admin/PropertyAnalyticsReport'));
+const AdminOverviewReport = lazy(() => import('./pages/admin/AdminOverviewReport'));
+const AdminHostPerformanceReport = lazy(() => import('./pages/admin/AdminHostPerformanceReport'));
 
 // Property Owner Pages
 const PropertyOwnerDashboard = lazy(() => import('./pages/property-owner/PropertyOwnerDashboard'));
@@ -144,6 +154,40 @@ function App() {
   const { settings, isMaintenanceMode, loadPublicSettings } = useSettingsStore();
   const { isServerUnreachable } = useConnectionStore();
 
+  const { trackPageView } = useFbPixel();
+  const location = useLocation();
+
+  // Track PageView on route changes
+  useEffect(() => {
+    trackPageView();
+  }, [location.pathname, trackPageView]);
+
+  // Push notification reminder banner state
+  const [showPushBanner, setShowPushBanner] = useState(false);
+  const [pushBannerLoading, setPushBannerLoading] = useState(false);
+  const [pushBannerSuccess, setPushBannerSuccess] = useState(false);
+
+  // Enable push directly from the banner (no page navigation)
+  const handleBannerEnable = async () => {
+    setPushBannerLoading(true);
+    try {
+      const { subscribeToPush } = await import('./utils/pushSubscription');
+      const ok = await subscribeToPush();
+      if (ok) {
+        setPushBannerSuccess(true);
+        // Show success briefly then dismiss
+        setTimeout(() => setShowPushBanner(false), 2000);
+      } else {
+        // User denied or error — just dismiss the banner
+        setShowPushBanner(false);
+      }
+    } catch {
+      setShowPushBanner(false);
+    } finally {
+      setPushBannerLoading(false);
+    }
+  };
+
   // Load public settings and authenticate on app initialization
   useEffect(() => {
     loadPublicSettings();
@@ -185,22 +229,58 @@ function App() {
     if (isAuthenticated) {
       const initPush = async () => {
         try {
-          const { registerServiceWorker, isPushSupported, isSubscribed, subscribeToPush, getNotificationPermission } = await import('./utils/pushSubscription');
+          const { registerServiceWorker, isPushSupported, isSubscribed, subscribeToPush, getNotificationPermission, hasOptedOut } = await import('./utils/pushSubscription');
           await registerServiceWorker();
-          
+
           if (isPushSupported()) {
             const permission = getNotificationPermission();
-            // If already permitted in browser but not synced in local state, subscribe automatically
-            if (permission === 'granted' && !isSubscribed()) {
-              console.log('[Push] Syncing active subscription with server...');
-              await subscribeToPush();
+            const optedOut = hasOptedOut(); // User intentionally turned off notifications
+
+            if (permission === 'granted') {
+              // Already permitted — only sync if user hasn't intentionally opted out
+              if (!isSubscribed() && !optedOut) {
+                console.log('[Push] Syncing active subscription with server...');
+                await subscribeToPush();
+              } else if (optedOut) {
+                // User has opted out — show reminder banner once per session
+                const bannerShown = sessionStorage.getItem('push_banner_shown');
+                if (!bannerShown) {
+                  setTimeout(() => {
+                    setShowPushBanner(true);
+                    sessionStorage.setItem('push_banner_shown', 'true');
+                    // Auto-dismiss after 10 seconds
+                    setTimeout(() => setShowPushBanner(false), 10000);
+                  }, 2000);
+                }
+              }
+            } else if (permission === 'default' && !optedOut) {
+              // Never asked yet & user hasn't opted out — wait 3 seconds then show browser native prompt
+              setTimeout(async () => {
+                console.log('[Push] Auto-prompting user for notification permission...');
+                await subscribeToPush(); // This internally calls Notification.requestPermission()
+              }, 3000);
+            } else if (optedOut) {
+              // Permission default but opted out — show reminder banner once per session
+              const bannerShown = sessionStorage.getItem('push_banner_shown');
+              if (!bannerShown) {
+                setTimeout(() => {
+                  setShowPushBanner(true);
+                  sessionStorage.setItem('push_banner_shown', 'true');
+                  setTimeout(() => setShowPushBanner(false), 10000);
+                }, 2000);
+              }
             }
+            // If 'denied' or opted out — do nothing. User can enable via Profile > Preferences.
           }
         } catch (err) {
           console.error('[Push] Initialization failed:', err);
         }
       };
       initPush();
+    } else {
+      // On logout, reset banner for next login
+      setShowPushBanner(false);
+      sessionStorage.removeItem('push_banner_shown');
     }
   }, [isAuthenticated]);
 
@@ -287,6 +367,106 @@ function App() {
 
   return (
     <Suspense fallback={<LoadingSpinner />}>
+      {/* Push Notification Reminder Banner */}
+      {showPushBanner && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 99999,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            background: pushBannerSuccess
+              ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
+              : 'linear-gradient(135deg, #004e59 0%, #00626f 100%)',
+            color: 'white',
+            padding: '14px 18px',
+            borderRadius: '16px',
+            boxShadow: '0 8px 32px rgba(0,78,89,0.35)',
+            maxWidth: '420px',
+            width: 'calc(100vw - 32px)',
+            animation: 'slideUpFade 0.4s ease',
+            transition: 'background 0.4s ease',
+          }}
+        >
+          {/* Icon */}
+          <div style={{ fontSize: '22px', flexShrink: 0 }}>
+            {pushBannerSuccess ? '✅' : '🔔'}
+          </div>
+
+          {/* Text */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {pushBannerSuccess ? (
+              <p style={{ fontWeight: 700, fontSize: '13px', margin: 0 }}>Notifications enabled! 🎉</p>
+            ) : (
+              <>
+                <p style={{ fontWeight: 700, fontSize: '13px', margin: 0 }}>Push Notifications are off</p>
+                <p style={{ fontSize: '11px', opacity: 0.8, margin: '2px 0 0', lineHeight: 1.4 }}>
+                  Enable to get instant booking &amp; message alerts.
+                </p>
+              </>
+            )}
+          </div>
+
+          {/* Enable button — inline action, no page navigation */}
+          {!pushBannerSuccess && (
+            <button
+              onClick={handleBannerEnable}
+              disabled={pushBannerLoading}
+              style={{
+                background: 'rgba(255,255,255,0.2)',
+                color: 'white',
+                padding: '6px 14px',
+                borderRadius: '8px',
+                fontSize: '11px',
+                fontWeight: 700,
+                border: '1px solid rgba(255,255,255,0.3)',
+                cursor: pushBannerLoading ? 'not-allowed' : 'pointer',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                opacity: pushBannerLoading ? 0.7 : 1,
+              }}
+            >
+              {pushBannerLoading ? (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                    style={{ animation: 'spin 0.8s linear infinite' }}>
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                  </svg>
+                  Enabling...
+                </>
+              ) : 'Enable'}
+            </button>
+          )}
+
+          {/* Dismiss button */}
+          {!pushBannerSuccess && (
+            <button
+              onClick={() => setShowPushBanner(false)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'rgba(255,255,255,0.7)',
+                cursor: 'pointer',
+                fontSize: '18px',
+                lineHeight: 1,
+                padding: '0 2px',
+                flexShrink: 0,
+              }}
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
+
       <Routes>
         {/* Public Layout Routes */}
         <Route element={<PublicLayout />}>
@@ -343,6 +523,16 @@ function App() {
               <AdminUsers />
             </ProtectedRoute>
           } />
+          <Route path="/admin/role-permissions" element={
+            <ProtectedRoute requireAuth requireRole="admin" requirePermission="roles.read">
+              <AdminRolePermissions />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/hms-subscriptions" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminHMSSubscriptions />
+            </ProtectedRoute>
+          } />
           <Route path="/admin/contact-messages" element={
             <ProtectedRoute requireAuth requireRole="admin">
               <AdminContactMessages />
@@ -376,6 +566,11 @@ function App() {
           <Route path="/admin/bookings" element={
             <ProtectedRoute requireAuth requireRole="admin">
               <AdminBookings />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/calendar" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminCalendar />
             </ProtectedRoute>
           } />
           <Route path="/admin/reviews" element={
@@ -468,15 +663,46 @@ function App() {
               <PropertyAnalyticsReport />
             </ProtectedRoute>
           } />
+          <Route path="/admin/reports/overview" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminOverviewReport />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/expenses" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminCorporateExpenses />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/hr" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminCorporateHR />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/reports/profit-loss" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminProfitLossReport />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/reports/host-performance" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminHostPerformanceReport />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/reports/revenue" element={
+            <ProtectedRoute requireAuth requireRole="admin">
+              <AdminRevenueReport />
+            </ProtectedRoute>
+          } />
+
 
           {/* Messages Routes — inside DashboardLayout for sidebar */}
           <Route path="/messages" element={
-            <ProtectedRoute>
+            <ProtectedRoute requirePermission="can_access_messages">
               <Messages />
             </ProtectedRoute>
           } />
           <Route path="/messages/:id" element={
-            <ProtectedRoute>
+            <ProtectedRoute requirePermission="can_access_messages">
               <ConversationDetail />
             </ProtectedRoute>
           } />
@@ -488,42 +714,42 @@ function App() {
             </ProtectedRoute>
           } />
           <Route path="/property-owner/properties" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="can_list_properties">
               <MyProperties />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/properties/new" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="can_list_properties">
               <AddProperty />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/properties/:id/edit" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="can_list_properties">
               <EditProperty />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/bookings" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="can_use_pms">
               <PropertyOwnerBookings />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/booking-negotiation/:bookingId" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="can_use_pms">
               <BookingNegotiation />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/calendar" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="can_use_calendar">
               <PropertyOwnerCalendar />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/analytics" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="can_view_analytics">
               <Analytics />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/earnings" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="can_view_earnings">
               <PropertyOwnerEarnings />
             </ProtectedRoute>
           } />
@@ -538,132 +764,132 @@ function App() {
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/pricing" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_inventory">
               <HMSPricing />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/rooms" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_inventory">
               <HMSRooms />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/staff" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="can_manage_staff">
               <HMSStaff />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/hr/employees" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_hr">
               <HMSEmployees />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/hr/departments" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_hr">
               <HMSDepartments />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/hr/designations" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_hr">
               <HMSDesignations />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/hr/shifts" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_hr">
               <HMSShifts />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/hr/payroll" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_hr">
               <HMSPayroll />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/hr/allowances" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_hr">
               <HMSAllowances />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/hr/deductions" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_hr">
               <HMSDeductions />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/hr/roster" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_hr">
               <HMSRoster />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/hr/attendance" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_hr">
               <HMSAttendance />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/accounts" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_accounts">
               <HMSAccountsDashboard />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/accounts/vouchers" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_accounts">
               <HMSVouchers />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/accounts/transactions" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_accounts">
               <HMSTransactions />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/billing" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_billing">
               <HMSBilling />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/reservations" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_reservations">
               <HMSReservations />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/guests" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_reservations">
               <HMSGuests />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/analytics/guests" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_reservations">
               <HMSGuestAnalytics />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/reservations/:id" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_reservations">
               <HMSReservationDetail />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/calendar" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_reservations">
               <HMSCalendar />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/housekeeping" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_housekeeping">
               <HMSHousekeeping />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/food-beverage" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_food_beverage">
               <HMSFoodBeverage />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/maintenance" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="manage_housekeeping">
               <HMSMaintenance />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/reports/room-revenue" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="view_analytics">
               <HMSRoomRevenueReport />
             </ProtectedRoute>
           } />
           <Route path="/property-owner/hms/reports/financials" element={
-            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']}>
+            <ProtectedRoute requireAuth allowedRoles={['property_owner', 'staff']} requirePermission="view_analytics">
               <HMSFinancialReports />
             </ProtectedRoute>
           } />
@@ -721,37 +947,37 @@ function App() {
             </ProtectedRoute>
           } />
           <Route path="/guest/bookings" element={
-            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']} requirePermission="can_view_booking_history">
               <GuestBookings />
             </ProtectedRoute>
           } />
           <Route path="/guest/favorites" element={
-            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']} requirePermission="can_view_favorites">
               <GuestFavorites />
             </ProtectedRoute>
           } />
           <Route path="/guest/rewards-points" element={
-            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']} requirePermission="can_use_rewards">
               <RewardsPoints />
             </ProtectedRoute>
           } />
           <Route path="/guest/booking/new/:propertyId" element={
-            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']} requirePermission="can_make_bookings">
               <GuestBooking />
             </ProtectedRoute>
           } />
           <Route path="/guest/bookings/:id" element={
-            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']} requirePermission="can_view_booking_history">
               <GuestBookingDetail />
             </ProtectedRoute>
           } />
           <Route path="/guest/booking-negotiation/:bookingId" element={
-            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']} requirePermission="can_view_booking_history">
               <BookingNegotiation />
             </ProtectedRoute>
           } />
           <Route path="/guest/refunds" element={
-            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']} requirePermission="can_request_refunds">
               <GuestRefunds />
             </ProtectedRoute>
           } />
@@ -761,19 +987,19 @@ function App() {
             </ProtectedRoute>
           } />
           <Route path="/guest/reports" element={
-            <ProtectedRoute allowedRoles={['guest', 'property_owner']}>
+            <ProtectedRoute allowedRoles={['guest', 'property_owner']} requirePermission="can_view_booking_history">
               <GuestReports />
             </ProtectedRoute>
           } />
 
-          {/* Support Routes */}
+          {/* Support Routes — requirePermission enforces access control even on direct URL navigation */}
           <Route path="/support" element={
-            <ProtectedRoute>
+            <ProtectedRoute requirePermission="support.read">
               <SupportTickets />
             </ProtectedRoute>
           } />
           <Route path="/support/ticket/:id" element={
-            <ProtectedRoute>
+            <ProtectedRoute requirePermission="support.read">
               <TicketChat />
             </ProtectedRoute>
           } />

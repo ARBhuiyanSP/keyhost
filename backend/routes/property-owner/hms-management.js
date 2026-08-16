@@ -872,11 +872,17 @@ router.put('/settle-bill/:bookingId', requireHMSAccess, requireHMSPermission('ma
         const { total_amount } = req.body;
         
         // 1. Update booking status to checked_out and paid
-        // We also update the total_amount in the booking table to reflect the final folio total
+        // Also recalculate property_owner_earnings = final total - commission (commission is 0 for HMS walk-ins)
         await connection.query(
-            'UPDATE bookings SET status = "checked_out", payment_status = "paid", total_amount = ? WHERE id = ?',
-            [total_amount, bookingId]
+            `UPDATE bookings 
+             SET status = "checked_out", 
+                 payment_status = "paid", 
+                 total_amount = ?,
+                 property_owner_earnings = ? - COALESCE(admin_commission_amount, 0)
+             WHERE id = ?`,
+            [total_amount, total_amount, bookingId]
         );
+
 
         // 1.1 Update room status to 'dirty'
         const [bookingRows] = await connection.query('SELECT hms_room_id FROM bookings WHERE id = ?', [bookingId]);
@@ -1101,7 +1107,7 @@ router.post('/bookings/:id/refund', requireHMSAccess, requireHMSPermission('mana
 // 1. Room Revenue Report
 router.get('/reports/room-revenue', requireHMSAccess, requireHMSPermission('manage_reservations'), async (req, res) => {
     try {
-        const { property_id, room_id, start_date, end_date } = req.query;
+        const { property_id, room_id, start_date, end_date, payment_method } = req.query;
 
         if (!property_id || !start_date || !end_date) {
             return res.status(400).json(formatResponse(false, 'property_id, start_date and end_date are required'));
@@ -1125,6 +1131,7 @@ router.get('/reports/room-revenue', requireHMSAccess, requireHMSPermission('mana
                 DATEDIFF(b.check_out_date, b.check_in_date) as stay_nights,
                 b.booking_reference,
                 b.guest_name,
+                b.payment_method,
                 r.room_number,
                 'ROOM CHARGE' as service_name,
                 b.total_amount as charge,
@@ -1144,6 +1151,15 @@ router.get('/reports/room-revenue', requireHMSAccess, requireHMSPermission('mana
         if (room_id && room_id !== 'all' && room_id !== '') {
             query += ' AND b.hms_room_id = ?';
             params.push(room_id);
+        }
+
+        if (payment_method && payment_method !== 'all' && payment_method !== '') {
+            if (payment_method === 'online') {
+                query += " AND b.payment_method IN ('bkash', 'sslcommerz')";
+            } else {
+                query += ' AND b.payment_method = ?';
+                params.push(payment_method);
+            }
         }
 
         query += ' ORDER BY b.check_in_date ASC';

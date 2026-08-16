@@ -209,7 +209,7 @@ async function sendBookingAcceptedEmail({ toEmail, guestName, propertyName, book
 // ─────────────────────────────────────────────
 // 3a. Payment Confirmed — to HOST
 // ─────────────────────────────────────────────
-async function sendBookingPaidHostEmail({ toEmail, hostName, guestName, propertyName, bookingRef, checkInDate, amount, paymentMethod }) {
+async function sendBookingPaidHostEmail({ toEmail, hostName, guestName, propertyName, bookingRef, checkInDate, amount, paymentMethod, transactionId }) {
     if (!toEmail) return;
     try {
         const subject = `Payment Received – ${bookingRef} | ${propertyName}`;
@@ -223,7 +223,8 @@ async function sendBookingPaidHostEmail({ toEmail, hostName, guestName, property
             infoRow('Property', propertyName) +
             infoRow('Check-in Date', checkInDate) +
             infoRow('Amount Paid', amount) +
-            (paymentMethod ? infoRow('Payment Method', paymentMethod) : '')
+            (paymentMethod ? infoRow('Payment Method', paymentMethod) : '') +
+            (transactionId ? infoRow('Transaction ID', transactionId) : '')
         )}
       ${alertBox('✅ Booking is fully confirmed. The guest is expecting their check-in.', '#e8f5e9', '#2e7d32', '#1b5e20')}
     `;
@@ -233,8 +234,8 @@ async function sendBookingPaidHostEmail({ toEmail, hostName, guestName, property
             bodyHtml
         });
 
-        await sendEmail({ email: toEmail, subject, message: `Payment confirmed for booking ${bookingRef}. Guest: ${guestName}. Amount: ${amount}. Check-in: ${checkInDate}.`, htmlMessage });
-        console.log(`✉️ [Email] Payment confirmed sent to host: ${toEmail}`);
+        await sendEmail({ email: toEmail, subject, message: `Payment confirmed for booking ${bookingRef}. Guest: ${guestName}. Amount: ${amount}. Check-in: ${checkInDate}.${transactionId ? ` TrxID: ${transactionId}` : ''}`, htmlMessage });
+        console.log(`✉️ [Email] Payment confirmed sent to host: ${toEmail} (TrxID: ${transactionId || 'N/A'})`);
     } catch (err) {
         console.error('[Email] sendBookingPaidHostEmail error:', err.message || err);
     }
@@ -244,7 +245,7 @@ async function sendBookingPaidHostEmail({ toEmail, hostName, guestName, property
 // ─────────────────────────────────────────────
 // 3b. Payment Confirmed — to GUEST
 // ─────────────────────────────────────────────
-async function sendBookingPaidGuestEmail({ toEmail, guestName, propertyName, bookingRef, checkInDate, checkOutDate, amount, paymentMethod }) {
+async function sendBookingPaidGuestEmail({ toEmail, guestName, propertyName, bookingRef, checkInDate, checkOutDate, amount, paymentMethod, transactionId }) {
     if (!toEmail) return;
     try {
         const subject = `Booking Confirmed! – ${bookingRef} | ${propertyName}`;
@@ -258,7 +259,8 @@ async function sendBookingPaidGuestEmail({ toEmail, guestName, propertyName, boo
             infoRow('Check-in', checkInDate) +
             (checkOutDate ? infoRow('Check-out', checkOutDate) : '') +
             infoRow('Amount Paid', amount) +
-            (paymentMethod ? infoRow('Payment Method', paymentMethod) : '')
+            (paymentMethod ? infoRow('Payment Method', paymentMethod) : '') +
+            (transactionId ? infoRow('Transaction ID', transactionId) : '')
         )}
       ${alertBox('🎉 Your stay is confirmed! Please save your booking reference for check-in.', '#e8f5e9', '#2e7d32', '#1b5e20')}
     `;
@@ -269,8 +271,8 @@ async function sendBookingPaidGuestEmail({ toEmail, guestName, propertyName, boo
             footerNote: 'If you have any questions before your stay, please contact the host through your messages dashboard.'
         });
 
-        await sendEmail({ email: toEmail, subject, message: `Your booking ${bookingRef} at ${propertyName} is confirmed. Amount paid: ${amount}. Check-in: ${checkInDate}.`, htmlMessage });
-        console.log(`✉️ [Email] Payment confirmed sent to guest: ${toEmail}`);
+        await sendEmail({ email: toEmail, subject, message: `Your booking ${bookingRef} at ${propertyName} is confirmed. Amount paid: ${amount}. Check-in: ${checkInDate}.${transactionId ? ` TrxID: ${transactionId}` : ''}`, htmlMessage });
+        console.log(`✉️ [Email] Payment confirmed sent to guest: ${toEmail} (TrxID: ${transactionId || 'N/A'})`);
     } catch (err) {
         console.error('[Email] sendBookingPaidGuestEmail error:', err.message || err);
     }

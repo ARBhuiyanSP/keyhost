@@ -9,6 +9,7 @@ const {
   validateId 
 } = require('../middleware/validation');
 const { sendBookingPaidSms } = require('../utils/sms');
+const { syncCommissionForBooking } = require('../utils/commission-sync');
 
 const router = express.Router();
 
@@ -234,6 +235,9 @@ router.patch('/:id/status', validateId, async (req, res) => {
           AND dr_amount > 0
         `, [payments[0].booking_id]);
       }
+
+      // Recalculate commission based on total paid across ALL payments (incl. cash)
+      await syncCommissionForBooking(payments[0].booking_id);
 
       // Mark admin commission as paid (all payments go to admin)
       await pool.execute(`

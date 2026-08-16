@@ -7,12 +7,129 @@ const NagadPaymentGateway = require('../../utils/nagad-gateway');
 
 const router = express.Router();
 
+// Helper function to dynamically sync and recalculate live owner balances
+async function syncOwnerBalances(ownerIdFilter = null) {
+  try {
+    let whereClause = '';
+    const params = [];
+    if (ownerIdFilter) {
+      whereClause = 'WHERE po.id = ?';
+      params.push(ownerIdFilter);
+    }
+
+    const [owners] = await pool.query(`
+      SELECT po.id as property_owner_id
+      FROM property_owners po
+      ${whereClause}
+    `, params);
+
+    for (const o of owners) {
+      const ownerId = o.property_owner_id;
+
+      // Ensure row exists in owner_balances
+      const [existing] = await pool.query('SELECT id FROM owner_balances WHERE property_owner_id = ?', [ownerId]);
+      if (existing.length === 0) {
+        await pool.query('INSERT INTO owner_balances (property_owner_id, total_earnings, total_payouts, current_balance) VALUES (?, 0, 0, 0)', [ownerId]);
+      }
+
+      // Recalculate property_owner_earnings for all bookings of this owner based on completed payments & admin commission
+      const [ownerBookings] = await pool.query(`
+        SELECT b.id, b.total_amount, b.booking_source, b.source, p.owner_id
+        FROM bookings b
+        JOIN properties p ON b.property_id = p.id
+        WHERE p.owner_id = ?
+      `, [ownerId]);
+
+      for (const b of ownerBookings) {
+        const [payRows] = await pool.query(`
+          SELECT COALESCE(SUM(cr_amount), 0) as total_paid
+          FROM payments
+          WHERE booking_id = ? AND status = 'completed' AND transaction_type IN ('guest_payment', 'payment', 'settlement')
+        `, [b.id]);
+
+        const [admEarnRows] = await pool.query(`
+          SELECT commission_amount
+          FROM admin_earnings
+          WHERE booking_id = ? AND status = 'active'
+        `, [b.id]);
+
+        const totalPaid = parseFloat(payRows[0].total_paid || 0);
+
+        // HMS manual/reception bookings have ZERO admin commission. Commission ONLY applies to website bookings!
+        let commAmount = 0;
+        const isWebsiteBooking = b.booking_source === 'website' || b.source === 'website';
+        if (isWebsiteBooking) {
+          commAmount = parseFloat(admEarnRows[0]?.commission_amount || (totalPaid * 0.10));
+        } else {
+          commAmount = 0.00;
+        }
+
+        const ownerEarnings = Math.max(0, totalPaid - commAmount);
+
+        await pool.query(`
+          UPDATE bookings
+          SET property_owner_earnings = ?
+          WHERE id = ?
+        `, [ownerEarnings, b.id]);
+      }
+
+      // 1. Live Total Online Earnings (subtracting cash collected by host and gateway fees)
+      const [earningsRows] = await pool.query(`
+        SELECT COALESCE(SUM(
+          b.property_owner_earnings 
+          - COALESCE((
+              SELECT SUM(p2.cr_amount) FROM payments p2
+              WHERE p2.booking_id = b.id AND p2.status = 'completed'
+                AND p2.payment_method = 'cash'
+                AND p2.transaction_type IN ('guest_payment','payment','settlement')
+            ), 0)
+          - COALESCE((
+              SELECT SUM(p3.gateway_fee) FROM payments p3
+              WHERE p3.booking_id = b.id AND p3.status = 'completed'
+            ), 0)
+        ), 0) as total_earnings
+        FROM bookings b
+        JOIN properties p ON b.property_id = p.id
+        WHERE p.owner_id = ? 
+          AND (b.payment_status IN ('paid', 'partial') OR b.status IN ('confirmed', 'checked_in', 'checked_out'))
+      `, [ownerId]);
+      const totalEarnings = parseFloat(earningsRows[0].total_earnings) || 0;
+
+      // 2. Live Total Active / Completed Payouts
+      const [payoutRows] = await pool.query(`
+        SELECT COALESCE(SUM(net_payout), 0) as total_payouts
+        FROM owner_payouts
+        WHERE property_owner_id = ? AND payment_status != 'failed'
+      `, [ownerId]);
+      const totalPayouts = parseFloat(payoutRows[0].total_payouts) || 0;
+
+      // 3. Current Available Payable Balance
+      const currentBalance = Math.max(0, totalEarnings - totalPayouts);
+
+      // Update row
+      await pool.query(`
+        UPDATE owner_balances
+        SET total_earnings = ?,
+            total_payouts = ?,
+            current_balance = ?,
+            last_updated = NOW()
+        WHERE property_owner_id = ?
+      `, [totalEarnings, totalPayouts, currentBalance, ownerId]);
+    }
+  } catch (err) {
+    console.error('syncOwnerBalances error:', err);
+  }
+}
+
 // =============================================
 // GET OWNER BALANCES SUMMARY
 // =============================================
 router.get('/balances', async (req, res) => {
   try {
     const { owner_id } = req.query;
+
+    // Sync live balances before returning
+    await syncOwnerBalances(owner_id || null);
 
     let whereClause = '';
     const queryParams = [];
@@ -57,6 +174,9 @@ router.get('/balances', async (req, res) => {
 router.get('/balances/:ownerId', async (req, res) => {
   try {
     const { ownerId } = req.params;
+
+    // Sync live balance for this owner
+    await syncOwnerBalances(ownerId);
 
     // Get balance summary
     const [balanceRows] = await pool.execute(`
@@ -153,7 +273,7 @@ router.post('/payouts', async (req, res) => {
       );
     }
 
-    // Get eligible bookings for payout
+    // Get eligible bookings for payout up to end_date
     const [eligibleBookings] = await pool.execute(`
       SELECT 
         b.id as booking_id,
@@ -167,15 +287,15 @@ router.post('/payouts', async (req, res) => {
       LEFT JOIN admin_earnings ae ON b.id = ae.booking_id
       WHERE p.owner_id = ? 
         AND b.payment_status = 'paid'
-        AND (b.booking_source = 'website' OR b.source = 'Internal' OR b.payment_method = 'sslcommerz')
+        AND (b.payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online', 'bank_transfer') OR b.booking_source = 'website' OR b.source = 'Internal')
         AND b.property_owner_earnings > 0
-        AND DATE(b.created_at) BETWEEN ? AND ?
+        AND DATE(b.created_at) <= ?
         AND b.id NOT IN (
           SELECT booking_id FROM owner_payout_items opi
           JOIN owner_payouts op ON opi.payout_id = op.id
           WHERE op.property_owner_id = ? AND op.payment_status != 'failed'
         )
-    `, [property_owner_id, start_date, end_date, property_owner_id]);
+    `, [property_owner_id, end_date, property_owner_id]);
 
     if (eligibleBookings.length === 0) {
       return res.status(400).json(
@@ -401,6 +521,12 @@ router.get('/payouts/:id', async (req, res) => {
       SELECT 
         opi.*,
         b.booking_reference,
+        COALESCE(
+          (SELECT gateway_transaction_id FROM payments WHERE booking_id = b.id AND gateway_transaction_id IS NOT NULL AND gateway_transaction_id != '' ORDER BY id DESC LIMIT 1),
+          (SELECT payment_reference FROM payments WHERE booking_id = b.id ORDER BY id DESC LIMIT 1),
+          b.payment_notes,
+          'N/A'
+        ) as transaction_id,
         b.guest_name,
         b.created_at as booking_date,
         p.title as property_title
@@ -421,6 +547,116 @@ router.get('/payouts/:id', async (req, res) => {
     res.status(500).json(
       formatResponse(false, 'Failed to retrieve payout details', null, error.message)
     );
+  }
+});
+
+// =============================================
+// DELETE / EXCLUDE ITEM FROM PAYOUT REQUEST
+// =============================================
+router.delete('/payouts/:payoutId/items/:itemId', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const { payoutId, itemId } = req.params;
+    await connection.beginTransaction();
+
+    // 1. Fetch payout
+    const [payouts] = await connection.execute(
+      `SELECT * FROM owner_payouts WHERE id = ? FOR UPDATE`,
+      [payoutId]
+    );
+
+    if (payouts.length === 0) {
+      await connection.rollback();
+      return res.status(404).json(formatResponse(false, 'Payout request not found'));
+    }
+
+    const payout = payouts[0];
+    if (!['pending', 'processing', 'failed'].includes(payout.payment_status)) {
+      await connection.rollback();
+      return res.status(400).json(
+        formatResponse(false, `Cannot remove items from a payout that is '${payout.payment_status}'`)
+      );
+    }
+
+    // 2. Fetch target item
+    const [items] = await connection.execute(
+      `SELECT * FROM owner_payout_items WHERE id = ? AND payout_id = ?`,
+      [itemId, payoutId]
+    );
+
+    if (items.length === 0) {
+      await connection.rollback();
+      return res.status(404).json(formatResponse(false, 'Payout item not found'));
+    }
+
+    const item = items[0];
+
+    // 3. Delete item
+    await connection.execute(`DELETE FROM owner_payout_items WHERE id = ?`, [itemId]);
+
+    // 4. Check remaining items
+    const [remainingItems] = await connection.execute(
+      `SELECT * FROM owner_payout_items WHERE payout_id = ?`,
+      [payoutId]
+    );
+
+    const removedEarnings = parseFloat(item.owner_earnings) || 0;
+
+    if (remainingItems.length === 0) {
+      // If no items remain, delete payout request
+      await connection.execute(`DELETE FROM owner_payouts WHERE id = ?`, [payoutId]);
+      
+      // Update balance
+      await connection.execute(`
+        UPDATE owner_balances 
+        SET total_payouts = GREATEST(0, total_payouts - ?),
+            current_balance = current_balance + ?,
+            last_updated = NOW()
+        WHERE property_owner_id = ?
+      `, [payout.net_payout, payout.net_payout, payout.property_owner_id]);
+
+      await connection.commit();
+      return res.json(formatResponse(true, 'Payout request cancelled because all items were removed', {
+        deletedPayout: true
+      }));
+    }
+
+    // Calculate new totals
+    const newTotalEarnings = remainingItems.reduce((s, i) => s + (parseFloat(i.booking_total) || 0), 0);
+    const newCommissionPaid = remainingItems.reduce((s, i) => s + (parseFloat(i.admin_commission) || 0), 0);
+    const newNetPayout = remainingItems.reduce((s, i) => s + (parseFloat(i.owner_earnings) || 0), 0);
+
+    // 5. Update payout totals
+    await connection.execute(`
+      UPDATE owner_payouts
+      SET total_earnings = ?,
+          total_commission_paid = ?,
+          net_payout = ?,
+          updated_at = NOW()
+      WHERE id = ?
+    `, [newTotalEarnings, newCommissionPaid, newNetPayout, payoutId]);
+
+    // 6. Update owner balance
+    await connection.execute(`
+      UPDATE owner_balances 
+      SET total_payouts = GREATEST(0, total_payouts - ?),
+          current_balance = current_balance + ?,
+          last_updated = NOW()
+      WHERE property_owner_id = ?
+    `, [removedEarnings, removedEarnings, payout.property_owner_id]);
+
+    await connection.commit();
+    res.json(formatResponse(true, 'Payout item removed successfully', {
+      deletedPayout: false,
+      newNetPayout
+    }));
+
+  } catch (error) {
+    await connection.rollback();
+    console.error('Delete payout item error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to remove payout item', null, error.message));
+  } finally {
+    connection.release();
   }
 });
 
@@ -546,5 +782,6 @@ router.post('/payouts/:id/disburse-gateway', async (req, res) => {
   }
 });
 
+router.syncOwnerBalances = syncOwnerBalances;
 module.exports = router;
 

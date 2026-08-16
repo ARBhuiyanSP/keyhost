@@ -20,9 +20,13 @@ import {
   FiUpload,
   FiFileText,
   FiTrash2,
-  FiEye
+  FiEye,
+  FiBell,
+  FiBellOff,
+  FiAlertCircle
 } from 'react-icons/fi';
 import { getImageUrl } from '../../utils/imageUrl';
+import { isPushSupported, subscribeToPush, unsubscribeFromPush, getNotificationPermission, isSubscribed } from '../../utils/pushSubscription';
 
 const PropertyOwnerProfile = () => {
   const { user } = useAuthStore();
@@ -45,6 +49,50 @@ const PropertyOwnerProfile = () => {
   const natDropdownRef = useRef(null);
   const [nationalitySearch, setNationalitySearch] = useState('');
   const [natDropdownOpen, setNatDropdownOpen] = useState(false);
+
+  // Push notification state
+  const [pushPermission, setPushPermission] = useState('default');
+  const [pushSubscribed, setPushSubscribed] = useState(false);
+  const [pushLoading, setPushLoading] = useState(false);
+
+  // Sync push state on mount
+  useEffect(() => {
+    if (isPushSupported()) {
+      setPushPermission(getNotificationPermission());
+      setPushSubscribed(isSubscribed() && getNotificationPermission() === 'granted');
+    }
+  }, []);
+
+  const handlePushToggle = async () => {
+    if (!isPushSupported()) {
+      showError('Push notifications are not supported in this browser.');
+      return;
+    }
+    setPushLoading(true);
+    try {
+      if (pushSubscribed) {
+        const ok = await unsubscribeFromPush();
+        if (ok) { setPushSubscribed(false); showSuccess('Push notifications disabled.'); }
+        else showError('Failed to disable push notifications.');
+      } else {
+        if (pushPermission === 'denied') {
+          showError('Notifications are blocked in your browser. Please enable them in browser settings.');
+          return;
+        }
+        const ok = await subscribeToPush();
+        if (ok) {
+          setPushSubscribed(true);
+          setPushPermission('granted');
+          showSuccess('Push notifications enabled! 🎉');
+        } else {
+          setPushPermission(getNotificationPermission());
+          showError('Could not enable notifications. Please check browser permissions.');
+        }
+      }
+    } finally {
+      setPushLoading(false);
+    }
+  };
 
   const handleVerifyEmail = async () => {
     try {
@@ -1170,6 +1218,88 @@ const PropertyOwnerProfile = () => {
                         Booking Preferences
                       </h3>
                       <p className="text-xs text-gray-500 mt-1">Configure default configuration presets and automation switches.</p>
+                    </div>
+
+                    {/* ── Push Notification Card ─────────────────────── */}
+                    <div className={`rounded-2xl border-2 p-5 transition-all duration-200 ${
+                      pushSubscribed
+                        ? 'border-emerald-200 bg-emerald-50/60'
+                        : pushPermission === 'denied'
+                          ? 'border-rose-200 bg-rose-50/60'
+                          : 'border-gray-200 bg-gray-50'
+                    }`}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                            pushSubscribed ? 'bg-emerald-100' : pushPermission === 'denied' ? 'bg-rose-100' : 'bg-gray-200'
+                          }`}>
+                            {pushSubscribed ? (
+                              <FiBell className="w-5 h-5 text-emerald-600" />
+                            ) : pushPermission === 'denied' ? (
+                              <FiBellOff className="w-5 h-5 text-rose-500" />
+                            ) : (
+                              <FiBell className="w-5 h-5 text-gray-400" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="text-sm font-bold text-gray-900">Push Notifications</h4>
+                              {pushSubscribed ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-bold">
+                                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                                  Active
+                                </span>
+                              ) : pushPermission === 'denied' ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-100 text-rose-700 rounded-full text-[10px] font-bold">
+                                  <FiAlertCircle className="w-3 h-3" />
+                                  Blocked
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-[10px] font-bold">
+                                  Off
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                              New bookings, guest messages, and payment alerts delivered instantly to your device.
+                            </p>
+                          </div>
+                        </div>
+
+                        {pushPermission !== 'denied' && (
+                          <button
+                            type="button"
+                            onClick={handlePushToggle}
+                            disabled={pushLoading}
+                            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed ${
+                              pushSubscribed ? 'bg-emerald-500' : 'bg-gray-300'
+                            }`}
+                            role="switch"
+                            aria-checked={pushSubscribed}
+                          >
+                            <span
+                              aria-hidden="true"
+                              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                pushSubscribed ? 'translate-x-5' : 'translate-x-0'
+                              }`}
+                            />
+                          </button>
+                        )}
+                      </div>
+
+                      {pushPermission === 'denied' && (
+                        <div className="mt-4 flex items-start gap-2 p-3 bg-rose-100/80 rounded-xl">
+                          <FiAlertTriangle className="w-4 h-4 text-rose-500 flex-shrink-0 mt-0.5" />
+                          <div className="text-xs text-rose-700 leading-relaxed">
+                            <strong>Notifications are blocked</strong> in your browser. To enable them:
+                            <ol className="mt-1.5 ml-3 list-decimal space-y-0.5">
+                              <li>Click the 🔒 lock icon in your browser's address bar</li>
+                              <li>Find <strong>Notifications</strong> and set it to <strong>Allow</strong></li>
+                              <li>Reload the page and enable notifications here</li>
+                            </ol>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex items-center justify-between p-5 bg-gray-50 border border-gray-200 rounded-2xl hover:bg-gray-100/50 transition-all duration-200">

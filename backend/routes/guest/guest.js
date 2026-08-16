@@ -17,7 +17,7 @@ const {
   validatePropertyId,
   validatePagination
 } = require('../../middleware/validation');
-const { verifyToken, requireGuestOrOwner, optionalAuth } = require('../../middleware/auth');
+const { verifyToken, requireGuestOrOwner, optionalAuth, requirePlatformPermission } = require('../../middleware/auth');
 const { cacheMiddleware } = require('../../middleware/cache');
 
 const router = express.Router();
@@ -86,7 +86,7 @@ router.get('/dashboard', verifyToken, requireGuestOrOwner, async (req, res) => {
 });
 
 // Get guest's bookings
-router.get('/bookings', verifyToken, requireGuestOrOwner, validatePagination, async (req, res) => {
+router.get('/bookings', verifyToken, requireGuestOrOwner, requirePlatformPermission('can_view_booking_history'), validatePagination, async (req, res) => {
   try {
     const { page = 1, limit = 10, status } = req.query;
     const offset = (page - 1) * limit;
@@ -144,7 +144,7 @@ router.get('/bookings', verifyToken, requireGuestOrOwner, validatePagination, as
 });
 
 // Create new booking
-router.post('/bookings', verifyToken, requireGuestOrOwner, validateBooking, async (req, res) => {
+router.post('/bookings', verifyToken, requireGuestOrOwner, requirePlatformPermission('can_make_bookings'), validateBooking, async (req, res) => {
   try {
     const {
       property_id,
@@ -962,7 +962,7 @@ router.get('/bookings/:id/cancel-preview', verifyToken, requireGuestOrOwner, val
 });
 
 // Get guest's favorites
-router.get('/favorites', verifyToken, requireGuestOrOwner, async (req, res) => {
+router.get('/favorites', verifyToken, requireGuestOrOwner, requirePlatformPermission('can_view_favorites'), async (req, res) => {
   try {
     const [favorites] = await pool.execute(`
       SELECT 
@@ -990,7 +990,7 @@ router.get('/favorites', verifyToken, requireGuestOrOwner, async (req, res) => {
 });
 
 // Add property to favorites
-router.post('/favorites/:propertyId', verifyToken, requireGuestOrOwner, validatePropertyId, async (req, res) => {
+router.post('/favorites/:propertyId', verifyToken, requireGuestOrOwner, requirePlatformPermission('can_view_favorites'), validatePropertyId, async (req, res) => {
   try {
     const { propertyId } = req.params;
 
@@ -1037,7 +1037,7 @@ router.post('/favorites/:propertyId', verifyToken, requireGuestOrOwner, validate
 });
 
 // Remove property from favorites
-router.delete('/favorites/:propertyId', verifyToken, requireGuestOrOwner, validatePropertyId, async (req, res) => {
+router.delete('/favorites/:propertyId', verifyToken, requireGuestOrOwner, requirePlatformPermission('can_view_favorites'), validatePropertyId, async (req, res) => {
   try {
     const { propertyId } = req.params;
 

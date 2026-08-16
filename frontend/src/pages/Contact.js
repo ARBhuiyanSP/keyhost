@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { FiMail, FiPhone, FiMapPin, FiSend, FiMessageCircle, FiGlobe, FiClock } from 'react-icons/fi';
 import useSettingsStore from '../store/settingsStore';
 import api from '../utils/api';
+import { useFbPixel } from '../hooks/useFbPixel';
 
 const Contact = () => {
     const { settings } = useSettingsStore();
+    const { trackLead } = useFbPixel();
     const [formData, setFormData] = useState({
         name: '',
         email: '',
@@ -24,6 +26,8 @@ const Contact = () => {
             if (response.data?.success) {
                 setStatus('Message sent successfully! We will get back to you shortly.');
                 setFormData({ name: '', email: '', subject: '', message: '' });
+                // Track Lead event
+                trackLead('contact');
             } else {
                 setStatus(response.data?.message || 'Failed to send message. Please try again.');
             }

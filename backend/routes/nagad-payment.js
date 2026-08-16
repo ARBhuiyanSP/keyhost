@@ -32,11 +32,7 @@ async function completeNagadPayment(payment, verifyResult, res, bookingId) {
     }
 
     const booking = bookingData[0];
-
-    // Idempotency: already paid
-    if (booking.payment_status === 'paid') {
-      return res.redirect(`${frontendUrl}/booking-confirmation/${bookingId}`);
-    }
+    const paidAmt = parseFloat(payment.amount || verifyResult?.amount || booking.total_amount || 0);
 
     // Require owner acceptance (DR entry)
     const [drPayments] = await pool.execute(`
@@ -52,106 +48,106 @@ async function completeNagadPayment(payment, verifyResult, res, bookingId) {
               amount, dr_amount, cr_amount, transaction_type, status, notes,
               payment_date, created_at, updated_at
           ) VALUES (?, ?, 'booking', ?, ?, 0, 'owner_accepted', 'completed', ?, NOW(), NOW(), NOW())
-      `, [bookingId, autoDrRef, payment.amount, payment.amount, `Automatic DR entry for successful payment - ৳${payment.amount}`]);
+      `, [bookingId, autoDrRef, paidAmt, paidAmt, `Automatic DR entry for successful payment - ৳${paidAmt}`]);
     }
 
-    // Prevent duplicate CR entries
-    const [existingCr] = await pool.execute(`
-      SELECT id FROM payments 
-      WHERE booking_id = ? AND transaction_type = 'guest_payment' AND cr_amount > 0
+    // Always record CR entry for actual payment received
+    const crReference = `CR-NAGAD-${Date.now()}-${bookingId}`;
+    const txnNotes = verifyResult?.isDemo
+      ? `Guest payment received via Nagad (Demo) - Paid: ৳${paidAmt}`
+      : `Guest payment received via Nagad TXN:${verifyResult?.transactionID || payment.gateway_transaction_id} - Paid: ৳${paidAmt}`;
+
+    const [crInsertResult] = await pool.execute(`
+      INSERT INTO payments SET
+        booking_id = ?,
+        payment_reference = ?,
+        payment_method = 'nagad',
+        payment_type = 'booking',
+        amount = ?,
+        dr_amount = 0,
+        cr_amount = ?,
+        transaction_type = 'guest_payment',
+        notes = ?,
+        status = 'completed',
+        payment_date = NOW(),
+        created_at = NOW()
+    `, [bookingId, crReference, paidAmt, paidAmt, txnNotes]);
+
+    // Force dr_amount = 0 in case of DB triggers
+    await pool.execute(`
+      UPDATE payments SET dr_amount = 0, updated_at = NOW()
+      WHERE id = ? AND transaction_type = 'guest_payment'
+    `, [crInsertResult.insertId]);
+
+    // Mark DR entry as completed
+    await pool.execute(`
+      UPDATE payments SET status = 'completed', updated_at = NOW()
+      WHERE booking_id = ? AND transaction_type = 'owner_accepted' AND dr_amount > 0
     `, [bookingId]);
 
-    if (existingCr.length === 0) {
-      // Clean up duplicate DR entries
-      const [allDrPayments] = await pool.execute(`
-        SELECT id, transaction_type FROM payments 
-        WHERE booking_id = ? AND dr_amount > 0
-      `, [bookingId]);
+    // Calculate total paid so far vs grand total
+    const [payRows] = await pool.execute(
+      `SELECT SUM(cr_amount) as total_paid FROM payments WHERE booking_id = ? AND status = 'completed'`,
+      [bookingId]
+    );
+    const [billRows] = await pool.execute(
+      `SELECT SUM(amount) as total_bills FROM hms_bills WHERE booking_id = ?`,
+      [bookingId]
+    );
+    const totalPaid = parseFloat(payRows[0]?.total_paid || 0);
+    const grandTotal = parseFloat(booking.total_amount || 0) + parseFloat(billRows[0]?.total_bills || 0);
+    const finalPaymentStatus = totalPaid >= grandTotal ? 'paid' : 'partial';
 
-      const ownerAcceptedDrs = allDrPayments.filter(p => p.transaction_type === 'owner_accepted');
-      for (let i = 1; i < ownerAcceptedDrs.length; i++) {
-        await pool.execute(`DELETE FROM payments WHERE id = ?`, [ownerAcceptedDrs[i].id]);
-      }
-
-      // Create CR entry (money received from guest)
-      const crReference = `CR-NAGAD-${Date.now()}-${bookingId}`;
-      const txnNotes = verifyResult.isDemo
-        ? `Guest payment received via Nagad (Demo) - Total: ৳${booking.total_amount}`
-        : `Guest payment received via Nagad TXN:${verifyResult.transactionID} - Total: ৳${booking.total_amount}`;
-
-      const [crInsertResult] = await pool.execute(`
-        INSERT INTO payments SET
-          booking_id = ?,
-          payment_reference = ?,
+    // Update booking status
+    await pool.execute(`
+      UPDATE bookings 
+      SET payment_status = ?, status = 'confirmed',
           payment_method = 'nagad',
-          payment_type = 'booking',
-          amount = ?,
-          dr_amount = 0,
-          cr_amount = ?,
-          transaction_type = 'guest_payment',
-          notes = ?,
-          status = 'completed',
-          payment_date = NOW(),
-          created_at = NOW()
-      `, [bookingId, crReference, booking.total_amount, booking.total_amount, txnNotes]);
+          confirmed_at = COALESCE(confirmed_at, NOW()), updated_at = NOW()
+      WHERE id = ?
+    `, [finalPaymentStatus, bookingId]);
 
-      // Force dr_amount = 0 in case of DB triggers
-      await pool.execute(`
-        UPDATE payments SET dr_amount = 0, updated_at = NOW()
-        WHERE id = ? AND transaction_type = 'guest_payment'
-      `, [crInsertResult.insertId]);
+    // Send SMS confirmation
+    try {
+      await sendBookingPaidSms(bookingId);
+    } catch (smsErr) {
+      console.error(`Nagad SMS error for booking ${bookingId}:`, smsErr.message);
+    }
 
-      // Mark DR entry as completed
-      await pool.execute(`
-        UPDATE payments SET status = 'completed', updated_at = NOW()
-        WHERE booking_id = ? AND transaction_type = 'owner_accepted' AND dr_amount > 0
-      `, [bookingId]);
-
-      // Confirm booking as paid
-      await pool.execute(`
-        UPDATE bookings 
-        SET payment_status = 'paid', status = 'confirmed',
-            payment_method = 'nagad',
-            confirmed_at = NOW(), updated_at = NOW()
-        WHERE id = ?
-      `, [bookingId]);
-
-      // Send SMS confirmation
-      try {
-        await sendBookingPaidSms(bookingId);
-      } catch (smsErr) {
-        console.error(`Nagad SMS error for booking ${bookingId}:`, smsErr.message);
-      }
-
-      // Mark admin commission paid
+    // Mark admin commission paid if fully paid
+    if (finalPaymentStatus === 'paid') {
       await pool.execute(`
         UPDATE admin_earnings 
         SET payment_status = 'paid', payment_date = NOW(), updated_at = NOW()
         WHERE booking_id = ? AND payment_status = 'pending'
       `, [bookingId]);
+    }
 
-      // Award rewards points
-      try {
-        const [existingPoints] = await pool.execute(`
-          SELECT id FROM rewards_point_transactions 
-          WHERE booking_id = ? AND transaction_type = 'earned'
-        `, [bookingId]);
+    // Award rewards points
+    try {
+      const [existingPoints] = await pool.execute(`
+        SELECT id FROM rewards_point_transactions 
+        WHERE booking_id = ? AND transaction_type = 'earned'
+      `, [bookingId]);
 
-        if (existingPoints.length === 0) {
-          const { awardPointsForBooking } = require('../utils/rewardsPoints');
-          const result = await awardPointsForBooking(payment.guest_id, booking.total_amount, bookingId);
-          console.log(`✅ Nagad: Points awarded: ${result.pointsAwarded} for booking ${bookingId}`);
-        }
-      } catch (pointsErr) {
-        console.error('Nagad points awarding error:', pointsErr);
+      if (existingPoints.length === 0) {
+        const { awardPointsForBooking } = require('../utils/rewardsPoints');
+        await awardPointsForBooking(payment.guest_id || booking.guest_id, paidAmt, bookingId);
       }
+    } catch (pointsError) {
+      console.error('Nagad points error:', pointsError);
+    }
 
-      // Sync to HMS Accounts
-      try {
-        await syncPaymentToHMSAccounts(crInsertResult.insertId);
-      } catch (hmsErr) {
-        console.error('Nagad HMS Sync error:', hmsErr);
-      }
+    // Sync to HMS Accounts
+    try {
+      await syncPaymentToHMSAccounts(crInsertResult.insertId);
+    } catch (hmsError) {
+      console.error('HMS Sync error in Nagad callback:', hmsError);
+    }
+
+    // Redirect browser: If booking has payment_link_token (HMS public payment), redirect back to HMS pay page with success flag
+    if (booking.payment_link_token) {
+      return res.redirect(`${frontendUrl}/hms/pay/${booking.payment_link_token}?payment=success`);
     }
 
     return res.redirect(`${frontendUrl}/booking-confirmation/${bookingId}`);
@@ -418,7 +414,7 @@ router.post('/hms/public-request', async (req, res) => {
              (
                  b.total_amount 
                  + COALESCE((SELECT SUM(amount) FROM hms_bills WHERE booking_id = b.id), 0)
-                 - COALESCE((SELECT SUM(amount) FROM payments WHERE booking_id = b.id AND status = 'completed'), 0)
+                 - COALESCE((SELECT SUM(cr_amount) FROM payments WHERE booking_id = b.id AND status = 'completed'), 0)
              ) as total_amount,
              b.guest_name, b.guest_email, b.guest_phone,
              p.title as property_title

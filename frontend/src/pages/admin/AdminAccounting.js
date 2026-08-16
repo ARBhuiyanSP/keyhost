@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
-import { FiDollarSign, FiUser, FiHome, FiCalendar, FiDownload, FiCheckCircle, FiX, FiEye, FiClock } from 'react-icons/fi';
+import { FiDollarSign, FiUser, FiHome, FiCalendar, FiDownload, FiCheckCircle, FiX, FiEye, FiClock, FiCopy, FiCheck, FiXCircle, FiPlus, FiCreditCard } from 'react-icons/fi';
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 
@@ -10,6 +10,16 @@ const AdminAccounting = () => {
   const [selectedEntity, setSelectedEntity] = useState(null);
   const [selectedPayout, setSelectedPayout] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+
+  // Create Payout Statement Modal State
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    owner_id: '',
+    payment_method: 'bank_transfer',
+    start_date: '',
+    end_date: new Date().toISOString().split('T')[0],
+    notes: ''
+  });
 
   // Custom modal states
   const [disburseModal, setDisburseModal] = useState(null); // { payout, gatewayMethod, closeModal }
@@ -22,10 +32,44 @@ const AdminAccounting = () => {
   const [completeNotes, setCompleteNotes] = useState('');
 
   const [toast, setToast] = useState(null); // { type: 'success'|'error', title, message }
+  const [copiedTxnId, setCopiedTxnId] = useState(null);
 
   const showToast = (type, title, message) => {
     setToast({ type, title, message });
     setTimeout(() => setToast(null), 5000);
+  };
+
+  const [verifyingBooking, setVerifyingBooking] = useState(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verificationData, setVerificationData] = useState(null);
+  const [verificationError, setVerificationError] = useState(null);
+
+  const handleVerifyGateway = async (item, e) => {
+    if (e) e.stopPropagation();
+    setVerifyingBooking(item);
+    setIsVerifying(true);
+    setVerificationError(null);
+    setVerificationData(null);
+    try {
+      const res = await api.get(`/admin/bookings/${item.booking_id}/verify-gateway`);
+      if (res.data?.success) {
+        setVerificationData(res.data.data);
+      } else {
+        setVerificationError(res.data?.message || 'Verification query failed');
+      }
+    } catch (err) {
+      console.error('Verify gateway error:', err);
+      setVerificationError(err.response?.data?.message || err.message || 'Verification query failed');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleCopyTxnId = (text, e) => {
+    if (e) e.stopPropagation();
+    navigator.clipboard.writeText(text);
+    setCopiedTxnId(text);
+    setTimeout(() => setCopiedTxnId(null), 2000);
   };
   const [dateRange, setDateRange] = useState({
     start: '',
@@ -33,6 +77,28 @@ const AdminAccounting = () => {
   });
 
   const queryClient = useQueryClient();
+
+  const createPayoutMutation = useMutation(
+    (data) => api.post('/admin/owner-payouts/payouts', data),
+    {
+      onSuccess: () => {
+        showToast('success', 'Payout Statement Created', 'Owner payout statement generated successfully.');
+        queryClient.invalidateQueries('admin-owner-payouts');
+        queryClient.invalidateQueries('admin-owner-balances');
+        setShowCreateModal(false);
+        setCreateForm({
+          owner_id: '',
+          payment_method: 'bank_transfer',
+          start_date: '',
+          end_date: new Date().toISOString().split('T')[0],
+          notes: ''
+        });
+      },
+      onError: (error) => {
+        showToast('error', 'Failed to Create Payout', error.response?.data?.message || 'Could not generate payout statement.');
+      }
+    }
+  );
 
   // Fetch all transactions
   const { data: transactionsData, isLoading } = useQuery(
@@ -51,12 +117,11 @@ const AdminAccounting = () => {
     }
   );
 
-  // Fetch owners list for filter dropdown
-  const { data: ownersListData } = useQuery(
+  // Fetch owners list for filter dropdown & payout creation modal
+  const { data: ownersListData = [] } = useQuery(
     'accounting-owners-list',
     () => api.get('/admin/accounting/owners'),
     {
-      enabled: view === 'owner',
       select: (response) => response.data?.data?.owners || []
     }
   );
@@ -83,6 +148,15 @@ const AdminAccounting = () => {
     },
     {
       select: (response) => response.data?.data || { payouts: [], pagination: {} },
+    }
+  );
+
+  // Fetch owner balances (unrequested payable balances per host)
+  const { data: balancesData = [], isLoading: balancesLoading } = useQuery(
+    ['admin-owner-balances'],
+    () => api.get('/admin/owner-payouts/balances'),
+    {
+      select: (response) => response.data?.data?.balances || [],
     }
   );
 
@@ -169,6 +243,28 @@ const AdminAccounting = () => {
   const handleViewDetails = (payout) => {
     setSelectedPayout(payout.id);
     setShowDetailsModal(true);
+  };
+
+  const handleRemovePayoutItem = async (payoutId, itemId, bookingRef) => {
+    if (!window.confirm(`Are you sure you want to exclude booking '${bookingRef}' from this payout request?`)) {
+      return;
+    }
+    try {
+      const response = await api.delete(`/admin/owner-payouts/payouts/${payoutId}/items/${itemId}`);
+      if (response.data?.success) {
+        showToast('success', 'Booking Excluded', `Booking ${bookingRef} removed from payout.`);
+        queryClient.invalidateQueries('payout-details');
+        queryClient.invalidateQueries('admin-owner-payouts');
+        queryClient.invalidateQueries('admin-owner-balances');
+        if (response.data?.data?.deletedPayout) {
+          setShowDetailsModal(false);
+        }
+      } else {
+        showToast('error', 'Failed', response.data?.message || 'Could not exclude booking.');
+      }
+    } catch (error) {
+      showToast('error', 'Error', error.response?.data?.message || 'Failed to exclude booking.');
+    }
   };
 
   const handleProcessPayout = async (payout) => {
@@ -518,7 +614,7 @@ const AdminAccounting = () => {
 
             {/* Summary Cards */}
             {transactionsData?.summary && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6 no-print">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6 no-print">
                 {/* Total Received from Guests */}
                 <div className="bg-white rounded-lg shadow-sm p-6">
                   <div className="flex items-center justify-between">
@@ -554,6 +650,20 @@ const AdminAccounting = () => {
                       <p className="text-xs text-gray-500 mt-1">Total owed to all owners</p>
                     </div>
                     <FiUser className="w-8 h-8 text-purple-600" />
+                  </div>
+                </div>
+
+                {/* Gateway Fees */}
+                <div className="bg-white rounded-lg shadow-sm p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Gateway Fees</p>
+                      <p className="text-2xl font-bold text-red-600">
+                        {formatCurrency(transactionsData.summary.total_gateway_fees || 0)}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">Payment gateway charges</p>
+                    </div>
+                    <FiCreditCard className="w-8 h-8 text-red-600" />
                   </div>
                 </div>
 
@@ -849,17 +959,78 @@ const AdminAccounting = () => {
         </div>
         )}
 
-        {/* Owner Payouts Table */}
+        {/* Owner Payouts & Balances */}
         {activeTab === 'payouts' && (
-          <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-gray-900">
-                Owner Payout Requests
-              </h2>
-              <div className="text-sm text-gray-500">
-                {payoutsData?.pagination?.total || 0} total payouts
+          <div className="space-y-6">
+            {/* Host Balances / Available Dues Table */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-150 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-base font-extrabold text-gray-900 tracking-tight flex items-center gap-2">
+                    <span>Host Payable Balances</span>
+                    <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                      Unrequested & Available
+                    </span>
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Live platform balances owed to hosts for completed online bookings before payout request</p>
+                </div>
               </div>
+
+              {balancesLoading ? (
+                <div className="p-6 text-center"><LoadingSpinner /></div>
+              ) : balancesData.filter(bal => parseFloat(bal.current_balance || 0) > 0).length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs divide-y divide-gray-100">
+                    <thead className="bg-gray-50/80 text-gray-500 font-semibold uppercase tracking-wider">
+                      <tr>
+                        <th className="px-6 py-3">Host / Business</th>
+                        <th className="px-6 py-3">Total Earnings</th>
+                        <th className="px-6 py-3">Total Paid</th>
+                        <th className="px-6 py-3 text-right">Unrequested Balance</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 bg-white">
+                      {balancesData
+                        .filter(bal => parseFloat(bal.current_balance || 0) > 0)
+                        .map((bal) => (
+                        <tr key={bal.id} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="px-6 py-3">
+                            <div className="font-bold text-gray-900">{bal.first_name} {bal.last_name}</div>
+                            <div className="text-[11px] text-gray-500 font-medium">{bal.business_name || bal.email}</div>
+                          </td>
+                          <td className="px-6 py-3 font-semibold text-gray-700">
+                            BDT {parseFloat(bal.total_earnings || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-6 py-3 font-semibold text-gray-500">
+                            BDT {parseFloat(bal.total_payouts || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-6 py-3 text-right">
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              BDT {parseFloat(bal.current_balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="p-6 text-center text-xs text-gray-500 font-semibold">
+                  ✓ No hosts currently have pending unrequested balances. All payouts are up to date!
+                </div>
+              )}
             </div>
+
+            {/* Owner Payout Requests Table */}
+            <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Owner Payout Requests
+                </h2>
+                <div className="text-sm text-gray-500">
+                  {payoutsData?.pagination?.total || 0} total payouts
+                </div>
+              </div>
 
             {payoutsLoading ? (
               <div className="p-6">
@@ -1075,7 +1246,8 @@ const AdminAccounting = () => {
               </div>
             )}
           </div>
-        )}
+        </div>
+      )}
 
 
         {/* Payout Details Modal */}
@@ -1195,7 +1367,36 @@ const AdminAccounting = () => {
                                     ? new Date(item.booking_date).toLocaleDateString('en-BD', { day: '2-digit', month: 'short', year: 'numeric' })
                                     : 'N/A'}
                                 </td>
-                                <td className="px-3 py-2 text-xs font-mono font-semibold text-gray-900">{item.booking_reference}</td>
+                                <td className="px-3 py-2 text-xs">
+                                  <span className="font-mono font-bold text-gray-900 block">{item.booking_reference}</span>
+                                  {item.transaction_id && item.transaction_id !== 'N/A' && (
+                                    <div className="flex items-center gap-1.5 mt-0.5 font-mono text-[10px] text-gray-400">
+                                      <span className="select-all truncate max-w-[140px]" title={`Transaction ID: ${item.transaction_id}`}>
+                                        {item.transaction_id}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleCopyTxnId(item.transaction_id, e)}
+                                        className="text-gray-400 hover:text-[#004e59] transition-colors p-0.5 flex items-center justify-center shrink-0"
+                                        title="Copy Transaction ID"
+                                      >
+                                        {copiedTxnId === item.transaction_id ? (
+                                          <FiCheck size={11} className="text-emerald-500 animate-scale-up" />
+                                        ) : (
+                                          <FiCopy size={10} />
+                                        )}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleVerifyGateway(item, e)}
+                                        className="text-gray-400 hover:text-emerald-600 transition-colors p-0.5 flex items-center justify-center shrink-0"
+                                        title="Verify Live with Gateway API"
+                                      >
+                                        <FiCheckCircle size={11} className="hover:scale-110 transition-transform" />
+                                      </button>
+                                    </div>
+                                  )}
+                                </td>
                                 <td className="px-3 py-2 text-xs text-gray-700 max-w-[120px] truncate" title={item.guest_name}>{item.guest_name || 'N/A'}</td>
                                 <td className="px-3 py-2 text-xs text-gray-600 max-w-[150px] truncate" title={item.property_title}>{item.property_title || 'N/A'}</td>
                                 <td className="px-3 py-2 text-xs font-medium text-right text-gray-900">{parseFloat(item.booking_total).toFixed(2)}</td>
@@ -1466,6 +1667,141 @@ const AdminAccounting = () => {
                   className="px-5 py-2 text-sm font-bold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded-lg transition-colors shadow-md"
                 >
                   {updatePayoutStatusMutation.isLoading ? 'Processing...' : 'Complete Payout'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Gateway Verification Modal */}
+        {verifyingBooking && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm animate-fade-in" onClick={() => setVerifyingBooking(null)}>
+            <div 
+              className="bg-white/95 backdrop-blur-md rounded-3xl border border-gray-100 shadow-2xl w-full max-w-md overflow-hidden animate-scale-up"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                <div>
+                  <h3 className="text-sm font-bold text-gray-800 capitalize flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#004e59] animate-pulse"></span>
+                    Gateway Live Query
+                  </h3>
+                  <p className="text-[10px] text-gray-400 font-semibold mt-0.5">Booking Ref: {verifyingBooking.booking_reference}</p>
+                </div>
+                <button 
+                  onClick={() => setVerifyingBooking(null)}
+                  className="p-1 rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                >
+                  <FiX size={18} />
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="p-6">
+                {isVerifying && (
+                  <div className="flex flex-col items-center justify-center py-10 gap-3">
+                    <LoadingSpinner />
+                    <span className="text-xs font-semibold text-gray-500 animate-pulse">Contacting gateway secure server...</span>
+                  </div>
+                )}
+
+                {verificationError && (
+                  <div className="flex flex-col items-center text-center py-4">
+                    <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center text-rose-500 mb-3 border border-rose-100">
+                      <FiXCircle size={24} />
+                    </div>
+                    <h4 className="text-xs font-bold text-gray-800 mb-1">Gateway Connection Failed</h4>
+                    <p className="text-xxs text-gray-400 font-semibold max-w-xs leading-relaxed mb-4">{verificationError}</p>
+                    <button 
+                      onClick={(e) => handleVerifyGateway(verifyingBooking, e)}
+                      className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xxs font-bold transition-colors"
+                    >
+                      Retry Check
+                    </button>
+                  </div>
+                )}
+
+                {verificationData && (
+                  <div className="space-y-4">
+                    {/* Status Header Badge */}
+                    <div className="flex flex-col items-center text-center pb-4 border-b border-gray-100">
+                      <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-500 mb-2.5 border border-emerald-100">
+                        <FiCheckCircle size={26} />
+                      </div>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        {verificationData.status || 'Verified'}
+                      </span>
+                      <span className="text-[10px] text-gray-400 font-semibold mt-1">Live Payment Verified</span>
+                    </div>
+
+                    {/* Verification Info Grid */}
+                    <div className="grid grid-cols-2 gap-y-3.5 gap-x-2 text-left bg-gray-50/50 rounded-2xl p-4 border border-gray-150">
+                      <div>
+                        <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider">Gateway Txn ID</span>
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <span className="text-[10px] font-mono font-bold text-gray-800 select-all">{verificationData.transactionId}</span>
+                          <button 
+                            onClick={(e) => handleCopyTxnId(verificationData.transactionId, e)}
+                            className="text-gray-400 hover:text-gray-700 p-0.5"
+                          >
+                            {copiedTxnId === verificationData.transactionId ? <FiCheck size={10} className="text-emerald-600 animate-scale-up" /> : <FiCopy size={9} />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {verificationData.bankTranId && (
+                        <div>
+                          <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider">Bank Tran ID</span>
+                          <span className="block text-[10px] font-mono font-bold text-gray-800 mt-0.5 select-all">{verificationData.bankTranId}</span>
+                        </div>
+                      )}
+
+                      <div>
+                        <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider">Gateway Amount</span>
+                        <span className="block text-[11px] font-bold text-emerald-700 mt-0.5">
+                          BDT {verificationData.amount} {verificationData.currency || 'BDT'}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider">Booking Total</span>
+                        <span className="block text-[11px] font-bold text-gray-750 mt-0.5">
+                          BDT {verifyingBooking.booking_total}
+                        </span>
+                      </div>
+
+                      <div className="col-span-2 border-t border-gray-150 pt-2.5">
+                        <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider">Payer Details</span>
+                        <span className="block text-[10px] font-bold text-gray-800 mt-0.5 truncate" title={verificationData.payerDetails}>
+                          {verificationData.payerDetails || '—'}
+                        </span>
+                      </div>
+
+                      {verificationData.paymentTime && (
+                        <div className="col-span-2">
+                          <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider">Payment Timestamp</span>
+                          <span className="block text-[10px] font-bold text-gray-600 mt-0.5 font-mono">
+                            {verificationData.paymentTime}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <p className="text-[10px] text-gray-400 font-semibold text-center italic leading-normal">
+                      Reconciliation check completes successfully if amounts and Transaction IDs match.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-3 border-t border-gray-100 bg-gray-50/50 flex justify-end">
+                <button 
+                  onClick={() => setVerifyingBooking(null)}
+                  className="px-4 py-2 bg-[#004e59] hover:bg-[#004e59]/90 text-white rounded-lg text-xxs font-bold transition-all shadow-sm hover:shadow"
+                >
+                  Dismiss Check
                 </button>
               </div>
             </div>

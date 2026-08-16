@@ -4,6 +4,7 @@ import { FiCalendar, FiSearch, FiFilter, FiEye, FiUser, FiHome, FiDollarSign, Fi
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import { formatPrice } from '../../utils/textUtils';
+import AdminUserProfileModal from '../../components/admin/AdminUserProfileModal';
 import { format } from 'date-fns';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -166,6 +167,7 @@ const AdminBookings = () => {
 
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedUserProfile, setSelectedUserProfile] = useState(null);
   const [showDeductionModal, setShowDeductionModal] = useState(false);
   const [deductionAmount, setDeductionAmount] = useState('0');
   const [deductionReason, setDeductionReason] = useState('Full release');
@@ -874,8 +876,13 @@ const AdminBookings = () => {
                     <div className="space-y-1.5 my-2.5 text-xs">
                       <div>
                         <span className="font-semibold text-gray-400 block mb-0.5">Guest:</span>
-                        <span className="font-bold text-gray-800">{booking.guest_first_name} {booking.guest_last_name}</span>
-                        <span className="text-gray-500 block truncate">{booking.guest_email}</span>
+                        <span 
+                          onClick={() => setSelectedUserProfile({ userId: booking.guest_user_id })}
+                          className="font-bold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                        >
+                          {booking.guest_first_name} {booking.guest_last_name}
+                        </span>
+                        <span className="text-gray-550 block truncate font-medium">{booking.guest_email}</span>
                       </div>
                       <div>
                         <span className="font-semibold text-gray-400 block mb-0.5">Property:</span>
@@ -883,6 +890,15 @@ const AdminBookings = () => {
                         <span className="text-gray-500 flex items-center gap-1 mt-0.5">
                           <FiMapPin className="w-3.5 h-3.5 shrink-0" /> {booking.property_city}
                         </span>
+                        <div className="mt-1 text-[11px]">
+                          <span className="text-gray-400">Host: </span>
+                          <span 
+                            onClick={() => setSelectedUserProfile({ userId: booking.host_user_id })}
+                            className="font-bold text-blue-650 hover:text-blue-800 hover:underline cursor-pointer"
+                          >
+                            {booking.host_first_name} {booking.host_last_name}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
@@ -975,7 +991,10 @@ const AdminBookings = () => {
                               </span>
                             </div>
                             <div className="sm:ml-3">
-                              <div className="text-sm font-medium text-gray-900 leading-tight">
+                              <div 
+                                onClick={() => setSelectedUserProfile({ userId: booking.guest_user_id })}
+                                className="text-sm font-semibold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer leading-tight"
+                              >
                                 {booking.guest_first_name} {booking.guest_last_name}
                               </div>
                               <div className="text-xs text-gray-500 break-all">
@@ -990,6 +1009,15 @@ const AdminBookings = () => {
                             <div className="text-xs text-gray-500 flex items-center mt-1.5">
                               <FiMapPin className="w-3 h-3 mr-1 shrink-0" />
                               <span className="truncate whitespace-normal" title={booking.property_city}>{booking.property_city}</span>
+                            </div>
+                            <div className="mt-1 text-xs text-gray-500">
+                              <span className="text-gray-400">Host: </span>
+                              <span 
+                                onClick={() => setSelectedUserProfile({ userId: booking.host_user_id })}
+                                className="font-semibold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                              >
+                                {booking.host_first_name} {booking.host_last_name}
+                              </span>
                             </div>
                           </div>
                         </td>
@@ -1395,6 +1423,15 @@ const AdminBookings = () => {
               </div>
             </div>
           </div>
+        )}
+
+        {selectedUserProfile && (
+          <AdminUserProfileModal
+            userId={selectedUserProfile.userId}
+            phone={selectedUserProfile.phone}
+            email={selectedUserProfile.email}
+            onClose={() => setSelectedUserProfile(null)}
+          />
         )}
       </div>
       {/* Admin Security Deduction Modal */}

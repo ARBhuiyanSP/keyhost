@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery } from 'react-query';
+import { useFbPixel } from '../hooks/useFbPixel';
 import { FiSearch, FiMapPin, FiFilter, FiGrid, FiList, FiStar, FiWifi, FiCar, FiUtensils, FiHeart, FiArrowLeft } from 'react-icons/fi';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -17,6 +18,7 @@ import { sanitizeText, formatPrice } from '../utils/textUtils';
 
 const Properties = () => {
   const navigate = useNavigate();
+  const { trackSearch } = useFbPixel();
   const { isAuthenticated, user } = useAuthStore();
   const { showSuccess, showError } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -51,6 +53,17 @@ const Properties = () => {
       select: (response) => response.data?.data || { properties: [], pagination: {} },
     }
   );
+
+  // Track Meta Pixel Search event
+  useEffect(() => {
+    if (propertiesData) {
+      const searchString = filters.city || 'all';
+      const checkinDate = filters.check_in_date || '';
+      const checkoutDate = filters.check_out_date || '';
+      const guests = parseInt(filters.min_guests) || 1;
+      trackSearch(searchString, checkinDate, checkoutDate, guests);
+    }
+  }, [propertiesData, filters.city, filters.check_in_date, filters.check_out_date, filters.min_guests, trackSearch]);
 
   // Fetch amenities
   const { data: amenitiesData } = useQuery(

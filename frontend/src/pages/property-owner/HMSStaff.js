@@ -17,16 +17,34 @@ const STAFF_ROLES = [
     { value: 'other', label: 'Other' }
 ];
 
-const AVAILABLE_PERMISSIONS = [
-    { key: 'manage_properties', label: 'Manage Properties & Bookings' },
-    { key: 'manage_inventory', label: 'Manage Room/Flat Inventory' },
-    { key: 'manage_reservations', label: 'Manage HMS/PMS Reservations' },
-    { key: 'manage_housekeeping', label: 'Manage Housekeeping & Cleaning' },
-    { key: 'manage_food_beverage', label: 'Manage Food & Beverage' },
-    { key: 'manage_hr', label: 'Manage Human Resources (HR)' },
-    { key: 'manage_accounts', label: 'Manage Accounts & Finance' },
-    { key: 'manage_billing', label: 'Manage PMS/HMS Billing & Subscriptions' },
-    { key: 'view_analytics', label: 'View Dashboard & Financial Reports' }
+const STAFF_PERMISSION_GROUPS = [
+  {
+    title: '🏠 Property & Booking Management',
+    key: 'properties',
+    permissions: [
+      { key: 'manage_properties', label: 'Manage Properties & Bookings' },
+      { key: 'manage_inventory', label: 'Manage Room/Flat Inventory' },
+      { key: 'manage_reservations', label: 'Manage HMS/PMS Reservations' }
+    ]
+  },
+  {
+    title: '🏨 HMS Operations',
+    key: 'hms',
+    permissions: [
+      { key: 'manage_housekeeping', label: 'Manage Housekeeping & Cleaning' },
+      { key: 'manage_food_beverage', label: 'Manage Food & Beverage' }
+    ]
+  },
+  {
+    title: '💰 HR, Finance & Business',
+    key: 'business',
+    permissions: [
+      { key: 'manage_hr', label: 'Manage Human Resources (HR)' },
+      { key: 'manage_accounts', label: 'Manage Accounts & Finance' },
+      { key: 'manage_billing', label: 'Manage PMS/HMS Billing & Subscriptions' },
+      { key: 'view_analytics', label: 'View Dashboard & Financial Reports' }
+    ]
+  }
 ];
 
 const HMSStaff = () => {
@@ -431,26 +449,88 @@ const HMSStaff = () => {
 
                             {/* Role Permissions Section */}
                             <div className="border-t border-gray-100 pt-6">
-                                <h3 className="text-base font-bold text-[#E41D57] mb-2">Role Permissions</h3>
-                                <p className="text-xs text-gray-500 mb-4">Toggle checkmarks to authorize access to specific hotel/property management features.</p>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {AVAILABLE_PERMISSIONS.map(p => (
-                                        <label key={p.key} className="flex items-start gap-3 p-3.5 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors border border-transparent hover:border-gray-200">
-                                            <input
-                                                type="checkbox"
-                                                checked={!!formData.permissions?.[p.key]}
-                                                onChange={(e) => {
-                                                    const updatedPerms = {
-                                                        ...(formData.permissions || {}),
-                                                        [p.key]: e.target.checked
-                                                    };
-                                                    setFormData({ ...formData, permissions: updatedPerms });
-                                                }}
-                                                className="w-5 h-5 accent-primary-600 border-gray-300 rounded mt-0.5"
-                                            />
-                                            <span className="text-sm font-semibold text-gray-700">{p.label}</span>
-                                        </label>
-                                    ))}
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                                    <div>
+                                        <h3 className="text-base font-bold text-[#E41D57] flex items-center gap-2">
+                                            Role Permissions
+                                        </h3>
+                                        <p className="text-xs text-gray-505 mt-0.5">Toggle checkmarks to authorize access to specific hotel/property management features.</p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            id="staff-check-all"
+                                            checked={STAFF_PERMISSION_GROUPS.flatMap(g => g.permissions).every(p => !!formData.permissions?.[p.key])}
+                                            onChange={(e) => {
+                                                const checked = e.target.checked;
+                                                const updated = {};
+                                                STAFF_PERMISSION_GROUPS.flatMap(g => g.permissions).forEach(p => {
+                                                    updated[p.key] = checked;
+                                                });
+                                                setFormData({ ...formData, permissions: updated });
+                                            }}
+                                            className="w-4.5 h-4.5 rounded border-gray-300 text-primary-655 focus:ring-primary-500 cursor-pointer"
+                                        />
+                                        <label htmlFor="staff-check-all" className="text-sm font-bold text-red-600 cursor-pointer select-none">Check All</label>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-6">
+                                    {STAFF_PERMISSION_GROUPS.map((group) => {
+                                        const groupKeys = group.permissions.map(p => p.key);
+                                        const isAllGroupChecked = groupKeys.every(k => !!formData.permissions?.[k]);
+
+                                        return (
+                                            <div key={group.key} className="border border-gray-150 rounded-xl overflow-hidden shadow-sm bg-white">
+                                                {/* Group Header */}
+                                                <div className="bg-gray-50 px-5 py-2.5 border-b border-gray-150 flex items-center justify-between flex-wrap gap-2">
+                                                    <h4 className="text-xs font-bold text-gray-700">{group.title}</h4>
+                                                    <div className="flex items-center gap-2">
+                                                        <input
+                                                            type="checkbox"
+                                                            id={`group-toggle-${group.key}`}
+                                                            checked={isAllGroupChecked}
+                                                            onChange={(e) => {
+                                                                const checked = e.target.checked;
+                                                                const updated = { ...(formData.permissions || {}) };
+                                                                groupKeys.forEach(k => {
+                                                                    updated[k] = checked;
+                                                                });
+                                                                setFormData({ ...formData, permissions: updated });
+                                                            }}
+                                                            className="w-4 h-4 rounded border-gray-300 text-primary-655 focus:ring-primary-500 cursor-pointer"
+                                                        />
+                                                        <label htmlFor={`group-toggle-${group.key}`} className="text-[11px] font-bold text-primary-600 cursor-pointer select-none">
+                                                            Check All in {group.title.split(' ').slice(1).join(' ')}
+                                                        </label>
+                                                    </div>
+                                                </div>
+
+                                                {/* Checkboxes Grid */}
+                                                <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
+                                                    {group.permissions.map((p) => (
+                                                        <label key={p.key} className="flex items-start space-x-3 cursor-pointer group select-none">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={!!formData.permissions?.[p.key]}
+                                                                onChange={(e) => {
+                                                                    const updatedPerms = {
+                                                                        ...(formData.permissions || {}),
+                                                                        [p.key]: e.target.checked
+                                                                    };
+                                                                    setFormData({ ...formData, permissions: updatedPerms });
+                                                                }}
+                                                                className="mt-0.5 w-4.5 h-4.5 rounded border-gray-300 text-primary-655 focus:ring-primary-500 transition-colors"
+                                                            />
+                                                            <span className="text-xs font-semibold text-gray-700 group-hover:text-gray-900 leading-normal font-sans">
+                                                                {p.label}
+                                                            </span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
 

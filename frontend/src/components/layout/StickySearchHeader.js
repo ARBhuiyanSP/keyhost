@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
-import { FiSearch, FiUser, FiLogOut, FiSettings, FiHeart, FiBookOpen, FiChevronDown, FiDollarSign, FiChevronLeft, FiMinus, FiPlus, FiMapPin, FiX, FiGlobe, FiCalendar, FiGrid } from 'react-icons/fi';
+import { FiSearch, FiUser, FiLogOut, FiSettings, FiHeart, FiBookOpen, FiChevronDown, FiDollarSign, FiChevronLeft, FiMinus, FiPlus, FiMapPin, FiX, FiGlobe, FiCalendar, FiGrid, FiHome } from 'react-icons/fi';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { useQuery } from 'react-query';
@@ -1691,17 +1691,55 @@ const StickySearchHeader = ({
                           </button>
                         )}
                         <div className="py-2">
-                          {getRoleBasedMenu().map((item) => (
-                            <Link
-                              key={item.name}
-                              to={item.path}
-                              onClick={() => setIsProfileOpen(false)}
-                              className="flex items-center px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                            >
-                              <item.icon className="w-4 h-4 mr-3" />
-                              {item.name}
-                            </Link>
-                          ))}
+                          {isAdmin() ? (
+                            <>
+                              <Link
+                                to="/admin"
+                                onClick={() => {
+                                  setIsProfileOpen(false);
+                                  localStorage.setItem('dashboard_role_mode', 'admin');
+                                }}
+                                className="flex items-center px-4 py-3 text-sm text-indigo-600 font-semibold hover:bg-gray-50 transition-colors"
+                              >
+                                <FiSettings className="w-4 h-4 mr-3 text-indigo-500" />
+                                🛡️ Admin Panel
+                              </Link>
+                              <Link
+                                to="/property-owner"
+                                onClick={() => {
+                                  setIsProfileOpen(false);
+                                  localStorage.setItem('dashboard_role_mode', 'host');
+                                }}
+                                className="flex items-center px-4 py-3 text-sm text-blue-600 font-semibold hover:bg-gray-50 transition-colors"
+                              >
+                                <FiHome className="w-4 h-4 mr-3 text-blue-500" />
+                                🏡 Host Dashboard
+                              </Link>
+                              <Link
+                                to="/guest"
+                                onClick={() => {
+                                  setIsProfileOpen(false);
+                                  localStorage.setItem('dashboard_role_mode', 'guest');
+                                }}
+                                className="flex items-center px-4 py-3 text-sm text-emerald-600 font-semibold hover:bg-gray-50 transition-colors"
+                              >
+                                <FiUser className="w-4 h-4 mr-3 text-emerald-500" />
+                                🧳 Guest Portal
+                              </Link>
+                            </>
+                          ) : (
+                            getRoleBasedMenu().map((item) => (
+                              <Link
+                                key={item.name}
+                                to={item.path}
+                                onClick={() => setIsProfileOpen(false)}
+                                className="flex items-center px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                              >
+                                <item.icon className="w-4 h-4 mr-3" />
+                                {item.name}
+                              </Link>
+                            ))
+                          )}
                         </div>
                         <div className="border-t border-gray-200 pt-2">
                           <button

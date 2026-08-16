@@ -6,6 +6,7 @@ const { syncPaymentToHMSAccounts } = require('../utils/hms-sync');
 const { syncHmsAccessForHost } = require('../utils/hms-helper');
 const { verifyToken } = require('../middleware/auth');
 const { sendBookingPaidSms } = require('../utils/sms');
+const { syncCommissionForBooking } = require('../utils/commission-sync');
 const router = express.Router();
 
 // Utility function to get SSL config
@@ -38,7 +39,7 @@ router.post('/hms-request', verifyToken, async (req, res) => {
 
         // Store order securely, we link to host_id = req.user.id
         await pool.execute(
-            `INSERT INTO orders (tran_id, amount, status, package_id, host_id) VALUES (?, ?, ?, ?, ?)`,
+            `INSERT INTO orders (tran_id, amount, status, package_id, host_id, payment_method) VALUES (?, ?, ?, ?, ?, 'SSLCommerz')`,
             [tran_id, amount, 'PENDING', package_id, req.user.id]
         );
 
@@ -151,6 +152,20 @@ router.post('/ssl-request', verifyToken, async (req, res) => {
     }
 });
 
+// Server-to-Server Validation with SSLCommerz (tells SSLCommerz that your website validated the order)
+const validateSSLTransaction = async (val_id) => {
+    if (!val_id) return;
+    try {
+        const { store_id, store_password, is_live } = await getSSLConfig();
+        const sslcz = new SSLCommerzPayment(store_id, store_password, is_live);
+        const validationData = await sslcz.validate({ val_id });
+        console.log(`[SSL Validation Server API] Transaction val_id: ${val_id} validated successfully with SSLCommerz`, validationData);
+        return validationData;
+    } catch (valErr) {
+        console.error(`[SSL Validation Server API Error] val_id: ${val_id}:`, valErr.message);
+    }
+};
+
 // Callback Routes
 router.post('/ssl-success', async (req, res) => {
     const { tran_id, val_id, bank_tran_id } = req.body;
@@ -158,7 +173,35 @@ router.post('/ssl-success', async (req, res) => {
 
     if (tran_id) {
         try {
-            await pool.execute(`UPDATE orders SET status = 'Success', val_id = ? WHERE tran_id = ?`, [val_id, tran_id]);
+            let validationData = null;
+            // Inform SSLCommerz servers that our site validated this transaction
+            if (val_id) {
+                try {
+                    validationData = await validateSSLTransaction(val_id);
+                } catch (valErr) {
+                    console.error('SSL Transaction validation failed in callback:', valErr.message);
+                }
+            }
+
+            let gatewayFee = 0.00;
+            let gatewayChannel = 'SSLCommerz';
+            if (validationData) {
+                const grossAmount = parseFloat(validationData.amount || 0);
+                const storeAmount = parseFloat(validationData.store_amount || 0);
+                if (grossAmount > 0 && storeAmount > 0) {
+                    gatewayFee = Math.max(0, grossAmount - storeAmount);
+                }
+                gatewayChannel = validationData.card_type || 'SSLCommerz';
+            }
+
+            await pool.execute(`
+              UPDATE orders 
+              SET status = 'Success', 
+                  val_id = ?, 
+                  gateway_fee = ?, 
+                  gateway_channel = ? 
+              WHERE tran_id = ?
+            `, [val_id, gatewayFee, gatewayChannel, tran_id]);
 
             const [orders] = await pool.execute(`SELECT booking_id, package_id, host_id, amount, points_to_redeem FROM orders WHERE tran_id = ?`, [tran_id]);
             
@@ -221,7 +264,7 @@ router.post('/ssl-success', async (req, res) => {
                 }
 
                 try {
-                    await sendBookingPaidSms(booking_id);
+                    await sendBookingPaidSms(booking_id, tran_id);
                 } catch (smsErr) {
                     console.error(`Failed to send payment confirmation SMS for booking ${booking_id}:`, smsErr.message);
                 }
@@ -250,17 +293,30 @@ router.post('/ssl-success', async (req, res) => {
                         }
                     }
 
+                    let gatewayFee = 0.00;
+                    let gatewayChannel = 'SSLCommerz';
+                    if (validationData) {
+                        const grossAmount = parseFloat(validationData.amount || amount || 0);
+                        const storeAmount = parseFloat(validationData.store_amount || 0);
+                        if (storeAmount > 0 && grossAmount >= storeAmount) {
+                            gatewayFee = grossAmount - storeAmount;
+                        }
+                        gatewayChannel = validationData.card_type || 'SSLCommerz';
+                    }
+
                 const [result] = await pool.execute(`
                 INSERT INTO payments (
                   booking_id, payment_reference, payment_method, payment_type, 
-                  amount, dr_amount, cr_amount, transaction_type, status, notes,
+                  amount, dr_amount, cr_amount, gateway_fee, gateway_channel, transaction_type, status, notes,
                   payment_date, created_at, updated_at, gateway_transaction_id, bank_tran_id
-                ) VALUES (?, ?, 'sslcommerz', 'booking', ?, 0, ?, 'guest_payment', 'completed', ?, NOW(), NOW(), NOW(), ?, ?)
+                ) VALUES (?, ?, 'sslcommerz', 'booking', ?, 0, ?, ?, ?, 'guest_payment', 'completed', ?, NOW(), NOW(), NOW(), ?, ?)
               `, [
                     booking_id, 
                     crReference, 
                     amount, 
                     amount, 
+                    gatewayFee,
+                    gatewayChannel,
                     `Guest payment received via SSLCommerz - Total paid: ৳${amount}${pointsDiscount > 0 ? `, Points discount: ৳${pointsDiscount.toFixed(2)}` : ''}`,
                     tran_id,
                     bank_tran_id || null
@@ -291,6 +347,9 @@ router.post('/ssl-success', async (req, res) => {
                     `, [booking_id, autoDrRef, amount, amount, `Automatic DR entry for successful payment - ৳${amount}`]);
                 }
               
+                    // Recalculate commission based on total paid across ALL payments
+                    await syncCommissionForBooking(booking_id);
+
                     await pool.execute(`
                       UPDATE admin_earnings 
                       SET payment_status = 'paid', 
@@ -328,6 +387,19 @@ router.post('/ssl-success', async (req, res) => {
                         }
                     } catch (pointsError) {
                         console.error('Points awarding error in SSLCommerz:', pointsError);
+                    }
+
+                    try {
+                        const ownerPayoutRoutes = require('./admin/admin-owner-payouts');
+                        const [propRows] = await pool.execute(
+                            `SELECT p.owner_id FROM bookings b JOIN properties p ON b.property_id = p.id WHERE b.id = ?`,
+                            [booking_id]
+                        );
+                        if (propRows.length > 0 && ownerPayoutRoutes.syncOwnerBalances) {
+                            await ownerPayoutRoutes.syncOwnerBalances(propRows[0].owner_id);
+                        }
+                    } catch (syncErr) {
+                        console.error('Owner balance sync error in SSLCommerz callback:', syncErr);
                     }
                 }
                }
@@ -406,7 +478,33 @@ router.post('/ssl-ipn', async (req, res) => {
     const { tran_id, val_id, status } = req.body;
     if (tran_id && status === 'VALID') {
         try {
-            await pool.execute(`UPDATE orders SET status = 'Success', val_id = ? WHERE tran_id = ?`, [val_id, tran_id]);
+            let validationData = null;
+            if (val_id) {
+                try {
+                    validationData = await validateSSLTransaction(val_id);
+                } catch (valErr) {
+                    console.error('SSL Transaction validation failed in IPN:', valErr.message);
+                }
+            }
+            let gatewayFee = 0.00;
+            let gatewayChannel = 'SSLCommerz';
+            if (validationData) {
+                const grossAmount = parseFloat(validationData.amount || 0);
+                const storeAmount = parseFloat(validationData.store_amount || 0);
+                if (grossAmount > 0 && storeAmount > 0) {
+                    gatewayFee = Math.max(0, grossAmount - storeAmount);
+                }
+                gatewayChannel = validationData.card_type || 'SSLCommerz';
+            }
+
+            await pool.execute(`
+              UPDATE orders 
+              SET status = 'Success', 
+                  val_id = ?, 
+                  gateway_fee = ?, 
+                  gateway_channel = ? 
+              WHERE tran_id = ?
+            `, [val_id, gatewayFee, gatewayChannel, tran_id]);
             
             const [orders] = await pool.execute(`SELECT booking_id, package_id, host_id, amount, points_to_redeem FROM orders WHERE tran_id = ?`, [tran_id]);
             if (orders.length > 0) {
@@ -465,17 +563,30 @@ router.post('/ssl-ipn', async (req, res) => {
                         }
                     }
 
+                let gatewayFee = 0.00;
+                let gatewayChannel = 'SSLCommerz';
+                if (validationData) {
+                    const grossAmount = parseFloat(validationData.amount || amount || 0);
+                    const storeAmount = parseFloat(validationData.store_amount || 0);
+                    if (storeAmount > 0 && grossAmount >= storeAmount) {
+                        gatewayFee = grossAmount - storeAmount;
+                    }
+                    gatewayChannel = validationData.card_type || 'SSLCommerz';
+                }
+
                 const [result] = await pool.execute(`
                 INSERT INTO payments (
                   booking_id, payment_reference, payment_method, payment_type, 
-                  amount, dr_amount, cr_amount, transaction_type, status, notes,
+                  amount, dr_amount, cr_amount, gateway_fee, gateway_channel, transaction_type, status, notes,
                   payment_date, created_at, updated_at, gateway_transaction_id
-                ) VALUES (?, ?, 'sslcommerz', 'booking', ?, 0, ?, 'guest_payment', 'completed', ?, NOW(), NOW(), NOW(), ?)
+                ) VALUES (?, ?, 'sslcommerz', 'booking', ?, 0, ?, ?, ?, 'guest_payment', 'completed', ?, NOW(), NOW(), NOW(), ?)
               `, [
                     booking_id, 
                     crReference, 
                     amount, 
                     amount, 
+                    gatewayFee,
+                    gatewayChannel,
                     `Guest payment received via SSLCommerz - Total paid: ৳${amount}${pointsDiscount > 0 ? `, Points discount: ৳${pointsDiscount.toFixed(2)}` : ''}`,
                     tran_id
                 ]);
@@ -488,6 +599,9 @@ router.post('/ssl-ipn', async (req, res) => {
                 } catch (hmsError) {
                     console.error('HMS Sync error in SSL IPN:', hmsError);
                 }
+
+                    // Recalculate commission based on total paid across ALL payments
+                    await syncCommissionForBooking(booking_id);
 
                     await pool.execute(`
                       UPDATE admin_earnings 
@@ -573,6 +687,8 @@ router.get('/hms/payment-info/:token', async (req, res) => {
                     + COALESCE((SELECT SUM(amount) FROM hms_bills WHERE booking_id = b.id), 0)
                     - COALESCE((SELECT SUM(cr_amount) FROM payments WHERE booking_id = b.id AND status = 'completed'), 0)
                 ) as net_due,
+                b.payment_link_expires_at,
+                b.payment_link_custom_amount,
                 b.payment_status, b.guest_name, b.guest_email, b.guest_phone,
                 p.title as property_title, p.address as property_address,
                 r.room_number, r.room_type
@@ -583,16 +699,36 @@ router.get('/hms/payment-info/:token', async (req, res) => {
         `, [token]);
 
         if (rows.length === 0) {
-            return res.status(404).json(formatResponse(false, 'Payment link invalid or expired'));
+            return res.status(404).json(formatResponse(false, 'Payment link invalid or not found.'));
         }
 
-        const netDue = Math.max(0, parseFloat(rows[0].net_due || 0));
+        const b = rows[0];
+
+        // Check link expiration
+        if (b.payment_link_expires_at && new Date(b.payment_link_expires_at) < new Date()) {
+            return res.status(400).json(formatResponse(false, 'This payment link has expired. Please contact hotel front desk for a new link.'));
+        }
+
+        const netDue = Math.max(0, parseFloat(b.net_due || 0));
 
         if (netDue <= 0) {
-            return res.json(formatResponse(true, 'Already paid', { booking: { ...rows[0], total_amount: 0, alreadyPaid: true } }));
+            return res.json(formatResponse(true, 'Already paid', { booking: { ...b, total_amount: 0, alreadyPaid: true } }));
         }
 
-        res.json(formatResponse(true, 'Payment info retrieved', { booking: { ...rows[0], total_amount: netDue } }));
+        // Custom amount target if specified and valid
+        let targetAmount = netDue;
+        if (b.payment_link_custom_amount && parseFloat(b.payment_link_custom_amount) > 0) {
+            targetAmount = Math.min(netDue, parseFloat(b.payment_link_custom_amount));
+        }
+
+        res.json(formatResponse(true, 'Payment info retrieved', { 
+            booking: { 
+                ...b, 
+                total_amount: targetAmount,
+                full_due_amount: netDue,
+                is_custom_amount: !!b.payment_link_custom_amount
+            } 
+        }));
     } catch (error) {
         res.status(500).json(formatResponse(false, 'Error fetching payment info'));
     }

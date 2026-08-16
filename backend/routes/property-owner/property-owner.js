@@ -12,7 +12,7 @@ const {
   validateId,
   validatePagination
 } = require('../../middleware/validation');
-const { verifyToken, requirePropertyOwner, requireHMSAccess, requireHMSPermission } = require('../../middleware/auth');
+const { verifyToken, requirePropertyOwner, requireHMSAccess, requireHMSPermission, requirePlatformPermission } = require('../../middleware/auth');
 const { processBase64Image } = require('../../utils/imageProcessor');
 const { syncPaymentToHMSAccounts } = require('../../utils/hms-sync');
 const { syncHmsAccessForHost } = require('../../utils/hms-helper');
@@ -48,9 +48,9 @@ router.use(verifyToken);
 router.use(requirePropertyOwner);
 
 // Mount sub-routes
-router.use('/earnings', earningsRoutes);
-router.use('/hms/maintenance', maintenanceRoutes);
-router.use('/hms', hmsMgmtRoutes);
+router.use('/earnings', requirePlatformPermission('can_view_earnings'), earningsRoutes);
+router.use('/hms/maintenance', requirePlatformPermission('can_use_hms'), maintenanceRoutes);
+router.use('/hms', requirePlatformPermission('can_use_hms'), hmsMgmtRoutes);
 
 // Get property owner dashboard
 router.get('/dashboard', async (req, res) => {
@@ -141,7 +141,7 @@ router.get('/dashboard', async (req, res) => {
 });
 
 // Get list of all properties (id, title, city) for owner dropdowns
-router.get('/properties/list', async (req, res) => {
+router.get('/properties/list', requirePlatformPermission('can_list_properties'), async (req, res) => {
   try {
     const [owners] = await pool.execute(
       'SELECT id FROM property_owners WHERE user_id = ?',
@@ -167,7 +167,7 @@ router.get('/properties/list', async (req, res) => {
 });
 
 // Get property owner's properties
-router.get('/properties', validatePagination, async (req, res) => {
+router.get('/properties', requirePlatformPermission('can_list_properties'), validatePagination, async (req, res) => {
   try {
     const { page = 1, limit = 10, status, search } = req.query;
     const offset = (page - 1) * limit;
@@ -265,7 +265,7 @@ router.get('/properties', validatePagination, async (req, res) => {
 });
 
 // Get single property details
-router.get('/properties/:id', validateId, async (req, res) => {
+router.get('/properties/:id', requirePlatformPermission('can_list_properties'), validateId, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -331,7 +331,7 @@ router.get('/properties/:id', validateId, async (req, res) => {
 });
 
 // Create new property
-router.post('/properties', requireHMSPermission('manage_properties'), async (req, res) => {
+router.post('/properties', requirePlatformPermission('can_list_properties'), requireHMSPermission('manage_properties'), async (req, res) => {
   try {
     const {
       title,
@@ -593,7 +593,7 @@ router.post('/properties', requireHMSPermission('manage_properties'), async (req
 });
 
 // Update property
-router.put('/properties/:id', requireHMSPermission('manage_properties'), validateId, async (req, res) => {
+router.put('/properties/:id', requirePlatformPermission('can_list_properties'), requireHMSPermission('manage_properties'), validateId, async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
@@ -820,7 +820,7 @@ router.put('/properties/:id', requireHMSPermission('manage_properties'), validat
 });
 
 // Delete property
-router.delete('/properties/:id', requireHMSPermission('manage_properties'), validateId, async (req, res) => {
+router.delete('/properties/:id', requirePlatformPermission('can_list_properties'), requireHMSPermission('manage_properties'), validateId, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -913,7 +913,7 @@ router.delete('/properties/:id', requireHMSPermission('manage_properties'), vali
 });
 
 // Toggle/Update property status by owner
-router.patch('/properties/:id/status', requireHMSPermission('manage_properties'), validateId, async (req, res) => {
+router.patch('/properties/:id/status', requirePlatformPermission('can_list_properties'), requireHMSPermission('manage_properties'), validateId, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -992,7 +992,7 @@ router.patch('/properties/:id/status', requireHMSPermission('manage_properties')
 });
 
 // Get property owner's bookings
-router.get('/bookings', requireHMSPermission('manage_reservations'), validatePagination, async (req, res) => {
+router.get('/bookings', requirePlatformPermission('can_use_pms'), requireHMSPermission('manage_reservations'), validatePagination, async (req, res) => {
   try {
     const {
       page = 1,
@@ -1001,7 +1001,8 @@ router.get('/bookings', requireHMSPermission('manage_reservations'), validatePag
       search,
       property_id,
       startDate,
-      endDate
+      endDate,
+      report_mode
     } = req.query;
     const offset = (page - 1) * limit;
 
@@ -1034,9 +1035,15 @@ router.get('/bookings', requireHMSPermission('manage_reservations'), validatePag
     }
 
     if (search) {
-      whereClause += ' AND (b.booking_reference LIKE ? OR p.title LIKE ? OR b.guest_name LIKE ?)';
-      const searchTerm = `%${search}%`;
-      queryParams.push(searchTerm, searchTerm, searchTerm);
+      if (report_mode === 'true') {
+        whereClause += ' AND (b.booking_reference LIKE ? OR p.title LIKE ? OR b.guest_name LIKE ? OR COALESCE(pay.payment_reference, pay.gateway_transaction_id) LIKE ?)';
+        const searchTerm = `%${search}%`;
+        queryParams.push(searchTerm, searchTerm, searchTerm, searchTerm);
+      } else {
+        whereClause += ' AND (b.booking_reference LIKE ? OR p.title LIKE ? OR b.guest_name LIKE ?)';
+        const searchTerm = `%${search}%`;
+        queryParams.push(searchTerm, searchTerm, searchTerm);
+      }
     }
 
     if (property_id && property_id !== 'all') {
@@ -1055,69 +1062,191 @@ router.get('/bookings', requireHMSPermission('manage_reservations'), validatePag
     }
 
     // Get total count
-    const [countResult] = await pool.execute(`
-      SELECT COUNT(*) as total 
-      FROM bookings b 
-      JOIN properties p ON b.property_id = p.id
-      ${whereClause}
-    `, queryParams);
+    let countSql = '';
+    if (report_mode === 'true') {
+      countSql = `
+        SELECT COUNT(*) as total 
+        FROM bookings b 
+        JOIN properties p ON b.property_id = p.id
+        LEFT JOIN payments pay ON pay.booking_id = b.id 
+          AND pay.status = 'completed' 
+          AND pay.transaction_type = 'guest_payment' 
+          AND pay.cr_amount > 0
+        ${whereClause}
+      `;
+    } else {
+      countSql = `
+        SELECT COUNT(*) as total 
+        FROM bookings b 
+        JOIN properties p ON b.property_id = p.id
+        ${whereClause}
+      `;
+    }
 
+    const [countResult] = await pool.execute(countSql, queryParams);
     const total = countResult[0].total;
 
     // Get bookings
-    const [bookings] = await pool.query(`
-      SELECT 
-        b.id, b.booking_reference, b.guest_id, b.property_id,
-        b.check_in_date, b.check_out_date, b.check_in_time, b.check_out_time,
-        b.number_of_guests, b.number_of_children, b.number_of_infants,
-        b.base_price, b.cleaning_fee, b.security_deposit, b.extra_guest_fee,
-        b.service_fee, b.tax_amount, b.total_amount, b.currency,
-        b.special_requests, b.coupon_code, b.discount_amount,
-        b.guest_email, b.guest_phone,
-        b.booking_source, b.status, b.payment_status,
-        b.confirmed_at, b.cancelled_at, b.cancellation_reason,
-        b.created_at, b.updated_at, b.hms_room_id,
-        b.security_deposit_status, b.security_deposit_claim_amount, 
-        b.security_deposit_deduction_amount,
-        b.security_deposit_claim_reason, b.security_deposit_claim_at,
-        p.title as property_title,
-        p.address as property_address,
-        p.city as property_city,
-        p.state as property_state,
-        p.is_hms_enabled,
-        hr.room_number as hms_room_number,
-        hr.room_type as hms_room_type,
-        mi.image_url as property_image,
-        u.first_name as guest_first_name,
-        u.last_name as guest_last_name,
-        u.email as guest_email_from_user,
-        COALESCE(
-          NULLIF(NULLIF(b.guest_name, ''), 'undefined undefined'),
-          CONCAT(u.first_name, ' ', u.last_name)
-        ) as guest_name,
-        COALESCE((
-          SELECT SUM(cr_amount) 
-          FROM payments 
-          WHERE booking_id = b.id 
-          AND status = 'completed'
-        ), 0) as paid_amount,
-        (b.total_amount - COALESCE((
-          SELECT SUM(cr_amount) 
-          FROM payments 
-          WHERE booking_id = b.id 
-          AND status = 'completed'
-        ), 0)) as due_amount
-      FROM bookings b
-      JOIN properties p ON b.property_id = p.id
-      LEFT JOIN users u ON b.guest_id = u.id
-      LEFT JOIN hms_rooms hr ON b.hms_room_id = hr.id
-      LEFT JOIN property_images mi ON p.id = mi.property_id AND mi.image_type = 'main'
-      ${whereClause}
-      ORDER BY b.created_at DESC
-      LIMIT ? OFFSET ?
-    `, [...queryParams, parseInt(limit), parseInt(offset)]);
+    let bookingsSql = '';
+    if (report_mode === 'true') {
+      bookingsSql = `
+        SELECT 
+          COALESCE(pay.id, b.id) as id,
+          b.id as booking_original_id,
+          b.booking_reference,
+          b.guest_id,
+          b.property_id,
+          b.check_in_date,
+          b.check_out_date,
+          b.check_in_time,
+          b.check_out_time,
+          b.number_of_guests,
+          b.number_of_children,
+          b.number_of_infants,
+          b.base_price,
+          b.cleaning_fee,
+          b.security_deposit,
+          b.extra_guest_fee,
+          b.service_fee,
+          b.tax_amount,
+          COALESCE(pay.cr_amount, b.total_amount) as total_amount,
+          b.currency,
+          b.special_requests,
+          b.coupon_code,
+          b.discount_amount,
+          b.guest_email,
+          b.guest_phone,
+          b.booking_source,
+          b.status,
+          b.payment_status,
+          b.confirmed_at,
+          b.cancelled_at,
+          b.cancellation_reason,
+          b.created_at,
+          b.updated_at,
+          b.hms_room_id,
+          b.security_deposit_status,
+          b.security_deposit_claim_amount, 
+          b.security_deposit_deduction_amount,
+          b.security_deposit_claim_reason,
+          b.security_deposit_claim_at,
+          p.title as property_title,
+          p.address as property_address,
+          p.city as property_city,
+          p.state as property_state,
+          p.is_hms_enabled,
+          hr.room_number as hms_room_number,
+          hr.room_type as hms_room_type,
+          mi.image_url as property_image,
+          u.first_name as guest_first_name,
+          u.last_name as guest_last_name,
+          u.email as guest_email_from_user,
+          COALESCE(
+            NULLIF(NULLIF(b.guest_name, ''), 'undefined undefined'),
+            CONCAT(u.first_name, ' ', u.last_name)
+          ) as guest_name,
+          COALESCE((
+            SELECT SUM(cr_amount) 
+            FROM payments 
+            WHERE booking_id = b.id 
+            AND status = 'completed'
+          ), 0) as paid_amount,
+          (b.total_amount - COALESCE((
+            SELECT SUM(cr_amount) 
+            FROM payments 
+            WHERE booking_id = b.id 
+            AND status = 'completed'
+          ), 0)) as due_amount,
+          COALESCE(pay.payment_method, b.payment_method) as payment_method,
+          COALESCE(pay.payment_reference, pay.gateway_transaction_id) as payment_txn_id,
+          COALESCE(pay.gateway_fee, 0.00) as gateway_fee,
+          COALESCE(ae.commission_rate, 10) as commission_rate,
+          COALESCE(
+            CASE 
+              WHEN pay.cr_amount IS NOT NULL THEN (pay.cr_amount * COALESCE(ae.commission_rate, 10) / 100)
+              ELSE ae.commission_amount
+            END, 
+            0
+          ) as commission_amount
+        FROM bookings b
+        JOIN properties p ON b.property_id = p.id
+        LEFT JOIN users u ON b.guest_id = u.id
+        LEFT JOIN hms_rooms hr ON b.hms_room_id = hr.id
+        LEFT JOIN property_images mi ON p.id = mi.property_id AND mi.image_type = 'main'
+        LEFT JOIN payments pay ON pay.booking_id = b.id 
+          AND pay.status = 'completed' 
+          AND pay.transaction_type = 'guest_payment' 
+          AND pay.cr_amount > 0
+        LEFT JOIN admin_earnings ae ON ae.booking_id = b.id
+        ${whereClause}
+        ORDER BY b.created_at DESC, pay.id DESC
+        LIMIT ? OFFSET ?
+      `;
+    } else {
+      bookingsSql = `
+        SELECT 
+          b.id, b.booking_reference, b.guest_id, b.property_id,
+          b.check_in_date, b.check_out_date, b.check_in_time, b.check_out_time,
+          b.number_of_guests, b.number_of_children, b.number_of_infants,
+          b.base_price, b.cleaning_fee, b.security_deposit, b.extra_guest_fee,
+          b.service_fee, b.tax_amount, b.total_amount, b.currency,
+          b.special_requests, b.coupon_code, b.discount_amount,
+          b.guest_email, b.guest_phone,
+          b.booking_source, b.status, b.payment_status,
+          b.confirmed_at, b.cancelled_at, b.cancellation_reason,
+          b.created_at, b.updated_at, b.hms_room_id,
+          b.security_deposit_status, b.security_deposit_claim_amount, 
+          b.security_deposit_deduction_amount,
+          b.security_deposit_claim_reason, b.security_deposit_claim_at,
+          p.title as property_title,
+          p.address as property_address,
+          p.city as property_city,
+          p.state as property_state,
+          p.is_hms_enabled,
+          hr.room_number as hms_room_number,
+          hr.room_type as hms_room_type,
+          mi.image_url as property_image,
+          u.first_name as guest_first_name,
+          u.last_name as guest_last_name,
+          u.email as guest_email_from_user,
+          COALESCE(
+            NULLIF(NULLIF(b.guest_name, ''), 'undefined undefined'),
+            CONCAT(u.first_name, ' ', u.last_name)
+          ) as guest_name,
+          COALESCE((
+            SELECT SUM(cr_amount) 
+            FROM payments 
+            WHERE booking_id = b.id 
+            AND status = 'completed'
+          ), 0) as paid_amount,
+          (b.total_amount - COALESCE((
+            SELECT SUM(cr_amount) 
+            FROM payments 
+            WHERE booking_id = b.id 
+            AND status = 'completed'
+          ), 0)) as due_amount,
+          COALESCE((
+            SELECT SUM(pay_fee.gateway_fee) 
+            FROM payments pay_fee 
+            WHERE pay_fee.booking_id = b.id AND pay_fee.status = 'completed'
+          ), 0.00) as gateway_fee,
+          COALESCE(ae.commission_rate, 10) as commission_rate,
+          COALESCE(ae.commission_amount, 0) as commission_amount
+        FROM bookings b
+        JOIN properties p ON b.property_id = p.id
+        LEFT JOIN users u ON b.guest_id = u.id
+        LEFT JOIN hms_rooms hr ON b.hms_room_id = hr.id
+        LEFT JOIN property_images mi ON p.id = mi.property_id AND mi.image_type = 'main'
+        LEFT JOIN admin_earnings ae ON ae.booking_id = b.id
+        ${whereClause}
+        ORDER BY b.created_at DESC
+        LIMIT ? OFFSET ?
+      `;
+    }
 
+    const [bookings] = await pool.query(bookingsSql, [...queryParams, parseInt(limit), parseInt(offset)]);
     const pagination = generatePagination(parseInt(page), parseInt(limit), total);
+
     res.json(
       formatResponse(true, 'Bookings retrieved successfully', {
         bookings,
@@ -1487,6 +1616,119 @@ router.get('/analytics', async (req, res) => {
     const departsToday = todayStats[0].departs_today || 0;
     const staysToday = todayStats[0].stays_today || 0;
 
+    // E. Gateway Fees
+    const [gatewayFeeRes] = await pool.execute(`
+      SELECT COALESCE(SUM(p.gateway_fee), 0) as total
+      FROM payments p
+      JOIN bookings b ON p.booking_id = b.id
+      JOIN properties pr ON b.property_id = pr.id
+      WHERE pr.owner_id = ? AND p.status = 'completed' AND b.status != 'cancelled'
+    `, [ownerId]);
+    const gatewayFee = parseFloat(gatewayFeeRes[0].total) || 0;
+
+    // A. Host's Total Earnings (Gross Host Share)
+    const [hostEarningRes] = await pool.execute(`
+      SELECT COALESCE(SUM(b.property_owner_earnings), 0) as total
+      FROM bookings b
+      JOIN properties p ON b.property_id = p.id
+      WHERE p.owner_id = ? AND b.status != 'cancelled' AND b.payment_status = 'paid'
+    `, [ownerId]);
+    const hostTotalEarningRaw = parseFloat(hostEarningRes[0].total) || 0;
+    const hostTotalEarning = Math.max(0, hostTotalEarningRaw - gatewayFee);
+
+    // B. Cash Payments received directly
+    const [cashPaymentRes] = await pool.execute(`
+      SELECT COALESCE(SUM(p.cr_amount), 0) as total
+      FROM payments p
+      JOIN bookings b ON p.booking_id = b.id
+      JOIN properties pr ON b.property_id = pr.id
+      WHERE pr.owner_id = ? AND p.status = 'completed' AND p.payment_method = 'cash'
+        AND p.transaction_type IN ('guest_payment', 'payment', 'settlement')
+        AND b.status != 'cancelled' AND b.payment_status = 'paid'
+    `, [ownerId]);
+    const cashPayment = parseFloat(cashPaymentRes[0].total) || 0;
+
+    // C. Online Payments received
+    const [onlinePaymentRes] = await pool.execute(`
+      SELECT COALESCE(SUM(p.cr_amount), 0) as total
+      FROM payments p
+      JOIN bookings b ON p.booking_id = b.id
+      JOIN properties pr ON b.property_id = pr.id
+      WHERE pr.owner_id = ? AND p.status = 'completed' AND p.payment_method != 'cash'
+        AND p.transaction_type IN ('guest_payment', 'payment', 'settlement')
+        AND b.status != 'cancelled' AND b.payment_status = 'paid'
+    `, [ownerId]);
+    const onlinePayment = parseFloat(onlinePaymentRes[0].total) || 0;
+
+    // D. Commission Paid (Admin Commission)
+    const [commissionPaidRes] = await pool.execute(`
+      SELECT COALESCE(SUM(b.admin_commission_amount), 0) as total
+      FROM bookings b
+      JOIN properties p ON b.property_id = p.id
+      WHERE p.owner_id = ? AND b.status != 'cancelled' AND b.payment_status = 'paid'
+    `, [ownerId]);
+    const commissionPaid = parseFloat(commissionPaidRes[0].total) || 0;
+
+    // F. Available Payout Balance
+    const [eligibleBookingsForPayout] = await pool.execute(`
+      SELECT
+        b.id AS booking_id,
+        GREATEST(0,
+          (CASE 
+            WHEN b.booking_source = 'website' THEN b.property_owner_earnings
+            ELSE COALESCE((
+              SELECT SUM(cr_amount) FROM payments 
+              WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online')
+            ), 0) - COALESCE(b.admin_commission_amount, 0)
+          END)
+          - COALESCE((
+            SELECT SUM(p2.cr_amount) FROM payments p2
+            WHERE p2.booking_id = b.id AND p2.status = 'completed'
+              AND p2.payment_method = 'cash'
+              AND p2.transaction_type IN ('guest_payment','payment','settlement')
+          ), 0)
+          - COALESCE((
+            SELECT SUM(p3.gateway_fee) FROM payments p3
+            WHERE p3.booking_id = b.id AND p3.status = 'completed'
+          ), 0)
+        ) AS property_owner_earnings
+      FROM bookings b
+      JOIN properties p ON b.property_id = p.id
+      WHERE p.owner_id = ?
+        AND b.payment_status = 'paid'
+        AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+        AND b.status != 'cancelled'
+        AND (
+          b.booking_source = 'website' 
+          OR b.source = 'Internal' 
+          OR b.payment_method = 'sslcommerz'
+          OR EXISTS (
+            SELECT 1 FROM payments 
+            WHERE booking_id = b.id AND status = 'completed' AND payment_method IN ('sslcommerz', 'bkash', 'nagad', 'online')
+          )
+        )
+        AND b.id NOT IN (
+          SELECT opi.booking_id
+          FROM owner_payout_items opi
+          JOIN owner_payouts op ON opi.payout_id = op.id
+          WHERE op.property_owner_id = ? AND op.payment_status IN ('pending', 'processing', 'completed')
+        )
+    `, [ownerId, ownerId]);
+
+    const availablePayoutBalance = eligibleBookingsForPayout.reduce(
+      (sum, b) => sum + Math.max(0, parseFloat(b.property_owner_earnings || 0)), 
+      0
+    );
+
+    // G. Active Payout Request check
+    const [existingPendingPayout] = await pool.execute(`
+      SELECT id, payout_reference, net_payout, payment_status, created_at 
+      FROM owner_payouts
+      WHERE property_owner_id = ? AND payment_status IN ('pending', 'processing')
+      LIMIT 1
+    `, [ownerId]);
+    const activePayoutRequest = existingPendingPayout.length > 0 ? existingPendingPayout[0] : null;
+
     const analyticsData = {
       totalRevenue,
       pendingRevenue,
@@ -1504,7 +1746,14 @@ router.get('/analytics', async (req, res) => {
       arrivesToday,
       departsToday,
       staysToday,
-      localGuests: 60, // Mocks based on typical structure
+      hostTotalEarning,
+      cashPayment,
+      onlinePayment,
+      commissionPaid,
+      gatewayFee,
+      availablePayoutBalance,
+      activePayoutRequest,
+      localGuests: 60,
       internationalGuests: 30,
       businessTravelers: 10,
       directBookings: 50,
@@ -2565,7 +2814,7 @@ router.patch('/bookings/:id/payment', requireHMSPermission('manage_reservations'
 });
 
 // Get property availability and special pricing
-router.get('/properties/:id/calendar-rates', validateId, async (req, res) => {
+router.get('/properties/:id/calendar-rates', requirePlatformPermission('can_use_calendar'), validateId, async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -2588,7 +2837,7 @@ router.get('/properties/:id/calendar-rates', validateId, async (req, res) => {
 });
 
 // Create or update special rate/availability for a date or date range
-router.post('/properties/:id/calendar-rates', validateId, async (req, res) => {
+router.post('/properties/:id/calendar-rates', requirePlatformPermission('can_use_calendar'), validateId, async (req, res) => {
   let connection;
   try {
     const { id } = req.params;
@@ -2737,6 +2986,80 @@ router.post('/hms/start-trial', async (req, res) => {
   } catch (error) {
     console.error('Start trial error', error);
     res.status(500).json(formatResponse(false, 'Failed to start free trial', null, error.message));
+  }
+});
+
+// Get Host HMS Subscription Payment & Renewal History
+router.get('/hms/subscription-history', async (req, res) => {
+  try {
+    const hostId = req.user.id;
+
+    // Fetch subscription orders / payments for this host
+    const [orders] = await pool.execute(`
+      SELECT 
+        o.id as order_id,
+        o.tran_id,
+        o.amount,
+        o.status,
+        o.created_at as payment_date,
+        hp.name as package_name,
+        hp.duration_days,
+        hp.billing_cycle,
+        hs.subscription_ends_at,
+        hs.status as subscription_status
+      FROM orders o
+      JOIN hms_packages hp ON o.package_id = hp.id
+      LEFT JOIN hms_subscriptions hs ON hs.host_id = o.host_id AND hs.package_id = o.package_id
+      WHERE o.host_id = ? AND o.package_id IS NOT NULL
+      ORDER BY o.id DESC
+    `, [hostId]);
+
+    // Also get current active subscription info
+    const [currentSub] = await pool.execute(`
+      SELECT 
+        hs.id,
+        hs.status,
+        hs.trial_started_at,
+        hs.trial_ends_at,
+        hs.subscription_ends_at,
+        hs.package_id,
+        hp.name as package_name,
+        hp.price,
+        hp.duration_days
+      FROM hms_subscriptions hs
+      LEFT JOIN hms_packages hp ON hs.package_id = hp.id
+      WHERE hs.host_id = ?
+      LIMIT 1
+    `, [hostId]);
+
+    res.json(formatResponse(true, 'Subscription history fetched successfully', {
+      current_subscription: currentSub.length > 0 ? currentSub[0] : null,
+      history: orders.map(o => {
+        let method = o.payment_method;
+        if (!method || method === 'Online Payment' || method === 'Online Gateway') {
+          const tid = String(o.tran_id || '').toUpperCase();
+          if (tid.includes('BKASH') || tid.includes('BK')) method = 'bKash';
+          else if (tid.includes('NAGAD') || tid.includes('NG')) method = 'Nagad';
+          else if (tid.includes('MANUAL') || tid.includes('CASH')) method = 'Cash / Admin Manual';
+          else method = 'SSLCommerz';
+        }
+
+        return {
+          id: o.order_id,
+          tran_id: o.tran_id || `SUB-MANUAL-${o.order_id}`,
+          amount: parseFloat(o.amount || 0),
+          status: o.status === 'Success' ? 'COMPLETED' : o.status,
+          payment_method: method,
+          package_name: o.package_name || 'HMS Subscription',
+          duration_days: o.duration_days || 30,
+          payment_date: o.payment_date,
+          valid_until: o.subscription_ends_at
+        };
+      })
+    }));
+  } catch (error) {
+    console.error('[HMS] Subscription history error:', error);
+    res.status(500).json(formatResponse(false, 'Failed to fetch subscription history', null, error.message));
   }
 });
 
@@ -3969,6 +4292,156 @@ router.patch('/hms/reservations/:id/status', requireHMSAccess, requireHMSPermiss
     }
 });
 
+// Extend Reservation Stay for HMS
+router.post('/hms/reservations/:id/extend', requireHMSAccess, requireHMSPermission('manage_reservations'), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { new_checkout_date, extend_amount, payment_option, payment_notes } = req.body;
+
+        if (!new_checkout_date || isNaN(new Date(new_checkout_date).getTime())) {
+            return res.status(400).json(formatResponse(false, 'Invalid new checkout date.'));
+        }
+
+        const amt = parseFloat(extend_amount);
+        if (isNaN(amt) || amt < 0) {
+            return res.status(400).json(formatResponse(false, 'Invalid extend amount.'));
+        }
+
+        // 1. Fetch current reservation details and verify ownership
+        let query = `
+            SELECT b.id, b.property_id, b.hms_room_id, b.check_in_date, b.check_out_date, 
+                   b.status, b.total_amount, b.base_price, b.guest_name,
+                   po.user_id as owner_user_id
+            FROM bookings b 
+            JOIN properties p ON b.property_id = p.id 
+            JOIN property_owners po ON p.owner_id = po.id 
+            WHERE b.id = ?
+        `;
+        let params = [id];
+
+        if (req.user.role !== 'admin') {
+            query += ' AND po.user_id = ?';
+            params.push(req.user.id);
+        }
+
+        const [check] = await pool.query(query, params);
+        if (check.length === 0) {
+            return res.status(404).json(formatResponse(false, 'Reservation not found or access denied.'));
+        }
+
+        const reservation = check[0];
+
+        // 2. Status validation: Must not be checked out or cancelled
+        if (reservation.status === 'checked_out') {
+            return res.status(400).json(formatResponse(false, 'Cannot extend a checked-out reservation.'));
+        }
+        if (reservation.status === 'cancelled') {
+            return res.status(400).json(formatResponse(false, 'Cannot extend a cancelled reservation.'));
+        }
+
+        // Verify that the new checkout date is strictly after the current check-in & current check-out date
+        const newCheckout = new Date(new_checkout_date);
+        const currentCheckout = new Date(reservation.check_out_date);
+        const checkIn = new Date(reservation.check_in_date);
+
+        if (newCheckout <= currentCheckout) {
+            return res.status(400).json(formatResponse(false, 'New checkout date must be after the current checkout date.'));
+        }
+        if (newCheckout <= checkIn) {
+            return res.status(400).json(formatResponse(false, 'New checkout date must be after the check-in date.'));
+        }
+
+        // 3. Availability Check: Ensure no overlapping active bookings for the same room
+        if (reservation.hms_room_id) {
+            const [conflicts] = await pool.query(`
+                SELECT id, booking_reference FROM bookings
+                WHERE hms_room_id = ?
+                AND id != ?
+                AND status IN ('request_accepted', 'confirmed', 'checked_in')
+                AND check_in_date < ?
+                AND check_out_date > ?
+            `, [reservation.hms_room_id, id, new_checkout_date, reservation.check_out_date]);
+
+            if (conflicts.length > 0) {
+                return res.status(400).json(formatResponse(false, `The room is already booked for these extended dates (Booking Ref: ${conflicts[0].booking_reference})`));
+            }
+        }
+
+        // 4. Update the Booking
+        const newTotalAmount = parseFloat(reservation.total_amount) + amt;
+        const newBasePrice = parseFloat(reservation.base_price || 0) + amt;
+
+        // If paying now in cash, calculate new payment status
+        let finalPaymentStatus = 'pending';
+        
+        if (payment_option === 'cash') {
+            // Fetch total completed payments so far
+            const [payRows] = await pool.query(
+                `SELECT SUM(cr_amount) as total_paid FROM payments WHERE booking_id = ? AND status = 'completed'`,
+                [id]
+            );
+            const alreadyPaid = parseFloat(payRows[0]?.total_paid || 0);
+            const totalPaidAfter = alreadyPaid + amt;
+            // Also need to account for extra bills
+            const [billRows] = await pool.query(
+                `SELECT SUM(amount) as total_bills FROM hms_bills WHERE booking_id = ?`,
+                [id]
+            );
+            const totalBills = parseFloat(billRows[0]?.total_bills || 0);
+            const grandTotal = newTotalAmount + totalBills;
+
+            finalPaymentStatus = totalPaidAfter >= grandTotal ? 'paid' : 'partial';
+        } else {
+            // If pending, check if it was paid before. Since amount increased, it is now partial or pending
+            const [payRows] = await pool.query(
+                `SELECT SUM(cr_amount) as total_paid FROM payments WHERE booking_id = ? AND status = 'completed'`,
+                [id]
+            );
+            const alreadyPaid = parseFloat(payRows[0]?.total_paid || 0);
+            finalPaymentStatus = alreadyPaid > 0 ? 'partial' : 'pending';
+        }
+
+        await pool.query(
+            `UPDATE bookings 
+             SET check_out_date = ?, 
+                 total_amount = ?, 
+                 base_price = ?, 
+                 payment_status = ?,
+                 updated_at = NOW() 
+             WHERE id = ?`,
+            [new_checkout_date, newTotalAmount, newBasePrice, finalPaymentStatus, id]
+        );
+
+        // 5. Record cash payment if option is cash
+        if (payment_option === 'cash' && amt > 0) {
+            const payRef = `HMS-EXTEND-CASH-${Date.now()}-${id}`;
+            const [payInsertResult] = await pool.query(`
+                INSERT INTO payments (
+                    booking_id, payment_reference, payment_method, payment_type, 
+                    amount, cr_amount, dr_amount, transaction_type, status, notes,
+                    payment_date
+                ) VALUES (?, ?, 'cash', 'booking', ?, ?, 0, 'guest_payment', 'completed', ?, NOW())
+            `, [id, payRef, amt, amt, payment_notes || 'HMS Extension cash payment']);
+
+            // Sync payment with HMS accounts
+            try {
+                await syncPaymentToHMSAccounts(payInsertResult.insertId);
+            } catch (accError) {
+                console.error('[HMS-ACCOUNTS] Failed to link reservation extension payment to accounts:', accError);
+            }
+        }
+
+        res.json(formatResponse(true, 'Reservation extended successfully', {
+            new_checkout_date,
+            total_amount: newTotalAmount,
+            payment_status: finalPaymentStatus
+        }));
+    } catch (error) {
+        console.error('[HMS] Extend reservation error:', error);
+        res.status(500).json(formatResponse(false, 'Failed to extend reservation', null, error.message));
+    }
+});
+
 // Manual Payment Logging for HMS
 router.patch('/hms/reservations/:id/manual-payment', requireHMSAccess, requireHMSPermission('manage_reservations'), async (req, res) => {
     try {
@@ -4030,35 +4503,88 @@ router.patch('/hms/reservations/:id/manual-payment', requireHMSAccess, requireHM
     }
 });
 
-// Generate/Get Payment Link for HMS
-router.get('/hms/reservations/:id/payment-link', requireHMSAccess, requireHMSPermission('manage_reservations'), async (req, res) => {
+// Generate/Get Dynamic & Secure Payment Link for HMS
+router.all('/hms/reservations/:id/payment-link', requireHMSAccess, requireHMSPermission('manage_reservations'), async (req, res) => {
     try {
         const { id } = req.params;
+        const expireHours = req.body?.expire_hours !== undefined ? req.body.expire_hours : (req.query?.expire_hours || null);
+        const customAmount = req.body?.custom_amount !== undefined ? req.body.custom_amount : (req.query?.custom_amount || null);
+        const regenerate = req.body?.regenerate || req.query?.regenerate === 'true';
+
         const [check] = await pool.query(`
-            SELECT b.id, b.payment_link_token 
+            SELECT b.id, b.payment_link_token, b.guest_name, b.guest_phone, b.guest_email,
+                   b.payment_link_expires_at, b.payment_link_custom_amount,
+                   p.title as property_title,
+                   (
+                       b.total_amount 
+                       + COALESCE((SELECT SUM(amount) FROM hms_bills WHERE booking_id = b.id), 0)
+                       - COALESCE((SELECT SUM(cr_amount) FROM payments WHERE booking_id = b.id AND status = 'completed'), 0)
+                   ) as current_due
             FROM bookings b 
             JOIN properties p ON b.property_id = p.id 
             JOIN property_owners po ON p.owner_id = po.id 
-            WHERE b.id = ? AND po.user_id = ?
-        `, [id, req.user.id]);
+            WHERE b.id = ? AND (po.user_id = ? OR ? = 'admin')
+        `, [id, req.user.id, req.user.role]);
 
         if (check.length === 0) {
             return res.status(404).json(formatResponse(false, 'Reservation not found or access denied.'));
         }
 
-        let token = check[0].payment_link_token;
-        if (!token) {
+        const booking = check[0];
+        let token = booking.payment_link_token;
+        
+        if (!token || regenerate) {
             token = require('crypto').randomBytes(32).toString('hex');
-            await pool.query('UPDATE bookings SET payment_link_token = ? WHERE id = ?', [token, id]);
         }
+
+        // Expiration calculation
+        let expiresAt = null;
+        if (expireHours && !isNaN(parseInt(expireHours))) {
+            const d = new Date();
+            d.setHours(d.getHours() + parseInt(expireHours));
+            expiresAt = d.toISOString().slice(0, 19).replace('T', ' ');
+        } else if (!regenerate && booking.payment_link_expires_at) {
+            expiresAt = booking.payment_link_expires_at;
+        }
+
+        // Custom amount validation
+        let amtToSave = null;
+        if (customAmount && !isNaN(parseFloat(customAmount)) && parseFloat(customAmount) > 0) {
+            amtToSave = parseFloat(customAmount);
+        }
+
+        // Save token, expires_at, and custom_amount to database
+        await pool.query(
+            `UPDATE bookings SET payment_link_token = ?, payment_link_expires_at = ?, payment_link_custom_amount = ? WHERE id = ?`,
+            [token, expiresAt, amtToSave, id]
+        );
 
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
         const paymentLink = `${frontendUrl}/hms/pay/${token}`;
 
-        res.json(formatResponse(true, 'Payment link generated', { paymentLink }));
+        const dueAmount = Math.max(0, parseFloat(booking.current_due || 0));
+        const payableAmount = amtToSave ? Math.min(dueAmount, amtToSave) : dueAmount;
+
+        // Formulate pre-filled WhatsApp & SMS share text
+        const shareMsg = `Dear ${booking.guest_name || 'Guest'}, please pay ৳${payableAmount.toLocaleString('en-IN')} for your reservation at ${booking.property_title || 'Hotel'}. Payment link: ${paymentLink}`;
+        
+        const cleanPhone = String(booking.guest_phone || '').replace(/[^0-9]/g, '');
+        const waPhone = cleanPhone.startsWith('88') ? cleanPhone : `88${cleanPhone}`;
+        const whatsappUrl = `https://api.whatsapp.com/send?phone=${waPhone}&text=${encodeURIComponent(shareMsg)}`;
+
+        res.json(formatResponse(true, 'Payment link generated successfully', { 
+            paymentLink, 
+            token,
+            dueAmount,
+            payableAmount,
+            expiresAt,
+            whatsappUrl,
+            shareMessage: shareMsg,
+            guestPhone: booking.guest_phone
+        }));
     } catch (error) {
-        console.error('[HMS] Payment link error:', error);
-        res.status(500).json(formatResponse(false, 'Failed to generate link'));
+        console.error('[HMS] Dynamic payment link error:', error);
+        res.status(500).json(formatResponse(false, 'Failed to generate payment link'));
     }
 });
 
@@ -4149,6 +4675,20 @@ router.get('/hms/reservations/:id/detail', requireHMSAccess, requireHMSPermissio
         }
 
         const reservation = rows[0];
+
+        // Fetch booked ranges for this room (excluding this booking)
+        let bookedRanges = [];
+        if (reservation.hms_room_id) {
+            const [ranges] = await pool.query(
+                `SELECT check_in_date, check_out_date FROM bookings
+                 WHERE hms_room_id = ?
+                   AND id != ?
+                   AND status IN ('request_accepted', 'confirmed', 'checked_in')`,
+                [reservation.hms_room_id, id]
+            );
+            bookedRanges = ranges;
+        }
+        reservation.booked_ranges = bookedRanges;
 
         // Payment history
         const [payments] = await pool.query(

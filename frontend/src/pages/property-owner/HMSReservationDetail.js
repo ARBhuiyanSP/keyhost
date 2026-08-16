@@ -15,6 +15,8 @@ import useToast from '../../hooks/useToast';
 import useSettingsStore from '../../store/settingsStore';
 import { getImageUrl } from '../../utils/imageUrl';
 import GuestProfileModal from '../../components/property-owner/GuestProfileModal';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const fmt = (n) => parseFloat(n || 0).toLocaleString('en-BD', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1995,6 +1997,212 @@ const ContractAgreementTab = ({ data }) => {
     );
 };
 
+// ─── Extend Stay Modal ────────────────────────────────────────────────────────
+const ExtendStayModal = ({ isOpen, onClose, reservation, onSuccess }) => {
+    const toast = useToast();
+    const [selectedCheckoutDate, setSelectedCheckoutDate] = useState(() => {
+        const d = new Date(reservation.check_out_date);
+        d.setDate(d.getDate() + 1);
+        return d;
+    });
+    const [extendAmount, setExtendAmount] = useState(0);
+    const [isCustomAmount, setIsCustomAmount] = useState(false);
+    const [paymentOption, setPaymentOption] = useState('pending'); // 'pending', 'cash', 'link'
+    const [paymentNotes, setPaymentNotes] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [generatedLink, setGeneratedLink] = useState('');
+
+    // Calculate room daily rate
+    const dailyRate = reservation.nights > 0 ? parseFloat(reservation.base_price || 0) / reservation.nights : 0;
+    
+    // Boundaries configuration
+    const currentCheckoutDate = new Date(reservation.check_out_date);
+    currentCheckoutDate.setHours(0, 0, 0, 0);
+
+    const minDate = new Date(currentCheckoutDate);
+    minDate.setDate(minDate.getDate() + 1);
+
+    const futureCheckins = (reservation.booked_ranges || [])
+        .map(r => {
+            const d = new Date(r.check_in_date);
+            d.setHours(0, 0, 0, 0);
+            return d;
+        })
+        .filter(d => d >= currentCheckoutDate)
+        .sort((a, b) => a - b);
+    const maxDate = futureCheckins.length > 0 ? futureCheckins[0] : null;
+
+    // Calculate extra nights dynamically
+    const newCheckout = selectedCheckoutDate ? new Date(selectedCheckoutDate) : new Date(currentCheckoutDate);
+    newCheckout.setHours(0, 0, 0, 0);
+    
+    const diffTime = Math.max(0, newCheckout - currentCheckoutDate);
+    const extraNights = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    // Format dates safely
+    const formatDateString = (date) => {
+        try {
+            return format(date, 'yyyy-MM-dd');
+        } catch {
+            return '';
+        }
+    };
+    
+    const displayNewCheckoutDate = formatDateString(newCheckout);
+
+    // Auto-calculate extend amount when extraNights or dailyRate changes
+    React.useEffect(() => {
+        if (!isCustomAmount) {
+            setExtendAmount(Math.round(dailyRate * extraNights));
+        }
+    }, [extraNights, dailyRate, isCustomAmount]);
+
+    const queryClient = useQueryClient();
+
+    const handleExtend = async (e) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+        try {
+            // Post extension request to backend - automatically pending / bill due
+            const response = await api.post(`/property-owner/hms/reservations/${reservation.id}/extend`, {
+                new_checkout_date: displayNewCheckoutDate,
+                extend_amount: parseFloat(extendAmount || 0),
+                payment_option: 'pending',
+                payment_notes: paymentNotes
+            });
+
+            if (response.data?.success) {
+                toast.showSuccess('Reservation extended successfully! Bill updated as due.');
+                queryClient.invalidateQueries('hms-reservations');
+                queryClient.invalidateQueries('hms-active-reservations');
+                queryClient.invalidateQueries(['hms-reservation-detail', reservation.id]);
+                onSuccess();
+                onClose();
+            } else {
+                toast.showError(response.data?.message || 'Failed to extend reservation');
+            }
+        } catch (error) {
+            console.error('Extend reservation error:', error);
+            toast.showError(error.response?.data?.message || 'Error extending reservation. Please try again.');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <div className="relative bg-white rounded-3xl shadow-xl border border-gray-100 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                {/* Header */}
+                <div className="px-6 py-5 bg-gradient-to-r from-[#004e59] to-[#006b78] text-white flex justify-between items-center">
+                    <div>
+                        <h3 className="font-black text-lg">Extend Stay</h3>
+                        <p className="text-white/70 text-xs">Add extra nights to {reservation.guest_name || 'Guest'}'s reservation</p>
+                    </div>
+                    <button 
+                        onClick={onClose}
+                        className="text-white/80 hover:text-white text-xs font-bold uppercase tracking-wider bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-xl border border-white/5 transition-all"
+                    >
+                        Close
+                    </button>
+                </div>
+
+                <form onSubmit={handleExtend} className="p-6 space-y-5">
+                    <div className="grid grid-cols-2 gap-4 bg-gray-50/50 p-4 rounded-2xl border border-gray-100">
+                        <div>
+                            <span className="text-[9px] font-black text-gray-400 uppercase tracking-wider block">Current Check-out</span>
+                            <span className="text-sm font-bold text-gray-800 block mt-0.5">{fmtDate(reservation.check_out_date)}</span>
+                        </div>
+                        <div>
+                            <span className="text-[9px] font-black text-gray-400 uppercase tracking-wider block">New Check-out</span>
+                            <span className="text-sm font-black text-[#004e59] block mt-0.5">{fmtDate(displayNewCheckoutDate)}</span>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        {/* New Checkout Date Picker */}
+                        <div className="space-y-1.5 flex flex-col">
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">New Check-out Date</label>
+                            <DatePicker
+                                selected={selectedCheckoutDate}
+                                onChange={(date) => setSelectedCheckoutDate(date)}
+                                minDate={minDate}
+                                maxDate={maxDate || undefined}
+                                dateFormat="dd MMM yyyy"
+                                wrapperClassName="w-full"
+                                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-[#004e59]/10 focus:border-[#004e59] bg-white cursor-pointer"
+                                placeholderText="Select check-out date"
+                            />
+                        </div>
+
+                        {/* Charge Amount (Editable) */}
+                        <div className="space-y-1.5">
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Extension Charge (৳)</label>
+                            <div className="relative">
+                                <input
+                                    type="number"
+                                    min="0"
+                                    required
+                                    value={extendAmount}
+                                    onChange={(e) => {
+                                        setIsCustomAmount(true);
+                                        setExtendAmount(parseFloat(e.target.value) || 0);
+                                    }}
+                                    className="w-full border border-gray-200 rounded-xl pl-6 pr-3 py-2 text-xs font-black text-gray-800 focus:ring-2 focus:ring-[#004e59]/10 focus:border-[#004e59]"
+                                />
+                                <span className="absolute left-2.5 top-2.5 text-gray-400 text-xs font-bold">৳</span>
+                            </div>
+                            {!isCustomAmount && (
+                                <span className="text-[9px] text-gray-400 block font-semibold">Auto-calculated (৳{Math.round(dailyRate)}/night)</span>
+                            )}
+                            {isCustomAmount && (
+                                <button 
+                                    type="button"
+                                    onClick={() => setIsCustomAmount(false)}
+                                    className="text-[9px] text-[#004e59] hover:underline font-bold"
+                                >
+                                    Reset to Auto Rate
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Internal Notes */}
+                    <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Internal Notes</label>
+                            <textarea
+                                value={paymentNotes}
+                                onChange={(e) => setPaymentNotes(e.target.value)}
+                                placeholder="Add notes regarding this stay extension..."
+                                rows="2"
+                                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#004e59]/10 focus:border-[#004e59] resize-none"
+                            />
+                        </div>
+
+                        {/* Submit Button */}
+                        <div className="pt-2 flex gap-3">
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                disabled={isSubmitting}
+                                className="w-1/2 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold px-4 py-2.5 rounded-xl text-xs transition-all disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={isSubmitting}
+                                className="w-1/2 bg-[#004e59] hover:bg-[#003c45] text-white font-bold px-4 py-2.5 rounded-xl text-xs transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1 cursor-pointer shadow-md shadow-[#004e59]/20"
+                            >
+                                {isSubmitting ? 'Processing...' : 'Confirm Extension'}
+                            </button>
+                        </div>
+                    </form>
+                )}
+            </div>
+        </div>
+    );
+};
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 const TABS = [
     { id: 'details', label: 'Reservation Details', icon: FiInfo },
@@ -2006,8 +2214,10 @@ const TABS = [
 const HMSReservationDetail = () => {
     const { id } = useParams();
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
     const [activeTab, setActiveTab] = useState('details');
     const [selectGuestPhone, setSelectGuestPhone] = useState(null);
+    const [showExtendModal, setShowExtendModal] = useState(false);
 
     const { data, isLoading, error } = useQuery(
         ['hms-res-detail', id],
@@ -2078,6 +2288,14 @@ const HMSReservationDetail = () => {
                             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 rounded-xl text-white/80 text-xs font-semibold border border-white/10">
                                 <FiClock size={12} /> {reservation.nights} Night{reservation.nights !== 1 ? 's' : ''}
                             </div>
+                            {reservation.status !== 'checked_out' && reservation.status !== 'cancelled' && (
+                                <button
+                                    onClick={() => setShowExtendModal(true)}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-650 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer border border-transparent"
+                                >
+                                    <FiPlus size={12} /> Extend Stay
+                                </button>
+                            )}
                         </div>
                     </div>
 
@@ -2126,6 +2344,17 @@ const HMSReservationDetail = () => {
                 <GuestProfileModal 
                     phone={selectGuestPhone} 
                     onClose={() => setSelectGuestPhone(null)} 
+                />
+            )}
+
+            {showExtendModal && (
+                <ExtendStayModal
+                    isOpen={showExtendModal}
+                    onClose={() => setShowExtendModal(false)}
+                    reservation={reservation}
+                    onSuccess={() => {
+                        queryClient.invalidateQueries(['hms-res-detail', id]);
+                    }}
                 />
             )}
         </div>

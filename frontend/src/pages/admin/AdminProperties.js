@@ -5,6 +5,7 @@ import { FiHome, FiSearch, FiFilter, FiEye, FiEdit, FiCheck, FiX, FiMapPin, FiSt
 import api from '../../utils/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import useToast from '../../hooks/useToast';
+import AdminUserProfileModal from '../../components/admin/AdminUserProfileModal';
 
 // Animated count-up hook
 const useCountUp = (target, duration = 800, isLoading = false) => {
@@ -150,12 +151,17 @@ const AdminProperties = () => {
     search: searchParamVal,
     featured: '',
     monthly_status: '',
+    location: '',
+    min_price: '',
+    max_price: '',
+    sort: '',
     page: 1,
     limit: 10
   });
 
   const [searchInput, setSearchInput] = useState(filters.search);
   const searchTimeoutRef = React.useRef(null);
+  const [selectedUserProfile, setSelectedUserProfile] = useState(null);
 
   React.useEffect(() => {
     setSearchInput(filters.search);
@@ -238,7 +244,7 @@ const AdminProperties = () => {
     {
       keepPreviousData: true,
       select: (response) => {
-        const data = response.data?.data || { properties: [], pagination: {} };
+        const data = response.data?.data || { properties: [], pagination: {}, locations: [] };
         // Ensure display_categories is always an array
         if (data.properties) {
           data.properties = data.properties.map(property => ({
@@ -250,6 +256,8 @@ const AdminProperties = () => {
       },
     }
   );
+
+  const locationsList = propertiesData?.locations || [];
 
   const handleFilterChange = (key, value) => {
     setFilters(prev => {
@@ -586,33 +594,49 @@ const AdminProperties = () => {
 
         {/* Filters */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-600 mb-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-9 gap-3">
+            <div className="lg:col-span-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">
                 Search Properties
               </label>
               <div className="relative group">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none transition-colors duration-200 group-focus-within:text-blue-500 text-gray-400">
-                  <FiSearch className="h-5 w-5" />
+                  <FiSearch className="h-4 w-4" />
                 </div>
                 <input
                   type="text"
                   placeholder="Search by title or city..."
                   value={searchInput}
                   onChange={(e) => handleSearchChange(e.target.value)}
-                  className="input-field pl-10 w-full transition-all duration-200 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 hover:border-gray-300"
+                  className="input-field pl-9 w-full text-xs transition-all duration-200 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 hover:border-gray-300"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-600 mb-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">
+                Location
+              </label>
+              <select
+                value={filters.location}
+                onChange={(e) => handleFilterChange('location', e.target.value)}
+                className="input-field w-full text-xs transition-all duration-200 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 hover:border-gray-300"
+              >
+                <option value="">All Locations</option>
+                {locationsList.map((loc, idx) => (
+                  <option key={idx} value={loc}>{loc}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">
                 Status
               </label>
               <select
                 value={filters.status}
                 onChange={(e) => handleFilterChange('status', e.target.value)}
-                className="input-field w-full transition-all duration-200 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 hover:border-gray-300"
+                className="input-field w-full text-xs transition-all duration-200 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 hover:border-gray-300"
               >
                 <option value="">All Statuses</option>
                 <option value="pending_approval">Pending Approval</option>
@@ -623,13 +647,29 @@ const AdminProperties = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-600 mb-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">
+                Sort By
+              </label>
+              <select
+                value={filters.sort}
+                onChange={(e) => handleFilterChange('sort', e.target.value)}
+                className="input-field w-full text-xs font-semibold transition-all duration-200 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 hover:border-gray-300"
+              >
+                <option value="">Newest First</option>
+                <option value="price_asc">Price: Low to High ⬆</option>
+                <option value="price_desc">Price: High to Low ⬇</option>
+                <option value="oldest">Oldest First</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">
                 Featured
               </label>
               <select
                 value={filters.featured}
                 onChange={(e) => handleFilterChange('featured', e.target.value)}
-                className="input-field w-full transition-all duration-200 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 hover:border-gray-300"
+                className="input-field w-full text-xs transition-all duration-200 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 hover:border-gray-300"
               >
                 <option value="">All Properties</option>
                 <option value="true">Featured Only</option>
@@ -638,27 +678,38 @@ const AdminProperties = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-600 mb-2">
-                Monthly Status
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">
+                Min Price (৳)
               </label>
-              <select
-                value={filters.monthly_status}
-                onChange={(e) => handleFilterChange('monthly_status', e.target.value)}
-                className="input-field w-full transition-all duration-200 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 hover:border-gray-300"
-              >
-                <option value="">All</option>
-                <option value="pending">Pending Approval</option>
-                <option value="approved">Approved</option>
-              </select>
+              <input
+                type="number"
+                placeholder="Min ৳"
+                value={filters.min_price}
+                onChange={(e) => handleFilterChange('min_price', e.target.value)}
+                className="input-field w-full text-xs transition-all duration-200 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 hover:border-gray-300"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">
+                Max Price (৳)
+              </label>
+              <input
+                type="number"
+                placeholder="Max ৳"
+                value={filters.max_price}
+                onChange={(e) => handleFilterChange('max_price', e.target.value)}
+                className="input-field w-full text-xs transition-all duration-200 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 hover:border-gray-300"
+              />
             </div>
 
             <div className="flex items-end">
               <button
-                onClick={() => setFilters({ status: '', search: '', featured: '', monthly_status: '', page: 1, limit: 10 })}
-                className="btn-secondary w-full transition-all duration-200 hover:bg-gray-100 active:scale-[0.98] flex items-center justify-center gap-2 border border-gray-200 font-semibold"
+                onClick={() => setFilters({ status: '', search: '', featured: '', monthly_status: '', location: '', min_price: '', max_price: '', sort: '', page: 1, limit: 10 })}
+                className="btn-secondary w-full text-xs py-2 transition-all duration-200 hover:bg-gray-100 active:scale-[0.98] flex items-center justify-center gap-1.5 border border-gray-200 font-bold"
               >
-                <FiFilter className="w-4 h-4" />
-                Clear Filters
+                <FiFilter className="w-3.5 h-3.5" />
+                Clear
               </button>
             </div>
           </div>
@@ -862,7 +913,12 @@ const AdminProperties = () => {
                           </div>
                         </td>
                         <td className="px-3 py-3 whitespace-normal break-words">
-                          <div className="text-sm font-medium text-gray-900 leading-tight">{property.owner_first_name} {property.owner_last_name}</div>
+                          <div 
+                            onClick={() => setSelectedUserProfile({ userId: property.owner_user_id })} 
+                            className="text-sm font-semibold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer leading-tight"
+                          >
+                            {property.owner_first_name} {property.owner_last_name}
+                          </div>
                           <div className="text-xs text-gray-500 break-all leading-tight mt-1">{property.owner_email}</div>
                         </td>
                         <td className="px-3 py-3 whitespace-normal">
@@ -1182,6 +1238,15 @@ const AdminProperties = () => {
               </div>
             </div>
           </div>
+        )}
+
+        {selectedUserProfile && (
+          <AdminUserProfileModal
+            userId={selectedUserProfile.userId}
+            phone={selectedUserProfile.phone}
+            email={selectedUserProfile.email}
+            onClose={() => setSelectedUserProfile(null)}
+          />
         )}
       </div>
     </div>

@@ -144,6 +144,24 @@ const AdminReports = () => {
                             </div>
                         </div>
 
+                        {/* Occupancy and Room Status banner */}
+                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-2xl border border-blue-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mt-8 print-hide">
+                            <div>
+                                <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                                    <FiActivity className="text-blue-600" /> Platform Room Occupancy & Vitals
+                                </h3>
+                                <p className="text-xs text-gray-500 mt-1">
+                                    Monitor total rooms listed across the platform, active booked/occupied rates, dirty/maintenance flags, and detailed real-time occupancy logs.
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => navigate('/admin/reports/overview')}
+                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-5 py-2.5 rounded-lg shadow-md hover:shadow-lg active:scale-95 transition-all shrink-0 flex items-center gap-1.5 cursor-pointer"
+                            >
+                                <FiGrid /> Open Room Occupancy Report
+                            </button>
+                        </div>
+
                         {/* Recent Transactions Table */}
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden print:border-gray-300 mt-8">
                             <div className="px-6 py-5 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
@@ -199,22 +217,42 @@ const AdminReports = () => {
                 )}
 
                 {activeTab === 'financials' && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fadeIn">
-                        <div className="bg-emerald-50/50 p-8 rounded-2xl border border-emerald-100 flex flex-col justify-center print:border-gray-300">
-                            <p className="text-emerald-800 font-bold uppercase tracking-wider mb-2 flex items-center gap-2"><FiPieChart/> Gross Pool</p>
-                            <h2 className="text-6xl font-black text-emerald-700">${(stats.totalRevenue || 0).toLocaleString()}</h2>
-                            <p className="text-sm text-emerald-600 font-medium mt-4">Total money passed through all properties & flights on the platform.</p>
-                        </div>
-                        <div className="bg-slate-900 p-8 rounded-2xl shadow-xl flex flex-col justify-center relative overflow-hidden print-hide">
-                            <div className="absolute right-0 top-0 w-64 h-64 bg-slate-800 rounded-full blur-3xl opacity-50 -mr-20 -mt-20"></div>
-                            <div className="relative z-10">
-                                <p className="text-slate-400 font-bold uppercase tracking-wider mb-2 flex items-center gap-2"><FiBarChart2/> Platform Margin (10%)</p>
-                                <h2 className="text-6xl font-black text-white">${((stats.totalRevenue || 0) * 0.1).toLocaleString()}</h2>
-                                <p className="text-sm text-slate-300 font-medium mt-4 border-t border-slate-700 pt-4">Estimated net commission held by Keyhost from gross transactions.</p>
+                    <div className="space-y-6 animate-fadeIn">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <div className="bg-emerald-50/50 p-8 rounded-2xl border border-emerald-100 flex flex-col justify-center print:border-gray-300">
+                                <p className="text-emerald-800 font-bold uppercase tracking-wider mb-2 flex items-center gap-2"><FiPieChart/> Gross Pool</p>
+                                <h2 className="text-6xl font-black text-emerald-700">${(stats.totalRevenue || 0).toLocaleString()}</h2>
+                                <p className="text-sm text-emerald-600 font-medium mt-4">Total money passed through all properties & flights on the platform.</p>
                             </div>
+                            <div className="bg-slate-900 p-8 rounded-2xl shadow-xl flex flex-col justify-center relative overflow-hidden print-hide">
+                                <div className="absolute right-0 top-0 w-64 h-64 bg-slate-800 rounded-full blur-3xl opacity-50 -mr-20 -mt-20"></div>
+                                <div className="relative z-10">
+                                    <p className="text-slate-400 font-bold uppercase tracking-wider mb-2 flex items-center gap-2"><FiBarChart2/> Platform Margin (10%)</p>
+                                    <h2 className="text-6xl font-black text-white">${((stats.totalRevenue || 0) * 0.1).toLocaleString()}</h2>
+                                    <p className="text-sm text-slate-300 font-medium mt-4 border-t border-slate-700 pt-4">Estimated net commission held by Keyhost from gross transactions.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 print-hide">
+                            <div>
+                                <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                                    <FiDollarSign className="text-indigo-600" /> Detailed Revenue breakdown &amp; Ledger
+                                </h3>
+                                <p className="text-xs text-gray-550 mt-1">
+                                    Filter and view details of cashflow, platform commissions, online payments, HMS room collections, and host payout shares.
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => navigate('/admin/reports/revenue')}
+                                className="bg-indigo-650 hover:bg-indigo-750 text-white font-bold text-xs px-5 py-2.5 rounded-lg shadow-md hover:shadow-lg active:scale-95 transition-all shrink-0 flex items-center gap-1.5 cursor-pointer"
+                            >
+                                <FiActivity /> Open Detailed Revenue Report
+                            </button>
                         </div>
                     </div>
                 )}
+
 
                 {activeTab === 'users' && (
                     <div className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm animate-fadeIn">
@@ -277,7 +315,19 @@ const AdminReports = () => {
                                 <h3 className="text-2xl font-bold text-gray-900 mb-1">Property Insights</h3>
                                 <p className="text-gray-500 text-xs">Overview of {stats.totalProperties || 0} active listed properties on the platform.</p>
                             </div>
-                            <div className="flex flex-wrap gap-3">
+                              <div className="flex flex-wrap gap-3">
+                                <button
+                                    onClick={() => navigate('/admin/reports/overview')}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 shadow transition-all duration-150 active:scale-95"
+                                >
+                                    <FiActivity /> View Room Occupancy & Status Report
+                                </button>
+                                <button
+                                    onClick={() => navigate('/admin/reports/host-performance')}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 shadow transition-all duration-150 active:scale-95 cursor-pointer"
+                                >
+                                    <FiActivity /> View Host Performance & Commissions Report
+                                </button>
                                 <button
                                     onClick={() => navigate('/admin/reports/property-analytics')}
                                     className="bg-indigo-650 hover:bg-indigo-750 text-white font-bold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 shadow transition-all duration-150 active:scale-95"

@@ -17,7 +17,12 @@ const verifyToken = async (req, res, next) => {
 
     // Check if user still exists and is active
     const [users] = await pool.execute(
-      'SELECT id, email, first_name, last_name, phone, user_type, host_id, is_active FROM users WHERE id = ? AND is_active = 1',
+      `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.user_type, u.host_id, u.is_active,
+              COALESCE(u.platform_permissions, rdp.permissions) as platform_permissions,
+              rdp.display_name as role_display_name
+       FROM users u
+       LEFT JOIN role_default_permissions rdp ON rdp.role = u.user_type
+       WHERE u.id = ? AND u.is_active = 1`,
       [decoded.userId]
     );
 
@@ -28,7 +33,18 @@ const verifyToken = async (req, res, next) => {
       });
     }
 
-    req.user = users[0];
+    const user = users[0];
+    if (user.platform_permissions) {
+      if (typeof user.platform_permissions === 'string') {
+        try {
+          user.platform_permissions = JSON.parse(user.platform_permissions);
+        } catch (e) {
+          user.platform_permissions = null;
+        }
+      }
+    }
+
+    req.user = user;
     next();
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
@@ -56,12 +72,12 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
-// Check if user is property owner
+// Check if user is property owner or admin
 const requirePropertyOwner = async (req, res, next) => {
-  if (req.user.user_type !== 'property_owner' && req.user.user_type !== 'staff') {
+  if (req.user.user_type !== 'property_owner' && req.user.user_type !== 'staff' && req.user.user_type !== 'admin') {
     return res.status(403).json({
       success: false,
-      message: 'Access denied. Property owner or staff privileges required.'
+      message: 'Access denied. Property owner, staff, or admin privileges required.'
     });
   }
 
@@ -91,7 +107,7 @@ const requirePropertyOwner = async (req, res, next) => {
 
 // Check if user is guest
 const requireGuest = (req, res, next) => {
-  if (req.user.user_type !== 'guest') {
+  if (req.user.user_type !== 'guest' && req.user.user_type !== 'admin') {
     return res.status(403).json({
       success: false,
       message: 'Access denied. Guest privileges required.'
@@ -102,7 +118,7 @@ const requireGuest = (req, res, next) => {
 
 // Check if user is guest OR property owner (owners can also book other properties as guests)
 const requireGuestOrOwner = (req, res, next) => {
-  if (req.user.user_type !== 'guest' && req.user.user_type !== 'property_owner') {
+  if (req.user.user_type !== 'guest' && req.user.user_type !== 'property_owner' && req.user.user_type !== 'admin') {
     return res.status(403).json({
       success: false,
       message: 'Access denied. Guest or property owner privileges required.'
@@ -121,6 +137,28 @@ const requireHMSAccess = async (req, res, next) => {
         success: false,
         message: 'Staff account not linked to any host.',
       });
+    }
+
+    // Check if the host has HMS disabled on their platform profile
+    const [hostUser] = await pool.execute('SELECT platform_permissions FROM users WHERE id = ?', [hostId]);
+    if (hostUser.length > 0) {
+      let hostPerms = hostUser[0].platform_permissions;
+      if (typeof hostPerms === 'string') {
+        try { hostPerms = JSON.parse(hostPerms); } catch (e) { hostPerms = null; }
+      }
+      if (hostPerms && hostPerms.can_use_hms === false) {
+        return res.status(403).json({
+          success: false,
+          message: 'HMS access is disabled by Administrator for this host.'
+        });
+      }
+    }
+
+    // Bypass subscription check if the user is an admin
+    if (req.user.user_type === 'admin') {
+      req.hmsHostId = hostId;
+      console.log(`HMS Access granted for admin host ${hostId}`);
+      return next();
     }
 
     console.log('Checking HMS access for host:', hostId);
@@ -199,8 +237,51 @@ const requireHMSPermission = (permission) => {
           permissions = {};
         }
       }
-      // If permission is '*', allow all. Otherwise check for specific key.
-      if (permissions['*'] || permissions[permission]) {
+
+      const permissionsToCheck = Array.isArray(permission) ? permission : [permission];
+      let hasAccess = false;
+
+      for (const perm of permissionsToCheck) {
+        const targetKey = LEGACY_KEY_MAP[perm] || perm;
+
+        // 1. Check custom overrides from hms_employees first
+        if (permissions[perm] !== undefined) {
+          if (permissions['*'] || permissions[perm] === true) {
+            hasAccess = true;
+            break;
+          }
+        }
+        if (permissions[targetKey] !== undefined) {
+          if (permissions['*'] || permissions[targetKey] === true) {
+            hasAccess = true;
+            break;
+          }
+        }
+        if (permissions['*']) {
+          hasAccess = true;
+          break;
+        }
+
+        // 2. Fallback to default role permissions in platform_permissions
+        let platformPerms = req.user.platform_permissions;
+        if (platformPerms) {
+          if (typeof platformPerms === 'string') {
+            try {
+              platformPerms = JSON.parse(platformPerms);
+            } catch (e) {
+              platformPerms = null;
+            }
+          }
+          if (platformPerms && typeof platformPerms === 'object') {
+            if (platformPerms[targetKey] === true || platformPerms[perm] === true) {
+              hasAccess = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (hasAccess) {
         return next();
       }
 
@@ -220,12 +301,20 @@ const optionalAuth = async (req, res, next) => {
     if (token) {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       const [users] = await pool.execute(
-        'SELECT id, email, first_name, last_name, phone, user_type, host_id, is_active FROM users WHERE id = ? AND is_active = 1',
+        'SELECT id, email, first_name, last_name, phone, user_type, host_id, is_active, platform_permissions FROM users WHERE id = ? AND is_active = 1',
         [decoded.userId]
       );
 
       if (users.length > 0) {
-        req.user = users[0];
+        const user = users[0];
+        if (user.platform_permissions && typeof user.platform_permissions === 'string') {
+          try {
+            user.platform_permissions = JSON.parse(user.platform_permissions);
+          } catch (e) {
+            user.platform_permissions = null;
+          }
+        }
+        req.user = user;
       }
     }
 
@@ -236,6 +325,91 @@ const optionalAuth = async (req, res, next) => {
   }
 };
 
+const LEGACY_KEY_MAP = {
+  'can_list_properties': 'properties.read',
+  'can_use_pms': 'bookings.read',
+  'can_use_calendar': 'calendar.read',
+  'can_use_hms': 'hms_rooms.read',
+  'can_view_earnings': 'earnings.read',
+  'can_view_analytics': 'analytics.read',
+  'can_manage_reviews': 'reviews.read',
+  'can_manage_staff': 'staff.read',
+  'can_make_bookings': 'bookings.create_update',
+  'can_view_booking_history': 'bookings.read',
+  'can_request_refunds': 'refunds.create_update',
+  'can_leave_reviews': 'reviews.create_update',
+  'can_use_rewards': 'rewards.read',
+  'can_view_favorites': 'properties.read',
+  'can_access_messages': 'messages.read',
+
+  'manage_properties': 'properties.create_update',
+  'manage_reservations': 'bookings.create_update',
+  'manage_inventory': 'hms_rooms.create_update',
+  'manage_housekeeping': 'hms_housekeeping.create_update',
+  'manage_food_beverage': 'hms_rooms.create_update',
+  'manage_hr': 'hms_hr.create_update',
+  'manage_accounts': 'hms_accounts.create_update',
+  'manage_billing': 'hms_accounts.create_update',
+  'view_analytics': 'analytics.read'
+};
+
+// Check for platform-level permissions
+const requirePlatformPermission = (permission) => {
+  return async (req, res, next) => {
+    let targetUser = req.user;
+
+    // For staff members, check their host's platform permissions
+    if (req.user.user_type === 'staff') {
+      const hostId = req.user.host_id;
+      if (hostId) {
+        const [hosts] = await pool.execute('SELECT platform_permissions FROM users WHERE id = ?', [hostId]);
+        if (hosts.length > 0) {
+          targetUser = hosts[0];
+        }
+      }
+    }
+
+    let perms = targetUser.platform_permissions;
+    if (perms && typeof perms === 'string') {
+      try {
+        perms = JSON.parse(perms);
+      } catch (e) {
+        perms = null;
+      }
+    }
+
+    // Check explicit overrides first
+    if (perms && typeof perms === 'object') {
+      const targetKey = LEGACY_KEY_MAP[permission] || permission;
+      if (perms[targetKey] === false || perms[permission] === false) {
+        return res.status(403).json({
+          success: false,
+          message: `Access denied. Missing platform-level permission: ${permission}`
+        });
+      }
+      if (perms[targetKey] === true || perms[permission] === true) {
+        return next();
+      }
+    }
+
+    // Admin always bypasses all permission checks if not explicitly denied above
+    if (req.user.user_type === 'admin') {
+      return next();
+    }
+
+    // If perms is NULL/undefined, default to allow for backward compatibility
+    if (!perms) {
+      return next();
+    }
+
+    // If perms exists but doesn't have the permission, deny
+    return res.status(403).json({
+      success: false,
+      message: `Access denied. Missing platform-level permission: ${permission}`
+    });
+  };
+};
+
 module.exports = {
   verifyToken,
   requireAdmin,
@@ -244,5 +418,6 @@ module.exports = {
   requireGuestOrOwner,
   requireHMSAccess,
   requireHMSPermission,
+  requirePlatformPermission,
   optionalAuth
 };

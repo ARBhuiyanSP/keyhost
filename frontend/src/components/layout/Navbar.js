@@ -986,25 +986,7 @@ const Navbar = () => {
               </button>
             )}
 
-            {/* Push Notification Bell Toggle */}
-            {isAuthenticated && isPushSupported() && (
-              <button
-                onClick={handlePushToggle}
-                className="p-2 text-gray-755 hover:bg-gray-100 rounded-full transition-all duration-200 relative group flex items-center justify-center"
-                title={isPushEnabled ? 'Disable Push Notifications' : 'Enable Push Notifications'}
-                aria-label="Toggle notifications"
-              >
-                {isPushEnabled ? (
-                  <FiBell className="w-[18px] h-[18px] text-[#004e59]" />
-                ) : (
-                  <FiBellOff className="w-[18px] h-[18px] text-gray-400" />
-                )}
-                {/* Visual indicator when disabled to remind them to subscribe */}
-                {!isPushEnabled && (
-                  <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full border border-white animate-pulse"></span>
-                )}
-              </button>
-            )}
+
 
             {/* Globe icon and Custom Language Menu */}
             <div className="relative">
@@ -1192,18 +1174,53 @@ const Navbar = () => {
                         >
                           Help Center
                         </Link>
-                        <Link
-                          to={isAdmin() ? '/admin' : isPropertyOwner() ? '/property-owner' : user?.user_type === 'staff' ? '/staff/attendance' : '/guest'}
-                          onClick={() => setIsProfileOpen(false)}
-                          className="px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center justify-between"
-                        >
-                          <span>Dashboard</span>
-                          {Object.values(notificationCounts || {}).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0) > 0 && (
-                            <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                              {Object.values(notificationCounts || {}).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0)}
-                            </span>
-                          )}
-                        </Link>
+                        {isAdmin() ? (
+                          <>
+                            <Link
+                              to="/admin"
+                              onClick={() => {
+                                setIsProfileOpen(false);
+                                localStorage.setItem('dashboard_role_mode', 'admin');
+                              }}
+                              className="block px-4 py-3 text-sm text-indigo-600 font-semibold hover:bg-gray-50 transition-colors"
+                            >
+                              🛡️ Admin Panel
+                            </Link>
+                            <Link
+                              to="/property-owner"
+                              onClick={() => {
+                                setIsProfileOpen(false);
+                                localStorage.setItem('dashboard_role_mode', 'host');
+                              }}
+                              className="block px-4 py-3 text-sm text-blue-600 font-semibold hover:bg-gray-50 transition-colors"
+                            >
+                              🏡 Host Dashboard
+                            </Link>
+                            <Link
+                              to="/guest"
+                              onClick={() => {
+                                setIsProfileOpen(false);
+                                localStorage.setItem('dashboard_role_mode', 'guest');
+                              }}
+                              className="block px-4 py-3 text-sm text-emerald-600 font-semibold hover:bg-gray-50 transition-colors"
+                            >
+                              🧳 Guest Portal
+                            </Link>
+                          </>
+                        ) : (
+                          <Link
+                            to={isPropertyOwner() ? '/property-owner' : user?.user_type === 'staff' ? '/staff/attendance' : '/guest'}
+                            onClick={() => setIsProfileOpen(false)}
+                            className="px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center justify-between"
+                          >
+                            <span>Dashboard</span>
+                            {Object.values(notificationCounts || {}).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0) > 0 && (
+                              <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                                {Object.values(notificationCounts || {}).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0)}
+                              </span>
+                            )}
+                          </Link>
+                        )}
                         {user?.user_type !== 'admin' && (
                           <Link
                             to="/messages"
@@ -2147,13 +2164,46 @@ const Navbar = () => {
                     >
                       Become a host
                     </button>
+                  ) : isAdmin() ? (
+                    <div className="space-y-2 mb-2">
+                      <Link
+                        to="/admin"
+                        onClick={() => {
+                          setIsMenuOpen(false);
+                          localStorage.setItem('dashboard_role_mode', 'admin');
+                        }}
+                        className="block w-full text-left px-3 py-3 text-base font-bold text-indigo-750 bg-indigo-50 hover:bg-indigo-100/70 transition-colors rounded-lg"
+                      >
+                        🛡️ Admin Panel
+                      </Link>
+                      <Link
+                        to="/property-owner"
+                        onClick={() => {
+                          setIsMenuOpen(false);
+                          localStorage.setItem('dashboard_role_mode', 'host');
+                        }}
+                        className="block w-full text-left px-3 py-3 text-base font-bold text-blue-750 bg-blue-50 hover:bg-blue-100/70 transition-colors rounded-lg"
+                      >
+                        🏡 Host Dashboard
+                      </Link>
+                      <Link
+                        to="/guest"
+                        onClick={() => {
+                          setIsMenuOpen(false);
+                          localStorage.setItem('dashboard_role_mode', 'guest');
+                        }}
+                        className="block w-full text-left px-3 py-3 text-base font-bold text-emerald-750 bg-emerald-50 hover:bg-emerald-100/70 transition-colors rounded-lg"
+                      >
+                        🧳 Guest Portal
+                      </Link>
+                    </div>
                   ) : (
                     <Link
-                      to={isAdmin() ? '/admin' : '/property-owner'}
+                      to="/property-owner"
                       onClick={() => setIsMenuOpen(false)}
                       className="block w-full text-left px-3 py-3 text-base font-bold text-gray-900 bg-gray-50 hover:bg-gray-100 transition-colors rounded-lg mb-2"
                     >
-                      {isPropertyOwner() ? 'Switch to host' : 'Switch to dashboard'}
+                      Switch to host
                     </Link>
                   )
                 ) : (

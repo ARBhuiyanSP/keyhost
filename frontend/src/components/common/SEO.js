@@ -1,8 +1,10 @@
 import React, { useEffect } from 'react';
 import useSettingsStore from '../../store/settingsStore';
+import useAuthStore from '../../store/authStore';
 
 const SEO = ({ title, description, keywords, image }) => {
   const { settings } = useSettingsStore();
+  const { user } = useAuthStore();
 
   useEffect(() => {
     // Update page title
@@ -109,6 +111,19 @@ const SEO = ({ title, description, keywords, image }) => {
     // Add Facebook Pixel
     if (settings?.facebook_pixel_id && !document.querySelector(`script[src*="connect.facebook.net"]`)) {
       const fbScript = document.createElement('script');
+      
+      // Prepare Advanced Matching data if enabled
+      let initParams = '';
+      if (settings.meta_advanced_matching !== false && user) {
+        const advancedMatchingData = {};
+        if (user.email) advancedMatchingData.em = user.email.trim().toLowerCase();
+        if (user.phone) advancedMatchingData.ph = user.phone.trim().replace(/\D/g, '');
+        if (user.first_name || user.firstName) advancedMatchingData.fn = (user.first_name || user.firstName).trim().toLowerCase();
+        if (user.last_name || user.lastName) advancedMatchingData.ln = (user.last_name || user.lastName).trim().toLowerCase();
+        
+        initParams = `, ${JSON.stringify(advancedMatchingData)}`;
+      }
+
       fbScript.innerHTML = `
         !function(f,b,e,v,n,t,s)
         {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
@@ -118,7 +133,7 @@ const SEO = ({ title, description, keywords, image }) => {
         t.src=v;s=b.getElementsByTagName(e)[0];
         s.parentNode.insertBefore(t,s)}(window, document,'script',
         'https://connect.facebook.net/en_US/fbevents.js');
-        fbq('init', '${settings.facebook_pixel_id}');
+        fbq('init', '${settings.facebook_pixel_id}'${initParams});
         fbq('track', 'PageView');
       `;
       document.head.appendChild(fbScript);

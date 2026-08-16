@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../utils/api';
+import useSettingsStore from '../store/settingsStore';
+import { useFbPixel } from '../hooks/useFbPixel';
 
 const Confetti = () => {
   const canvasRef = useRef(null);
@@ -81,6 +83,35 @@ const BookingConfirmation = () => {
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showConfetti, setShowConfetti] = useState(true);
+
+  const hasTrackedPurchase = useRef(false);
+  const { trackPurchase } = useFbPixel();
+  const { settings } = useSettingsStore();
+
+  // Track Meta Pixel Purchase event
+  useEffect(() => {
+    if (booking && !hasTrackedPurchase.current) {
+      hasTrackedPurchase.current = true;
+      const purchaseValue = parseFloat(booking.total_price) || 0;
+      const currency = settings?.currency || 'BDT';
+      
+      const contents = [
+        {
+          id: booking.property_id || booking.id,
+          quantity: 1,
+          item_price: purchaseValue
+        }
+      ];
+
+      trackPurchase(
+        purchaseValue,
+        currency,
+        'accommodation',
+        contents,
+        booking.id || bookingId
+      );
+    }
+  }, [booking, settings, bookingId, trackPurchase]);
 
   const isExtension = searchParams.get('type') === 'extension';
 

@@ -9,6 +9,15 @@ const StaffAttendance = () => {
     const { showSuccess, showError } = useToast();
     const queryClient = useQueryClient();
 
+    const [currentTime, setCurrentTime] = React.useState(new Date());
+
+    React.useEffect(() => {
+        const timer = setInterval(() => {
+            setCurrentTime(new Date());
+        }, 1000);
+        return () => clearInterval(timer);
+    }, []);
+
     const { data: status, isLoading } = useQuery('my-attendance', () => 
         api.get('/hms/hr/attendance/my').then(res => res.data?.data || null)
     );
@@ -27,7 +36,7 @@ const StaffAttendance = () => {
 
     const attendance = status?.attendance;
     const roster = status?.roster;
-    const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const today = currentTime.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
     return (
         <div className="max-w-4xl mx-auto p-4 md:p-10">
@@ -45,10 +54,13 @@ const StaffAttendance = () => {
                         <p className="text-gray-400 text-lg">Manage your daily attendance and duty schedule</p>
                     </div>
 
-                    <div className="bg-white/5 backdrop-blur-xl border border-white/10 p-6 rounded-3xl text-center min-w-[200px]">
-                        <div className="text-sm text-gray-400 uppercase font-bold mb-1">Current Time</div>
-                        <div className="text-3xl font-black text-emerald-400">
-                            {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    <div className="bg-white/5 backdrop-blur-xl border border-white/10 p-6 rounded-3xl text-center min-w-[220px]">
+                        <div className="text-xs text-gray-400 uppercase font-bold tracking-wider mb-1 flex items-center justify-center gap-1.5">
+                            <FiClock className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                            Current Time
+                        </div>
+                        <div className="text-3xl font-black text-emerald-400 tracking-wider tabular-nums">
+                            {currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
                         </div>
                     </div>
                 </div>

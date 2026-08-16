@@ -23,6 +23,8 @@ const sslCommerzRoutes = require('./routes/sslcommerz');
 
 // Import role-based routes
 const adminRoutes = require('./routes/admin/admin');
+const adminAccountingRoutes = require('./routes/admin/admin-accounting');
+const adminHRRoutes = require('./routes/admin/admin-hr');
 const propertyOwnerRoutes = require('./routes/property-owner/property-owner');
 const guestRoutes = require('./routes/guest/guest');
 const settingsRoutes = require('./routes/settings');
@@ -33,9 +35,10 @@ const contactRoutes = require('./routes/contact');
 const hmsHRRoutes = require('./routes/property-owner/hms-hr');
 const hmsAccountsRoutes = require('./routes/property-owner/hms-accounts');
 const pushRoutes = require('./routes/push');
+const metaPixelRoutes = require('./routes/meta-pixel');
 
 // Import middleware
-const { verifyToken } = require('./middleware/auth');
+const { verifyToken, requireAdmin, requirePlatformPermission } = require('./middleware/auth');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -130,6 +133,8 @@ const apiRoutes = [
   { path: '/nagad', route: nagadPaymentRoutes },
   { path: '/reports', route: reportRoutes },
   { path: '/messages', route: messagesRoutes },
+  { path: '/admin/accounting', route: adminAccountingRoutes, middleware: [verifyToken, requireAdmin] },
+  { path: '/admin/hr', route: adminHRRoutes, middleware: [verifyToken, requireAdmin] },
   { path: '/admin', route: adminRoutes },
   { path: '/property-owner', route: propertyOwnerRoutes },
   { path: '/guest', route: guestRoutes },
@@ -139,9 +144,10 @@ const apiRoutes = [
   { path: '/ical', route: icalRoutes },
   { path: '/support', route: supportRoutes, middleware: verifyToken },
   { path: '/contact', route: contactRoutes },
-  { path: '/hms/hr', route: hmsHRRoutes, middleware: verifyToken },
-  { path: '/hms/accounts', route: hmsAccountsRoutes, middleware: verifyToken },
-  { path: '/push', route: pushRoutes }
+  { path: '/hms/hr', route: hmsHRRoutes, middleware: [verifyToken, requirePlatformPermission('can_use_hms')] },
+  { path: '/hms/accounts', route: hmsAccountsRoutes, middleware: [verifyToken, requirePlatformPermission('can_use_hms')] },
+  { path: '/push', route: pushRoutes },
+  { path: '/meta-pixel', route: metaPixelRoutes }
 ];
 
 // Mount routes

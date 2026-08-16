@@ -200,6 +200,85 @@ const HMSPricing = () => {
                     );
                 })}
             </div>
+
+            {/* Payment & Renewal History Section */}
+            <SubscriptionPaymentHistorySection />
+        </div>
+    );
+};
+
+const SubscriptionPaymentHistorySection = () => {
+    const { data: historyData, isLoading } = useQuery('host-hms-subscription-history', async () => {
+        const res = await api.get('/property-owner/hms/subscription-history');
+        return res.data?.data || {};
+    });
+
+    const history = historyData?.history || [];
+
+    return (
+        <div className="mt-12 bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <span className="p-2 bg-amber-100 text-amber-700 rounded-xl">💳</span>
+                Subscription Payment & Renewal History
+            </h2>
+
+            {isLoading ? (
+                <div className="py-8 flex justify-center">
+                    <LoadingSpinner message="Loading subscription payment history..." />
+                </div>
+            ) : history.length === 0 ? (
+                <div className="py-8 text-center text-gray-400 font-medium">
+                    No past subscription fee payment records found.
+                </div>
+            ) : (
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr className="bg-gray-50 border-b border-gray-100 text-xs font-black uppercase text-gray-400 tracking-wider">
+                                <th className="py-3 px-4">Package</th>
+                                <th className="py-3 px-4">Amount Paid</th>
+                                <th className="py-3 px-4">Payment Method</th>
+                                <th className="py-3 px-4">Transaction ID</th>
+                                <th className="py-3 px-4">Payment Date</th>
+                                <th className="py-3 px-4">Active Until</th>
+                                <th className="py-3 px-4 text-center">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 text-sm font-medium text-gray-700">
+                            {history.map((item) => (
+                                <tr key={item.id} className="hover:bg-gray-50/80 transition-colors">
+                                    <td className="py-3.5 px-4 font-bold text-gray-900">
+                                        {item.package_name}
+                                        <span className="block text-xs font-normal text-gray-400">{item.duration_days} Days Access</span>
+                                    </td>
+                                    <td className="py-3.5 px-4 font-black text-gray-900">
+                                        ৳{parseFloat(item.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </td>
+                                    <td className="py-3.5 px-4">
+                                        <span className="px-2.5 py-1 bg-amber-50 text-amber-700 font-bold text-xs rounded-lg">
+                                            {item.payment_method}
+                                        </span>
+                                    </td>
+                                    <td className="py-3.5 px-4 font-mono text-xs text-gray-500 font-semibold">
+                                        {item.tran_id}
+                                    </td>
+                                    <td className="py-3.5 px-4 text-xs font-semibold text-gray-600">
+                                        {new Date(item.payment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                    </td>
+                                    <td className="py-3.5 px-4 text-xs font-bold text-emerald-700">
+                                        {item.valid_until ? new Date(item.valid_until).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                                    </td>
+                                    <td className="py-3.5 px-4 text-center">
+                                        <span className="px-2.5 py-1 bg-green-100 text-green-800 text-xs font-bold rounded-full">
+                                            {item.status}
+                                        </span>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
         </div>
     );
 };

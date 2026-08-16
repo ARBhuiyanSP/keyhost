@@ -191,6 +191,26 @@ async function getBookingDetailsForSms(bookingId) {
         b.guest_email,
         b.guest_id,
         b.payment_deadline,
+        COALESCE(
+          (
+            SELECT NULLIF(TRIM(gateway_transaction_id), '') 
+            FROM payments 
+            WHERE booking_id = b.id AND gateway_transaction_id IS NOT NULL AND TRIM(gateway_transaction_id) != '' 
+            ORDER BY id DESC LIMIT 1
+          ),
+          (
+            SELECT NULLIF(TRIM(bank_tran_id), '') 
+            FROM payments 
+            WHERE booking_id = b.id AND bank_tran_id IS NOT NULL AND TRIM(bank_tran_id) != '' 
+            ORDER BY id DESC LIMIT 1
+          ),
+          (
+            SELECT NULLIF(TRIM(payment_reference), '') 
+            FROM payments 
+            WHERE booking_id = b.id AND payment_reference IS NOT NULL AND TRIM(payment_reference) != '' 
+            ORDER BY id DESC LIMIT 1
+          )
+        ) as transaction_id,
         p.title as property_title,
         p.internal_name as property_internal_name,
         p.owner_id,
@@ -375,7 +395,7 @@ async function sendBookingAcceptedSms(bookingId) {
   }
 }
 
-async function sendBookingPaidSms(bookingId) {
+async function sendBookingPaidSms(bookingId, transactionIdOverride = null) {
   try {
     const booking = await getBookingDetailsForSms(bookingId);
     if (!booking) return;
@@ -389,6 +409,7 @@ async function sendBookingPaidSms(bookingId) {
 
     const methodRaw = booking.payment_method ? String(booking.payment_method).toLowerCase() : '';
     const viaPaymentMethod = methodRaw ? ` via ${methodRaw === 'sslcommerz' ? 'SSLCommerz' : methodRaw === 'bkash' ? 'bKash' : methodRaw === 'nagad' ? 'Nagad' : methodRaw}` : '';
+    const trxId = transactionIdOverride || booking.transaction_id || '';
 
     const placeholders = {
       host_name: hostName,
@@ -397,6 +418,8 @@ async function sendBookingPaidSms(bookingId) {
       property_name: booking.host_property_name,
       property_name_guest: booking.property_title,
       booking_ref: booking.booking_reference,
+      transaction_id: trxId,
+      trx_id: trxId,
       check_in_date: checkInStr,
       amount: amountStr,
       via_payment_method: viaPaymentMethod
@@ -404,7 +427,7 @@ async function sendBookingPaidSms(bookingId) {
 
     // 1. Send to Host
     if (hostPhone) {
-      const defaultHostTemplate = `[Keyhost] Payment Confirmed! Booking {booking_ref} for {property_name} has been paid successfully{via_payment_method}. Guest: {guest_name}. Check-in: {check_in_date}.`;
+      const defaultHostTemplate = `[Keyhost] Payment Confirmed! Booking {booking_ref} for {property_name} has been paid successfully{via_payment_method}${trxId ? ` (TrxID: {trx_id})` : ''}. Guest: {guest_name}. Check-in: {check_in_date}.`;
       const hostTemplate = await getSettingValue('sms_template_booking_paid_host', defaultHostTemplate);
       let hostMsg = parseTemplate(hostTemplate, placeholders);
       
@@ -417,13 +440,18 @@ async function sendBookingPaidSms(bookingId) {
         }
       }
 
+      // Auto-inject TrxID if available and not present in message
+      if (trxId && !hostMsg.includes(trxId) && !hostMsg.toLowerCase().includes('trxid')) {
+        hostMsg = hostMsg.trim().replace(/\.$/, '') + ` (TrxID: ${trxId}).`;
+      }
+
       console.log(`[SMS] Sending Booking Paid to Host: ${hostMsg}`);
       await sendSMS({ to: hostPhone, message: hostMsg });
     }
 
     // 2. Send to Guest
     if (guestPhone) {
-      const defaultGuestTemplate = `[Keyhost] Thank you {guest_name}! Payment of {amount}{via_payment_method} for booking {booking_ref} ({property_name}) was successful. Your stay is confirmed. Check-in: {check_in_date}.`;
+      const defaultGuestTemplate = `[Keyhost] Thank you {guest_name}! Payment of {amount}{via_payment_method}${trxId ? ` (TrxID: {trx_id})` : ''} for booking {booking_ref} ({property_name}) was successful. Your stay is confirmed. Check-in: {check_in_date}.`;
       const guestTemplate = await getSettingValue('sms_template_booking_paid_guest', defaultGuestTemplate);
       let guestMsg = parseTemplate(guestTemplate, placeholders);
       
@@ -434,6 +462,11 @@ async function sendBookingPaidSms(bookingId) {
         } else {
           guestMsg = guestMsg.trim().replace(/\.$/, '') + ` (${methodRaw === 'sslcommerz' ? 'SSLCommerz' : methodRaw === 'bkash' ? 'bKash' : methodRaw === 'nagad' ? 'Nagad' : methodRaw} payment).`;
         }
+      }
+
+      // Auto-inject TrxID if available and not present in message
+      if (trxId && !guestMsg.includes(trxId) && !guestMsg.toLowerCase().includes('trxid')) {
+        guestMsg = guestMsg.trim().replace(/\.$/, '') + ` (TrxID: ${trxId}).`;
       }
 
       console.log(`[SMS] Sending Booking Paid to Guest: ${guestMsg}`);
@@ -456,7 +489,8 @@ async function sendBookingPaidSms(bookingId) {
         bookingRef: booking.booking_reference,
         checkInDate: checkInStr,
         amount: amountStr,
-        paymentMethod: paymentMethodLabel
+        paymentMethod: paymentMethodLabel,
+        transactionId: trxId
       });
     }
 
@@ -470,7 +504,8 @@ async function sendBookingPaidSms(bookingId) {
         checkInDate: checkInStr,
         checkOutDate: checkOutStr,
         amount: amountStr,
-        paymentMethod: paymentMethodLabel
+        paymentMethod: paymentMethodLabel,
+        transactionId: trxId
       });
     }
 

@@ -75,11 +75,12 @@ const AdminSettings = () => {
         'google_client_id', 'google_maps_api_key',
         'google_places_enabled', 'google_api_associated_email',
         'enable_bkash', 'bkash_is_live', 'bkash_merchant_id', 'bkash_merchant_key', 'bkash_merchant_secret',
-        'bkash_username', 'bkash_password', 'bkash_api_url', 'bkash_api_associated_email',
+        'bkash_username', 'bkash_password', 'bkash_api_url', 'bkash_api_associated_email', 'bkash_charge_rate',
         'enable_nagad', 'nagad_is_live', 'nagad_merchant_id', 'nagad_merchant_private_key',
         'nagad_public_key', 'nagad_api_url',
         'terms_of_service', 'privacy_policy', 'refund_policy',
-        'censor_phone_numbers', 'censor_emails', 'censor_links', 'censor_banned_words'
+        'censor_phone_numbers', 'censor_emails', 'censor_links', 'censor_banned_words',
+        'facebook_pixel_id', 'meta_advanced_matching', 'meta_capi_enabled'
       ];
 
       Object.keys(updatedSettings).forEach(key => {
@@ -698,17 +699,92 @@ const AdminSettings = () => {
                       />
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
-                        Facebook Pixel ID
-                      </label>
-                      <input
-                        type="text"
-                        value={settings.facebook_pixel_id || ''}
-                        onChange={(e) => handleInputChange('facebook_pixel_id', e.target.value)}
-                        className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
-                        placeholder="XXXXXXXXXXXXXXX"
-                      />
+                    <div className="bg-white border border-gray-100 rounded-2xl p-6 shadow-sm space-y-6">
+                      <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100 pb-3 flex items-center gap-2">
+                        <span>🔵</span> Meta Pixel &amp; Conversions API (CAPI)
+                      </h3>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                          <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                            Facebook Pixel ID
+                          </label>
+                          <input
+                            type="text"
+                            value={settings.facebook_pixel_id || ''}
+                            onChange={(e) => handleInputChange('facebook_pixel_id', e.target.value)}
+                            className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                            placeholder="XXXXXXXXXXXXXXX"
+                          />
+                          <p className="mt-1.5 text-xs text-gray-500 font-medium">
+                            Your 15-16 digit Meta Pixel ID
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                            Meta Test Event Code
+                          </label>
+                          <input
+                            type="text"
+                            value={settings.meta_test_event_code || ''}
+                            onChange={(e) => handleInputChange('meta_test_event_code', e.target.value)}
+                            className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                            placeholder="TESTXXXXX"
+                          />
+                          <p className="mt-1.5 text-xs text-gray-500 font-medium">
+                            Optional code to verify events in Meta Events Manager
+                          </p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                          Meta Conversions API (CAPI) Access Token
+                        </label>
+                        <textarea
+                          value={settings.meta_access_token || ''}
+                          onChange={(e) => handleInputChange('meta_access_token', e.target.value)}
+                          rows="2"
+                          className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-mono text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                          placeholder="EAABs..."
+                        />
+                        <p className="mt-1.5 text-xs text-gray-500 font-medium">
+                          Conversions API Access Token generated in Events Manager settings.
+                        </p>
+                      </div>
+
+                      <div className="space-y-4 pt-2 border-t border-gray-100">
+                        <div className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={settings.meta_advanced_matching !== false}
+                            onChange={(e) => handleInputChange('meta_advanced_matching', e.target.checked)}
+                            className="h-5 w-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 transition-colors cursor-pointer"
+                          />
+                          <label className="ml-3 text-sm font-semibold text-gray-800 cursor-pointer">
+                            Enable Advanced Matching
+                          </label>
+                        </div>
+                        <p className="text-xs text-gray-500 ml-8 -mt-2">
+                          Sends hashed customer identifiers (email, name, phone) for better matching accuracy.
+                        </p>
+
+                        <div className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={settings.meta_capi_enabled === true}
+                            onChange={(e) => handleInputChange('meta_capi_enabled', e.target.checked)}
+                            className="h-5 w-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 transition-colors cursor-pointer"
+                          />
+                          <label className="ml-3 text-sm font-semibold text-gray-800 cursor-pointer">
+                            Enable Conversions API (Server-Side Events)
+                          </label>
+                        </div>
+                        <p className="text-xs text-gray-500 ml-8 -mt-2">
+                          Sends booking and checkout events directly from backend server to secure track against ad blockers.
+                        </p>
+                      </div>
                     </div>
 
                     <div>
@@ -1531,6 +1607,24 @@ const AdminSettings = () => {
                               className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
                               placeholder="bKash App Secret"
                             />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">
+                              bKash Charge Rate (%)
+                            </label>
+                            <input
+                              type="number"
+                              value={settings.bkash_charge_rate !== undefined ? settings.bkash_charge_rate : 1.5}
+                              onChange={(e) => handleInputChange('bkash_charge_rate', parseFloat(e.target.value))}
+                              className="w-full px-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium text-gray-900 shadow-[2px_2px_0px_rgba(0,0,0,0.04)]"
+                              placeholder="e.g. 1.5"
+                              step="0.01"
+                              min="0"
+                              max="100"
+                            />
+                            <p className="mt-1 text-xs text-gray-500">
+                              The fee percentage deducted by bKash gateway. Default is 1.5%.
+                            </p>
                           </div>
                         </div>
                       </div>

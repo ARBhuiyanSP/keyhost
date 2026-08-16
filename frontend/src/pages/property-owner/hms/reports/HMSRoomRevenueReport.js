@@ -48,6 +48,7 @@ const HMSRoomRevenueReport = () => {
     // Filter form states
     const [selectedPropertyId, setSelectedPropertyId] = useState('');
     const [selectedRoomId, setSelectedRoomId] = useState('');
+    const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');
     const [startDate, setStartDate] = useState(firstDayStr);
     const [endDate, setEndDate] = useState(lastDayStr);
 
@@ -55,6 +56,7 @@ const HMSRoomRevenueReport = () => {
     const [searchParams, setSearchParams] = useState({
         propertyId: '',
         roomId: '',
+        paymentMethod: '',
         startDate: firstDayStr,
         endDate: lastDayStr,
         trigger: 0
@@ -249,6 +251,9 @@ const HMSRoomRevenueReport = () => {
 
             if (activeReportTab === 'room-revenue') {
                 params.room_id = searchParams.roomId;
+                if (searchParams.paymentMethod) {
+                    params.payment_method = searchParams.paymentMethod;
+                }
             }
 
             const response = await api.get(endpoint, { params });
@@ -275,6 +280,7 @@ const HMSRoomRevenueReport = () => {
         setSearchParams({
             propertyId: selectedPropertyId,
             roomId: selectedRoomId,
+            paymentMethod: selectedPaymentMethod,
             startDate,
             endDate,
             trigger: searchParams.trigger + 1
@@ -289,12 +295,14 @@ const HMSRoomRevenueReport = () => {
 
         setSelectedPropertyId(pId);
         setSelectedRoomId('');
+        setSelectedPaymentMethod('');
         setStartDate(firstDayStr);
         setEndDate(lastDayStr);
         setCurrentPage(1);
         setSearchParams({
             propertyId: pId,
             roomId: '',
+            paymentMethod: '',
             startDate: firstDayStr,
             endDate: lastDayStr,
             trigger: searchParams.trigger + 1
@@ -310,7 +318,7 @@ const HMSRoomRevenueReport = () => {
             showError('No transactions available to export');
             return;
         }
-        const headers = ['SL', 'Date', 'Booking Ref', 'Guest Name', 'Room No', 'Stay Period', 'Nights', 'Service', 'Charge', 'VAT Amount', 'Service Charge', 'Total Amount'];
+        const headers = ['SL', 'Date', 'Booking Ref', 'Guest Name', 'Room No', 'Payment Method', 'Stay Period', 'Nights', 'Service', 'Charge', 'VAT Amount', 'Service Charge', 'Total Amount'];
         const csvRows = [headers.map(escapeCSV).join(',')];
         
         transactions.forEach((tx, idx) => {
@@ -320,6 +328,7 @@ const HMSRoomRevenueReport = () => {
                 tx.booking_reference,
                 tx.guest_name || 'Guest',
                 tx.room_number || '—',
+                tx.payment_method === 'sslcommerz' ? 'SSLCommerz' : tx.payment_method === 'bkash' ? 'bKash' : tx.payment_method || '—',
                 tx.check_in_date && tx.check_out_date ? `${fmtDate(tx.check_in_date)} - ${fmtDate(tx.check_out_date)}` : '—',
                 tx.stay_nights ?? '—',
                 tx.service_name || 'ROOM CHARGE',
@@ -444,6 +453,52 @@ const HMSRoomRevenueReport = () => {
         }
     }, [activeReportTab, transactions, filteredRoomsList]);
 
+    const paymentTotals = useMemo(() => {
+        let cash = 0;
+        let bkash = 0;
+        let ssl = 0;
+        let online = 0;
+
+        transactions.forEach(tx => {
+            const amt = parseFloat(tx.total_amount || 0);
+            const method = String(tx.payment_method || '').toLowerCase().trim();
+            if (method === 'cash' || method === 'walkin' || method === 'walk_in') {
+                cash += amt;
+            } else if (method === 'bkash') {
+                bkash += amt;
+                online += amt;
+            } else if (method === 'sslcommerz' || method === 'ssl') {
+                ssl += amt;
+                online += amt;
+            }
+        });
+
+        return { cash, bkash, ssl, online };
+    }, [transactions]);
+
+    const PaymentMethodSummary = ({ totals }) => {
+        return (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="bg-slate-50 border border-slate-150 p-4 rounded-xl shadow-xs">
+                    <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-wider block">Cash / Walk-in</span>
+                    <span className="text-lg font-black text-slate-800 block mt-1">৳{fmt(totals.cash)}</span>
+                </div>
+                <div className="bg-blue-50/50 border border-blue-100 p-4 rounded-xl shadow-xs">
+                    <span className="text-[10px] text-blue-500 font-extrabold uppercase tracking-wider block">Online Payment</span>
+                    <span className="text-lg font-black text-blue-900 block mt-1">৳{fmt(totals.online)}</span>
+                </div>
+                <div className="bg-[#f00a5e]/5 border border-[#f00a5e]/10 p-4 rounded-xl shadow-xs">
+                    <span className="text-[10px] text-[#f00a5e] font-extrabold uppercase tracking-wider block">bKash (Online)</span>
+                    <span className="text-lg font-black text-[#800532] block mt-1">৳{fmt(totals.bkash)}</span>
+                </div>
+                <div className="bg-indigo-50/50 border border-indigo-100 p-4 rounded-xl shadow-xs">
+                    <span className="text-[10px] text-indigo-500 font-extrabold uppercase tracking-wider block">SSLCommerz (Online)</span>
+                    <span className="text-lg font-black text-indigo-900 block mt-1">৳{fmt(totals.ssl)}</span>
+                </div>
+            </div>
+        );
+    };
+
     // Client side pagination calculations
     const paginatedTransactions = useMemo(() => {
         const startIndex = (currentPage - 1) * pageSize;
@@ -533,12 +588,12 @@ const HMSRoomRevenueReport = () => {
                 <div className="flex flex-col md:flex-row gap-4 items-end">
                     
                     {/* 1. Property Select */}
-                    <div className="w-full md:w-1/4 flex flex-col gap-1.5">
+                    <div className="w-full md:flex-1 flex flex-col gap-1.5">
                         <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Property</label>
                         <select
                             value={selectedPropertyId}
                             onChange={handlePropertyChange}
-                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-[#004e59] focus:border-[#004e59] h-[38px] bg-white cursor-pointer"
+                            className="w-full border border-gray-250 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-[#004e59] focus:border-[#004e59] h-[38px] bg-white cursor-pointer"
                         >
                             <option value="">Select Property</option>
                             {properties?.map(p => (
@@ -548,13 +603,13 @@ const HMSRoomRevenueReport = () => {
                     </div>
 
                     {/* 2. Room Select */}
-                    <div className="w-full md:w-1/4 flex flex-col gap-1.5">
+                    <div className="w-full md:flex-1 flex flex-col gap-1.5">
                         <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Room</label>
                         <select
                             value={selectedRoomId}
                             onChange={e => setSelectedRoomId(e.target.value)}
                             disabled={loadingRooms || !selectedPropertyId}
-                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-[#004e59] focus:border-[#004e59] disabled:bg-gray-50 h-[38px] bg-white cursor-pointer"
+                            className="w-full border border-gray-250 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-[#004e59] focus:border-[#004e59] disabled:bg-gray-50 h-[38px] bg-white cursor-pointer"
                         >
                             <option value="">Select a Room</option>
                             <option value="all">All Rooms</option>
@@ -564,8 +619,26 @@ const HMSRoomRevenueReport = () => {
                         </select>
                     </div>
 
-                    {/* 3. Date Range Pickers & inline Search */}
-                    <div className="w-full md:w-2/4 flex flex-col gap-1.5" ref={datePickerRef}>
+                    {/* 3. Payment Method Select */}
+                    {activeReportTab === 'room-revenue' && (
+                        <div className="w-full md:flex-1 flex flex-col gap-1.5 animate-fadeIn">
+                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Payment Method</label>
+                            <select
+                                value={selectedPaymentMethod}
+                                onChange={e => setSelectedPaymentMethod(e.target.value)}
+                                className="w-full border border-gray-250 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-[#004e59] focus:border-[#004e59] h-[38px] bg-white cursor-pointer"
+                            >
+                                <option value="">All Methods</option>
+                                <option value="cash">Cash / Walk-in</option>
+                                <option value="bkash">bKash (Online)</option>
+                                <option value="sslcommerz">SSLCommerz (Online)</option>
+                                <option value="online">All Online Payments</option>
+                            </select>
+                        </div>
+                    )}
+
+                    {/* 4. Date Range Pickers & inline Search */}
+                    <div className="w-full md:flex-[1.8] flex flex-col gap-1.5" ref={datePickerRef}>
                         <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-0.5">
                             <span className="text-red-500">*</span> Date Range
                         </label>
@@ -753,10 +826,19 @@ const HMSRoomRevenueReport = () => {
                     
                     {/* View: Details View */}
                     {activeView === 'details' && (
-                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden print:border-none print:shadow-none">
-                            {loadingReport ? (
-                                <div className="py-20 flex justify-center"><LoadingSpinner /></div>
-                            ) : transactions.length === 0 ? (
+                        <>
+                            {transactions.length > 0 && !loadingReport && (
+                                <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm print:hidden mb-6">
+                                    <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-1.5 border-b border-gray-100 pb-2">
+                                        <FiPieChart className="text-[#004e59]" /> Payment Method Summary
+                                    </h4>
+                                    <PaymentMethodSummary totals={paymentTotals} />
+                                </div>
+                            )}
+                            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden print:border-none print:shadow-none">
+                                {loadingReport ? (
+                                    <div className="py-20 flex justify-center"><LoadingSpinner /></div>
+                                ) : transactions.length === 0 ? (
                                 <div className="py-20 text-center">
                                     <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4 text-[#004e59]">
                                         <FiInfo size={24} />
@@ -770,7 +852,7 @@ const HMSRoomRevenueReport = () => {
                                         <table className="w-full text-xs text-left">
                                             <thead className="bg-gray-100 border-b border-gray-250 print:bg-transparent">
                                                 <tr>
-                                                    {['SL', 'Date', 'Booking Ref', 'Guest Name', 'Room No', 'Stay Period', 'Nights', 'Service Name', 'Charge', 'VAT Amount', 'Service Charge', 'Total Amount'].map(h => (
+                                                    {['SL', 'Date', 'Booking Ref', 'Guest Name', 'Room No', 'Payment Method', 'Stay Period', 'Nights', 'Service Name', 'Charge', 'VAT Amount', 'Service Charge', 'Total Amount'].map(h => (
                                                         <th key={h} className={`px-4 py-3 font-bold text-gray-800 uppercase tracking-wider ${
                                                             h === 'Nights' ? 'text-center' : ['Charge', 'VAT Amount', 'Service Charge', 'Total Amount'].includes(h) ? 'text-right' : ''
                                                         }`}>{h}</th>
@@ -785,6 +867,9 @@ const HMSRoomRevenueReport = () => {
                                                         <td className="px-4 py-3 font-mono font-bold text-blue-800">{tx.booking_reference}</td>
                                                         <td className="px-4 py-3 text-gray-955 font-bold">{tx.guest_name || 'Guest'}</td>
                                                         <td className="px-4 py-3 text-gray-850 font-semibold">{tx.room_number || '—'}</td>
+                                                        <td className="px-4 py-3 text-gray-800 font-bold capitalize whitespace-nowrap">
+                                                            {tx.payment_method === 'sslcommerz' ? 'SSLCommerz' : tx.payment_method === 'bkash' ? 'bKash' : tx.payment_method || '—'}
+                                                        </td>
                                                         <td className="px-4 py-3 text-gray-850 font-medium whitespace-nowrap">{tx.check_in_date && tx.check_out_date ? `${fmtDate(tx.check_in_date)} - ${fmtDate(tx.check_out_date)}` : '—'}</td>
                                                         <td className="px-4 py-3 text-gray-850 font-bold text-center">{tx.stay_nights ?? '—'}</td>
                                                         <td className="px-4 py-3">
@@ -798,7 +883,7 @@ const HMSRoomRevenueReport = () => {
                                                 ))}
                                                 {/* Total summary row */}
                                                 <tr className="bg-gray-50 font-bold border-t-2 border-gray-300 print:bg-transparent">
-                                                    <td colSpan={8} className="px-4 py-4 text-gray-900 font-extrabold text-right">Total</td>
+                                                    <td colSpan={9} className="px-4 py-4 text-gray-900 font-extrabold text-right">Total</td>
                                                     <td className="px-4 py-4 text-right text-gray-900 font-extrabold">৳{fmt(reportTotals.charge)}</td>
                                                     <td className="px-4 py-4 text-right text-gray-900 font-extrabold">৳{fmt(reportTotals.vat)}</td>
                                                     <td className="px-4 py-4 text-right text-gray-900 font-extrabold">৳{fmt(reportTotals.serviceCharge)}</td>
@@ -863,6 +948,7 @@ const HMSRoomRevenueReport = () => {
                                 </>
                             )}
                         </div>
+                        </>
                     )}
 
                     {/* View: Summary View (Printable Card Layout) */}
@@ -927,6 +1013,16 @@ const HMSRoomRevenueReport = () => {
                                     </p>
                                 </div>
 
+                                {/* Payment Method Summary Grid */}
+                                {transactions.length > 0 && (
+                                    <div className="mt-4 border border-gray-150 p-4 rounded-xl mb-6 bg-gray-50/30">
+                                        <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 pb-1 border-b border-gray-200">
+                                            Revenue Breakdown by Payment Method
+                                        </h4>
+                                        <PaymentMethodSummary totals={paymentTotals} />
+                                    </div>
+                                )}
+
                                 {/* Document Table */}
                                 <div className="overflow-x-auto mt-8">
                                     <table className="w-full text-xs text-left border-collapse">
@@ -937,6 +1033,7 @@ const HMSRoomRevenueReport = () => {
                                                 <th className="px-3 py-3 font-bold text-gray-800 uppercase tracking-wider text-left">Booking Ref</th>
                                                 <th className="px-3 py-3 font-bold text-gray-800 uppercase tracking-wider text-left">Guest Name</th>
                                                 <th className="px-3 py-3 font-bold text-gray-800 uppercase tracking-wider text-left">Room No</th>
+                                                <th className="px-3 py-3 font-bold text-gray-800 uppercase tracking-wider text-left">Payment Method</th>
                                                 <th className="px-3 py-3 font-bold text-gray-800 uppercase tracking-wider text-left">Stay Period</th>
                                                 <th className="px-3 py-3 font-bold text-gray-800 uppercase tracking-wider text-center">Nights</th>
                                                 <th className="px-3 py-3 font-bold text-gray-800 uppercase tracking-wider text-left">Service</th>
@@ -961,6 +1058,9 @@ const HMSRoomRevenueReport = () => {
                                                         <td className="px-3 py-2.5 font-mono font-bold text-blue-800">{tx.booking_reference}</td>
                                                         <td className="px-3 py-2.5 text-gray-900 font-bold">{tx.guest_name || 'Guest'}</td>
                                                         <td className="px-3 py-2.5 text-gray-850 font-medium">{tx.room_number || '—'}</td>
+                                                        <td className="px-3 py-2.5 text-gray-800 font-bold capitalize whitespace-nowrap">
+                                                            {tx.payment_method === 'sslcommerz' ? 'SSLCommerz' : tx.payment_method === 'bkash' ? 'bKash' : tx.payment_method || '—'}
+                                                        </td>
                                                         <td className="px-3 py-2.5 text-gray-800 whitespace-nowrap">{tx.check_in_date && tx.check_out_date ? `${fmtDate(tx.check_in_date)} - ${fmtDate(tx.check_out_date)}` : '—'}</td>
                                                         <td className="px-3 py-2.5 text-gray-800 font-bold text-center">{tx.stay_nights ?? '—'}</td>
                                                         <td className="px-3 py-2.5">
@@ -975,7 +1075,7 @@ const HMSRoomRevenueReport = () => {
                                             )}
                                             {/* Total row */}
                                             <tr className="bg-gray-50 font-bold border-t border-gray-300 print:bg-transparent">
-                                                <td colSpan={8} className="px-3 py-3 text-gray-900 font-extrabold text-right">Total</td>
+                                                <td colSpan={9} className="px-3 py-3 text-gray-900 font-extrabold text-right">Total</td>
                                                 <td className="px-3 py-3 text-right text-gray-900 font-extrabold">৳{fmt(reportTotals.charge)}</td>
                                                 <td className="px-3 py-3 text-right text-gray-900 font-extrabold">৳{fmt(reportTotals.vat)}</td>
                                                 <td className="px-3 py-3 text-right text-gray-900 font-extrabold">৳{fmt(reportTotals.serviceCharge)}</td>

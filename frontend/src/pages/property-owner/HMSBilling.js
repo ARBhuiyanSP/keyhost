@@ -240,13 +240,37 @@ const HMSBilling = () => {
         }
     };
 
-    const handleGenerateLink = async () => {
+    const [paymentLinkData, setPaymentLinkData] = useState(null);
+
+    const handleRefreshStatus = async () => {
+        try {
+            const { data: res } = await refetchReservations();
+            await refetchBills();
+            if (res?.data?.data?.reservations && selectedBooking) {
+                const updated = res.data.data.reservations.find(r => r.id === selectedBooking.id);
+                if (updated) {
+                    setSelectedBooking(updated);
+                }
+            }
+            showSuccess('Payment status refreshed!');
+        } catch (err) {
+            showError('Failed to refresh status');
+        }
+    };
+
+    const handleGenerateLink = async (expireHours = 48, customAmt = null) => {
         if (!selectedBooking) return;
         setIsGeneratingLink(true);
         try {
-            const response = await api.get(`/property-owner/hms/reservations/${selectedBooking.id}/payment-link`);
-            setPaymentLink(response.data?.data?.paymentLink);
-            showSuccess('Payment link generated!');
+            const response = await api.post(`/property-owner/hms/reservations/${selectedBooking.id}/payment-link`, {
+                expire_hours: expireHours,
+                custom_amount: customAmt,
+                regenerate: true
+            });
+            const data = response.data?.data || {};
+            setPaymentLinkData(data);
+            setPaymentLink(data.paymentLink || '');
+            showSuccess('Secure payment link generated!');
         } catch (err) {
             showError('Failed to generate payment link');
         } finally {
@@ -734,8 +758,8 @@ const HMSBilling = () => {
                                         </span>
                                         <button 
                                             type="button"
-                                            onClick={() => { refetchReservations(); refetchBills(); }}
-                                            className="text-[9px] font-black text-blue-600 hover:text-blue-800 uppercase tracking-wider flex items-center gap-1 bg-blue-100/40 px-2 py-0.5 rounded"
+                                            onClick={handleRefreshStatus}
+                                            className="text-[9px] font-black text-blue-600 hover:text-blue-800 uppercase tracking-wider flex items-center gap-1 bg-blue-100/40 px-2 py-0.5 rounded cursor-pointer active:scale-95 transition-all"
                                         >
                                             <FiRefreshCw className="animate-spin-hover" size={9} /> Refresh Status
                                         </button>
@@ -743,38 +767,58 @@ const HMSBilling = () => {
                                     
                                     {isGeneratingLink ? (
                                         <div className="py-1 text-center text-xs text-blue-600 font-semibold flex justify-center items-center gap-2">
-                                            <FiRefreshCw className="animate-spin text-blue-500" size={12} /> Generating...
+                                            <FiRefreshCw className="animate-spin text-blue-500" size={12} /> Generating secure link...
                                         </div>
                                     ) : paymentLink ? (
-                                        <div className="space-y-2">
+                                        <div className="space-y-2.5">
                                             <div className="flex gap-2">
                                                 <input 
                                                     readOnly 
                                                     type="text" 
                                                     value={paymentLink}
-                                                    className="flex-1 bg-white border border-gray-200 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-700 select-all outline-none"
+                                                    className="flex-1 bg-white border border-gray-200 px-3 py-1.5 rounded-lg text-xs font-mono text-gray-700 select-all outline-none"
                                                 />
                                                 <button 
                                                     type="button"
-                                                    onClick={() => { navigator.clipboard.writeText(paymentLink); showSuccess('Link copied!'); }}
-                                                    className="px-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center shrink-0"
+                                                    onClick={() => { navigator.clipboard.writeText(paymentLink); showSuccess('Link copied to clipboard!'); }}
+                                                    className="px-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold text-xs transition-colors flex items-center justify-center shrink-0 gap-1"
                                                     title="Copy link"
                                                 >
-                                                    <FiCopy size={12} />
+                                                    <FiCopy size={12} /> Copy
                                                 </button>
+                                                {paymentLinkData?.whatsappUrl && (
+                                                    <a 
+                                                        href={paymentLinkData.whatsappUrl} 
+                                                        target="_blank" 
+                                                        rel="noreferrer"
+                                                        className="px-3 bg-emerald-600 text-white font-bold text-xs rounded-lg hover:bg-emerald-700 transition-colors flex items-center justify-center shrink-0 gap-1"
+                                                        title="Send via WhatsApp"
+                                                    >
+                                                        📱 WhatsApp
+                                                    </a>
+                                                )}
                                                 <a 
                                                     href={paymentLink} 
                                                     target="_blank" 
                                                     rel="noreferrer"
-                                                    className="px-2.5 bg-gray-905 text-white rounded-lg hover:bg-black transition-colors flex items-center justify-center shrink-0"
+                                                    className="px-2.5 bg-gray-900 text-white rounded-lg hover:bg-black transition-colors flex items-center justify-center shrink-0"
                                                     title="Open Payment Page"
                                                 >
                                                     <FiExternalLink size={12} />
                                                 </a>
                                             </div>
-                                            <p className="text-[10px] text-blue-700/80 font-semibold leading-relaxed">
-                                                Copy and share this URL with the guest to accept online payment. Click "Refresh Status" once done.
-                                            </p>
+                                            <div className="flex items-center justify-between text-[10px] text-blue-700/80 font-bold">
+                                                <span>🔒 Cryptographically Signed Token</span>
+                                                {paymentLinkData?.expiresAt ? (
+                                                    <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                                        ⏱️ Expires: {new Date(paymentLinkData.expiresAt).toLocaleString()}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                                        ⏱️ Valid for 48 Hours
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     ) : (
                                         <div className="py-1 text-center text-xs text-red-500 font-semibold">Failed to generate checkout link. Please retry.</div>

@@ -1,15 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/database');
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken, requirePlatformPermission } = require('../middleware/auth');
 const upload = require('../utils/multerCustom');
 const { formatResponse } = require('../utils/helpers');
 const { compressImage } = require('../utils/imageProcessor');
 const path = require('path');
 const fs = require('fs');
 
-// Create a new ticket (Guest only)
-router.post('/', verifyToken, upload.single('attachment'), async (req, res) => {
+// Create a new ticket
+router.post('/', verifyToken, requirePlatformPermission('support.create_update'), upload.single('attachment'), async (req, res) => {
   try {
     const { subject, category, priority, property_id, message } = req.body;
     const guest_id = req.user.id;
@@ -48,7 +48,7 @@ router.post('/', verifyToken, upload.single('attachment'), async (req, res) => {
 });
 
 // Get tickets (Role-based filtering)
-router.get('/', verifyToken, async (req, res) => {
+router.get('/', verifyToken, requirePlatformPermission('support.read'), async (req, res) => {
   try {
     const { status, role } = req.query; // role can be guest/host/admin
     const user_id = req.user.id;
@@ -95,7 +95,7 @@ router.get('/', verifyToken, async (req, res) => {
 });
 
 // Get ticket details and messages
-router.get('/:id', verifyToken, async (req, res) => {
+router.get('/:id', verifyToken, requirePlatformPermission('support.read'), async (req, res) => {
   try {
     const { id } = req.params;
     const user_id = req.user.id;

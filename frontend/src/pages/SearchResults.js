@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery } from 'react-query';
+import { useFbPixel } from '../hooks/useFbPixel';
 import { FiSearch, FiMapPin, FiFilter, FiGrid, FiList, FiStar, FiHeart, FiHome, FiBriefcase, FiArrowLeft, FiX, FiMinus, FiPlus, FiChevronDown } from 'react-icons/fi';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -16,6 +17,7 @@ const PropertyMap = lazy(() => import('../components/property/PropertyMap'));
 
 const SearchResults = () => {
   const navigate = useNavigate();
+  const { trackSearch } = useFbPixel();
   const [searchParams, setSearchParams] = useSearchParams();
   const [viewMode, setViewMode] = useState('grid');
   const [showFilters, setShowFilters] = useState(false);
@@ -159,6 +161,17 @@ const SearchResults = () => {
       select: (response) => response.data?.data || { properties: [], pagination: {} },
     }
   );
+
+  // Track Meta Pixel Search event
+  useEffect(() => {
+    if (searchData) {
+      const searchString = filters.city || 'all';
+      const checkinDate = filters.check_in_date || filters.move_in_date || '';
+      const checkoutDate = filters.check_out_date || '';
+      const guests = parseInt(filters.min_guests) || 1;
+      trackSearch(searchString, checkinDate, checkoutDate, guests);
+    }
+  }, [searchData, filters.city, filters.check_in_date, filters.move_in_date, filters.check_out_date, filters.min_guests, trackSearch]);
 
   // Fetch amenities
   const { data: amenitiesData } = useQuery(

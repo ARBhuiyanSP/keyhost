@@ -18,6 +18,27 @@ const { sendEmail } = require('../utils/email');
 
 const router = express.Router();
 
+const defaultHostPermissions = {
+  can_list_properties: true,
+  can_use_hms: true,
+  can_use_pms: true,
+  can_view_earnings: true,
+  can_view_analytics: true,
+  can_manage_reviews: true,
+  can_use_calendar: true,
+  can_manage_staff: true
+};
+
+const defaultGuestPermissions = {
+  can_make_bookings: true,
+  can_view_booking_history: true,
+  can_request_refunds: true,
+  can_leave_reviews: true,
+  can_use_rewards: true,
+  can_view_favorites: true,
+  can_access_messages: true
+};
+
 // Register new user
 router.post('/register', validateUserRegistration, async (req, res) => {
   try {
@@ -143,6 +164,10 @@ router.post('/register', validateUserRegistration, async (req, res) => {
       return res.status(400).json(formatResponse(false, 'Password hash cannot be null'));
     }
 
+    const platformPerms = user_type === 'property_owner' 
+      ? JSON.stringify(defaultHostPermissions) 
+      : (user_type === 'guest' ? JSON.stringify(defaultGuestPermissions) : null);
+
     const insertParams = [
       first_name,
       last_name,
@@ -155,7 +180,8 @@ router.post('/register', validateUserRegistration, async (req, res) => {
       address || null,
       city || null,
       state || null,
-      country || null
+      country || null,
+      platformPerms
     ];
 
     // Log final insert params (without sensitive data)
@@ -221,8 +247,8 @@ router.post('/register', validateUserRegistration, async (req, res) => {
         `INSERT INTO users (
           first_name, last_name, email, phone, password, user_type,
           date_of_birth, gender, address, city, state, country,
-          email_verified_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+          email_verified_at, created_at, platform_permissions
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?)`,
         insertParams
       );
     } catch (dbError) {
@@ -290,14 +316,23 @@ router.post('/register', validateUserRegistration, async (req, res) => {
     // Get user data (without password)
     const [users] = await pool.execute(
       `SELECT id, first_name, last_name, email, phone, user_type, 
-              email_verified_at, is_active, created_at 
+              email_verified_at, is_active, created_at, platform_permissions
        FROM users WHERE id = ?`,
       [userId]
     );
 
+    const registeredUser = users[0];
+    if (registeredUser.platform_permissions && typeof registeredUser.platform_permissions === 'string') {
+      try {
+        registeredUser.platform_permissions = JSON.parse(registeredUser.platform_permissions);
+      } catch (e) {
+        registeredUser.platform_permissions = null;
+      }
+    }
+
     res.status(201).json(
       formatResponse(true, 'User registered successfully', {
-        user: users[0],
+        user: registeredUser,
         token,
         refreshToken
       })
@@ -357,7 +392,10 @@ router.post('/google', async (req, res) => {
 
     // Check if user exists by google_id or email
     const [existingUsers] = await pool.execute(
-      'SELECT * FROM users WHERE google_id = ? OR email = ?',
+      `SELECT u.*, COALESCE(u.platform_permissions, rdp.permissions) as platform_permissions
+       FROM users u
+       LEFT JOIN role_default_permissions rdp ON rdp.role = u.user_type
+       WHERE u.google_id = ? OR u.email = ?`,
       [google_id, email]
     );
 
@@ -422,10 +460,24 @@ router.post('/google', async (req, res) => {
       userId = result.insertId;
 
       const [newUsers] = await pool.execute(
-        `SELECT id, first_name, last_name, email, phone, user_type, host_id, profile_image, is_active FROM users WHERE id = ?`,
+        `SELECT u.id, u.first_name, u.last_name, u.email, u.phone, u.user_type, u.host_id, u.profile_image, u.is_active,
+                COALESCE(u.platform_permissions, rdp.permissions) as platform_permissions
+         FROM users u
+         LEFT JOIN role_default_permissions rdp ON rdp.role = u.user_type
+         WHERE u.id = ?`,
         [userId]
       );
       user = newUsers[0];
+    }
+
+    if (user.platform_permissions) {
+      if (typeof user.platform_permissions === 'string') {
+        try {
+          user.platform_permissions = JSON.parse(user.platform_permissions);
+        } catch (e) {
+          user.platform_permissions = null;
+        }
+      }
     }
 
     // Generate our system's JWTS
@@ -477,9 +529,12 @@ router.post('/login', validateUserLogin, async (req, res) => {
 
     // Find user
     const [users] = await pool.execute(
-      `SELECT id, first_name, last_name, email, phone, password, user_type, host_id,
-              is_active, last_login_at, login_attempts, locked_until
-       FROM users WHERE email = ?`,
+      `SELECT u.id, u.first_name, u.last_name, u.email, u.phone, u.password, u.user_type, u.host_id,
+              u.is_active, u.last_login_at, u.login_attempts, u.locked_until,
+              COALESCE(u.platform_permissions, rdp.permissions) as platform_permissions
+       FROM users u
+       LEFT JOIN role_default_permissions rdp ON rdp.role = u.user_type
+       WHERE u.email = ?`,
       [email]
     );
 
@@ -562,6 +617,16 @@ router.post('/login', validateUserLogin, async (req, res) => {
     delete user.login_attempts;
     delete user.locked_until;
 
+    if (user.platform_permissions) {
+      if (typeof user.platform_permissions === 'string') {
+        try {
+          user.platform_permissions = JSON.parse(user.platform_permissions);
+        } catch (e) {
+          user.platform_permissions = null;
+        }
+      }
+    }
+
     console.log('Login process completed successfully.');
 
     if (user.user_type === 'property_owner' || user.user_type === 'staff') {
@@ -582,6 +647,14 @@ router.post('/login', validateUserLogin, async (req, res) => {
               }
             }
             user.permissions = permissions;
+
+            // Fetch host's platform permissions
+            const [hostProfile] = await pool.execute('SELECT platform_permissions FROM users WHERE id = ?', [user.host_id]);
+            let hostPlatformPerms = hostProfile.length > 0 ? hostProfile[0].platform_permissions : null;
+            if (typeof hostPlatformPerms === 'string') {
+              try { hostPlatformPerms = JSON.parse(hostPlatformPerms); } catch (e) { hostPlatformPerms = null; }
+            }
+            user.platform_permissions = hostPlatformPerms;
           }
         } else {
           user.hms_status = 'inactive';

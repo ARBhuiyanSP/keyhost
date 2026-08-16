@@ -10,6 +10,98 @@ const router = express.Router();
 router.use(verifyToken);
 // requireHMSAccess ensures the user has a valid HMS subscription and identifies the host_id
 router.use(requireHMSAccess);
+
+// --- Attendance (Personal endpoints for staff, do not require manage_hr permission) ---
+router.get('/attendance/my', async (req, res) => {
+    try {
+        const [emp] = await pool.query('SELECT id FROM hms_employees WHERE user_id = ?', [req.user.id]);
+        if (emp.length === 0) return res.status(404).json(formatResponse(false, 'Employee profile not found'));
+        
+        const employeeId = emp[0].id;
+        const today = new Date().toISOString().split('T')[0];
+        
+        const [attendance] = await pool.query(
+            'SELECT * FROM hms_attendance WHERE employee_id = ? AND date = ?',
+            [employeeId, today]
+        );
+
+        const [roster] = await pool.query(
+            'SELECT r.*, s.name as shift_name, s.start_time, s.end_time FROM hms_rosters r LEFT JOIN hms_shifts s ON r.shift_id = s.id WHERE r.employee_id = ? AND r.date = ?',
+            [employeeId, today]
+        );
+
+        res.json(formatResponse(true, 'Attendance status retrieved', { 
+            attendance: attendance[0] || null,
+            roster: roster[0] || null
+        }));
+    } catch (error) {
+        res.status(500).json(formatResponse(false, 'Failed to retrieve attendance status', null, error.message));
+    }
+});
+
+router.post('/attendance/punch', async (req, res) => {
+    try {
+        const [emp] = await pool.query('SELECT id, host_id FROM hms_employees WHERE user_id = ?', [req.user.id]);
+        if (emp.length === 0) return res.status(404).json(formatResponse(false, 'Employee profile not found'));
+        
+        const employeeId = emp[0].id;
+        const hostId = emp[0].host_id;
+        const today = new Date().toISOString().split('T')[0];
+        const now = new Date();
+        const ip = req.ip;
+
+        const [existing] = await pool.query(
+            'SELECT * FROM hms_attendance WHERE employee_id = ? AND date = ?',
+            [employeeId, today]
+        );
+
+        if (existing.length === 0) {
+            // Punch In
+            await pool.query(
+                `INSERT INTO hms_attendance (host_id, employee_id, date, punch_in, punch_in_ip, status) 
+                 VALUES (?, ?, ?, ?, ?, 'present')`,
+                [hostId, employeeId, today, now, ip]
+            );
+            res.json(formatResponse(true, 'Punched in successfully', { type: 'in', time: now }));
+        } else if (!existing[0].punch_out) {
+            // Punch Out
+            const punchInTime = new Date(existing[0].punch_in);
+            const workHours = (now - punchInTime) / (1000 * 60 * 60);
+            
+            await pool.query(
+                `UPDATE hms_attendance SET punch_out = ?, punch_out_ip = ?, work_hours = ? 
+                 WHERE id = ?`,
+                [now, ip, workHours.toFixed(2), existing[0].id]
+            );
+            res.json(formatResponse(true, 'Punched out successfully', { type: 'out', time: now }));
+        } else {
+            res.status(400).json(formatResponse(false, 'Already punched out for today'));
+        }
+    } catch (error) {
+        res.status(500).json(formatResponse(false, 'Action failed', null, error.message));
+    }
+});
+
+// --- Employees list (Required for housekeeping dropdowns as well) ---
+router.get('/employees', requireHMSPermission(['manage_hr', 'manage_housekeeping']), async (req, res) => {
+    try {
+        const hostId = getHostId(req);
+        const [rows] = await pool.query(`
+            SELECT e.*, d.name as department_name, ds.name as designation_name, s.name as shift_name
+            FROM hms_employees e
+            LEFT JOIN hms_departments d ON e.department_id = d.id
+            LEFT JOIN hms_designations ds ON e.designation_id = ds.id
+            LEFT JOIN hms_shifts s ON e.shift_id = s.id
+            WHERE e.host_id = ?
+            ORDER BY e.name ASC
+        `, [hostId]);
+        res.json(formatResponse(true, 'Employees retrieved successfully', { employees: rows }));
+    } catch (error) {
+        res.status(500).json(formatResponse(false, 'Failed to retrieve employees', null, error.message));
+    }
+});
+
+// All subsequent routes require the HR manager permission
 router.use(requireHMSPermission('manage_hr'));
 
 const getHostId = (req) => {
@@ -148,24 +240,7 @@ router.post('/shifts', async (req, res) => {
     }
 });
 
-// --- Employees ---
-router.get('/employees', async (req, res) => {
-    try {
-        const hostId = getHostId(req);
-        const [rows] = await pool.query(`
-            SELECT e.*, d.name as department_name, ds.name as designation_name, s.name as shift_name
-            FROM hms_employees e
-            LEFT JOIN hms_departments d ON e.department_id = d.id
-            LEFT JOIN hms_designations ds ON e.designation_id = ds.id
-            LEFT JOIN hms_shifts s ON e.shift_id = s.id
-            WHERE e.host_id = ?
-            ORDER BY e.name ASC
-        `, [hostId]);
-        res.json(formatResponse(true, 'Employees retrieved successfully', { employees: rows }));
-    } catch (error) {
-        res.status(500).json(formatResponse(false, 'Failed to retrieve employees', null, error.message));
-    }
-});
+// --- Employees Management (manage_hr only) ---
 
 router.post('/employees', async (req, res) => {
     const connection = await pool.getConnection();
@@ -593,76 +668,7 @@ router.post('/rosters/bulk', async (req, res) => {
     }
 });
 
-// --- Attendance ---
-router.get('/attendance/my', async (req, res) => {
-    try {
-        const [emp] = await pool.query('SELECT id FROM hms_employees WHERE user_id = ?', [req.user.id]);
-        if (emp.length === 0) return res.status(404).json(formatResponse(false, 'Employee profile not found'));
-        
-        const employeeId = emp[0].id;
-        const today = new Date().toISOString().split('T')[0];
-        
-        const [attendance] = await pool.query(
-            'SELECT * FROM hms_attendance WHERE employee_id = ? AND date = ?',
-            [employeeId, today]
-        );
-
-        const [roster] = await pool.query(
-            'SELECT r.*, s.name as shift_name, s.start_time, s.end_time FROM hms_rosters r LEFT JOIN hms_shifts s ON r.shift_id = s.id WHERE r.employee_id = ? AND r.date = ?',
-            [employeeId, today]
-        );
-
-        res.json(formatResponse(true, 'Attendance status retrieved', { 
-            attendance: attendance[0] || null,
-            roster: roster[0] || null
-        }));
-    } catch (error) {
-        res.status(500).json(formatResponse(false, 'Failed to retrieve attendance status', null, error.message));
-    }
-});
-
-router.post('/attendance/punch', async (req, res) => {
-    try {
-        const [emp] = await pool.query('SELECT id, host_id FROM hms_employees WHERE user_id = ?', [req.user.id]);
-        if (emp.length === 0) return res.status(404).json(formatResponse(false, 'Employee profile not found'));
-        
-        const employeeId = emp[0].id;
-        const hostId = emp[0].host_id;
-        const today = new Date().toISOString().split('T')[0];
-        const now = new Date();
-        const ip = req.ip;
-
-        const [existing] = await pool.query(
-            'SELECT * FROM hms_attendance WHERE employee_id = ? AND date = ?',
-            [employeeId, today]
-        );
-
-        if (existing.length === 0) {
-            // Punch In
-            await pool.query(
-                `INSERT INTO hms_attendance (host_id, employee_id, date, punch_in, punch_in_ip, status) 
-                 VALUES (?, ?, ?, ?, ?, 'present')`,
-                [hostId, employeeId, today, now, ip]
-            );
-            res.json(formatResponse(true, 'Punched in successfully', { type: 'in', time: now }));
-        } else if (!existing[0].punch_out) {
-            // Punch Out
-            const punchInTime = new Date(existing[0].punch_in);
-            const workHours = (now - punchInTime) / (1000 * 60 * 60);
-            
-            await pool.query(
-                `UPDATE hms_attendance SET punch_out = ?, punch_out_ip = ?, work_hours = ? 
-                 WHERE id = ?`,
-                [now, ip, workHours.toFixed(2), existing[0].id]
-            );
-            res.json(formatResponse(true, 'Punched out successfully', { type: 'out', time: now }));
-        } else {
-            res.status(400).json(formatResponse(false, 'Already punched out for today'));
-        }
-    } catch (error) {
-        res.status(500).json(formatResponse(false, 'Action failed', null, error.message));
-    }
-});
+// --- Attendance daily view for HR managers ---
 
 router.get('/attendance/daily', async (req, res) => {
     try {
